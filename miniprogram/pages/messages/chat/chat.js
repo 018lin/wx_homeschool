@@ -9,8 +9,8 @@ var POLL_INTERVAL = 6000; // 聊天页轮询拉取新消息
 
 Page({
   data: {
-    peerId: 0, peer: {}, peerName: "", peerInitial: "", peerAvatar: "", hasPeerAvatar: false,
-    myInitial: "我", myAvatar: "", hasMyAvatar: false,
+    peerId: 0, peer: {}, peerName: "", peerInitial: "", peerAvatar: "", peerAvatarOk: true,
+    myInitial: "我", myAvatar: "", myAvatarOk: true,
     messages: [], draft: "", canSend: false, sending: false,
     scrollIntoView: "", loading: true
   },
@@ -21,7 +21,7 @@ Page({
     this.setData({
       myInitial: String(user.displayName || "我").slice(0, 1),
       myAvatar: avatar.resolve(user, true),
-      hasMyAvatar: avatar.hasCustom(user, true)
+      myAvatarOk: true
     });
     if (!peerId) {
       wx.showToast({ title: "联系人参数无效", icon: "none" });
@@ -38,7 +38,7 @@ Page({
     this.setData({
       myInitial: String(user.displayName || "我").slice(0, 1),
       myAvatar: avatar.resolve(user, true),
-      hasMyAvatar: avatar.hasCustom(user, true)
+      myAvatarOk: true
     });
     this.startPolling();
   },
@@ -58,6 +58,15 @@ Page({
       clearInterval(this.__pollTimer);
       this.__pollTimer = null;
     }
+  },
+
+  /** 默认头像图读不出来时回落到首字母色块，避免出现空白头像 */
+  onPeerAvatarError: function () {
+    this.setData({ peerAvatarOk: false });
+  },
+
+  onMyAvatarError: function () {
+    this.setData({ myAvatarOk: false });
   },
 
   loadConversation: function (silent) {
@@ -81,7 +90,7 @@ Page({
         peerName: name,
         peerInitial: String(name).slice(0, 1),
         peerAvatar: avatar.resolve(peer, false),
-        hasPeerAvatar: avatar.hasCustom(peer, false),
+        peerAvatarOk: true,
         messages: messages,
         scrollIntoView: messages.length ? "msg-" + messages[messages.length - 1].id : ""
       });

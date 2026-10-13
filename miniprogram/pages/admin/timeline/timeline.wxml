@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="al-head">
-    <view class="al-head__title">成长时间线</view>
-    <view class="al-head__sub" wx:if="{{generatedAt}}">{{refreshing ? '正在刷新…' : '数据更新于 ' + generatedAt}}</view>
-  </view>
-
   <view class="card">
     <view class="filter-grid">
     <view class="field filter-field">

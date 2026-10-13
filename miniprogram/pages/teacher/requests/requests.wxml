@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="rq-head">
-    <view class="rq-head__title">家长成长关注</view>
-    <view class="rq-head__sub">家长提交的观察与诉求，需要你回复或转化为任务</view>
-  </view>
-
   <view class="segment">
     <view class="segment__item {{filter === 'pending' ? 'active' : ''}}" data-filter="pending" bindtap="switchFilter">待处理</view>
     <view class="segment__item {{filter === 'approved' ? 'active' : ''}}" data-filter="approved" bindtap="switchFilter">已采纳</view>

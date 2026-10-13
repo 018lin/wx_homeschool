@@ -80,7 +80,7 @@ Page({
         return a.id - b.id;
       });
       // 头像是 base64 数据，体积较大；原始数据只留在实例上，避免 setData 时重复一份
-      this.contacts = contacts;
+      self.contacts = contacts;
       self.setData({ loading: false }, function () {
         self.applyFilter();
       });

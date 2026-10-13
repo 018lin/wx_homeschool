@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="at-head">
-    <view class="at-head__title">任务看板</view>
-    <view class="at-head__sub">当前 {{tasks.length}} 条 · 全部 {{allTasks.length}} 条 · {{studentCount}} 名学生</view>
-  </view>
-
   <view class="segment">
     <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">全部 {{filterCounts.all}}</view>
     <view class="segment__item {{filter === 'incomplete' ? 'active' : ''}}" data-filter="incomplete" bindtap="switchFilter">仍有未完成 {{filterCounts.incomplete}}</view>

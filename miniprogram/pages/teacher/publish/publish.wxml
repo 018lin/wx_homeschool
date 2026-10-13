@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="pb-head">
-    <view class="pb-head__title">发布共育任务</view>
-    <view class="pb-head__sub">可以发给全班，也可以为某个学生定制</view>
-  </view>
-
   <view class="card">
     <view class="field">
       <view class="field__label">发布对象</view>

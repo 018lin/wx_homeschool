@@ -23,6 +23,7 @@
     "pages/teacher/suggestion/suggestion",
     "pages/teacher/overview/overview",
     "pages/teacher/ai/ai",
+    "pages/teacher/ai/report/report",
     "pages/teacher/daily/daily",
     "pages/teacher/requests/requests",
     "pages/admin/overview/overview",
@@ -39,6 +40,11 @@
     "backgroundColor": "#f5f9ff",
     "backgroundColorTop": "#f5f9ff",
     "backgroundColorBottom": "#f5f9ff"
+  },
+  "permission": {
+    "scope.record": {
+      "desc": "用于长按语音输入，自动转成文字后发送给家长或 AI 洞察"
+    }
   },
   "style": "v2",
   "usingComponents": {

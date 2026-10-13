@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "AI 洞察"
+  "navigationBarTitleText": "AI 洞察",
+  "backgroundColor": "#f7f8fa",
+  "backgroundColorTop": "#f7f8fa",
+  "backgroundColorBottom": "#f7f8fa"
 }

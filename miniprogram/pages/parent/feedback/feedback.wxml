@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="feedback-head">
-    <view class="feedback-head__title">教师反馈</view>
-    <view class="feedback-head__sub">集中查看老师对孩子成长任务的点评</view>
-  </view>
-
   <view class="card filter-card" wx:if="{{children.length}}">
     <view class="filter-row">
       <view class="filter-item">

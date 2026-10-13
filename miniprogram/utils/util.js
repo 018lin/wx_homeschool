@@ -40,6 +40,12 @@ function formatDate(str) {
   return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 }
 
+/** 今天的日期键：2026-10-12（用于与后端 record_date 对齐） */
+function dateKey(date) {
+  var d = date instanceof Date ? date : new Date();
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
 /** 相对时间：刚刚 / 5 分钟前 / 昨天 18:30 / 10-12 */
 function fromNow(str) {
   var t = parseTime(str);
@@ -150,6 +156,7 @@ function orDefault(v, d) {
 module.exports = {
   parseTime: parseTime,
   formatDate: formatDate,
+  dateKey: dateKey,
   formatDateTime: formatDateTime,
   fromNow: fromNow,
   taskStatusMeta: taskStatusMeta,

@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="ts-head">
-    <view class="ts-head__title">学生档案</view>
-    <view class="ts-head__sub">共 {{all.length}} 名学生，点击查看个性化任务建议</view>
-  </view>
-
   <view class="search-box">
     <input
       class="search-box__input"

@@ -149,6 +149,7 @@ test("core parent and teacher workflow remains compatible", async function () {
   assert.equal(result.response.status, 200);
   teacherToken = result.data.token;
 
+  /* 今日成长记录：先进入待校对清单（草稿），此时家长端不应收到通知 */
   result = await request("/api/teacher/daily-updates", {
     method: "POST",
     token: teacherToken,
@@ -159,16 +160,110 @@ test("core parent and teacher workflow remains compatible", async function () {
   assert.equal(result.response.status, 200);
   assert.equal(result.data.ok, true);
   assert.ok(result.data.update.summary);
+  assert.equal(result.data.update.status, "draft");
+  assert.equal(result.data.update.is_draft, true);
+  assert.ok(result.data.autoSendTime);
+  const draftId = Number(result.data.update.id);
+  assert.ok(draftId);
 
+  result = await request("/api/parent/notifications?limit=20", { token: parentToken });
+  assert.equal(result.response.status, 200);
+  assert.ok(!result.data.notifications.some(function (item) {
+    return item.type === "teacher_daily_update";
+  }), "草稿阶段不应直接推送给家长");
+
+  /* 清单要标注每条记录会推送给哪些家长 */
   result = await request("/api/teacher/daily-updates", { token: teacherToken });
   assert.equal(result.response.status, 200);
   assert.ok(result.data.updates.length >= 1);
+  assert.equal(result.data.autoSendTime, "18:00");
+  const draft = result.data.updates.find(function (item) { return Number(item.id) === draftId; });
+  assert.ok(draft, "列表应包含新建的草稿");
+  assert.equal(draft.is_draft, true);
+  assert.ok(Array.isArray(draft.recipient_ids));
+  assert.ok(Array.isArray(draft.recipients));
+  assert.ok(draft.recipients.length >= 1, "应标注推送给哪些家长");
+  assert.equal(Number(draft.recipient_count), draft.recipient_ids.length);
+
+  /* 教师可编辑推送对象：清空后不应被确认发送 */
+  result = await request("/api/teacher/daily-update-recipients", { token: teacherToken });
+  assert.equal(result.response.status, 200);
+  assert.ok(Array.isArray(result.data.options));
+
+  result = await request("/api/teacher/daily-updates/" + draftId, {
+    method: "PUT",
+    token: teacherToken,
+    body: { parentMessage: "测试孩子在图书馆帮助同伴整理图书。" }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.update.parent_message, "测试孩子在图书馆帮助同伴整理图书。");
+
+  result = await request("/api/teacher/daily-updates/" + draftId, {
+    method: "PUT",
+    token: teacherToken,
+    body: { recipientIds: [] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.update.recipient_ids.length, 0);
+
+  /* 没有推送对象时确认发送应被记为失败，不会误标为已发送 */
+  result = await request("/api/teacher/daily-updates/confirm", {
+    method: "POST",
+    token: teacherToken,
+    body: { ids: [draftId] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.sent.length, 0);
+  assert.equal(result.data.failed.length, 1);
+
+  /* 恢复推送对象后确认无误，才真正写入家长通知中心 */
+  const parentUserId = draft.recipients.length ? draft.recipients[0].userId : null;
+  assert.ok(parentUserId, "应有可推送的家长");
+  result = await request("/api/teacher/daily-updates/" + draftId, {
+    method: "PUT",
+    token: teacherToken,
+    body: { recipientIds: [parentUserId] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.update.recipient_ids.length, 1);
+
+  result = await request("/api/teacher/daily-updates/confirm", {
+    method: "POST",
+    token: teacherToken,
+    body: { ids: [draftId] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.sent.length, 1);
+  assert.equal(result.data.recipientCount, 1);
+
+  /* 幂等：重复确认不会重复推送 */
+  result = await request("/api/teacher/daily-updates/confirm", {
+    method: "POST",
+    token: teacherToken,
+    body: { ids: [draftId] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.sent.length, 0);
+
+  /* 已发送的记录不可再修改或删除 */
+  result = await request("/api/teacher/daily-updates/" + draftId, {
+    method: "PUT",
+    token: teacherToken,
+    body: { summary: "试图修改" }
+  });
+  assert.equal(result.response.status, 400);
+
+  result = await request("/api/teacher/daily-updates/" + draftId, {
+    method: "DELETE",
+    token: teacherToken
+  });
+  assert.equal(result.response.status, 400);
 
   result = await request("/api/parent/notifications?limit=20", { token: parentToken });
   assert.equal(result.response.status, 200);
   assert.ok(result.data.notifications.some(function (item) {
     return item.type === "teacher_daily_update";
-  }));
+  }), "确认无误后家长应收到通知");
 
   result = await request("/api/timeline?childId=" + childId, { token: parentToken });
   assert.equal(result.response.status, 200);
@@ -371,6 +466,94 @@ test("core parent and teacher workflow remains compatible", async function () {
   assert.ok(result.data.notifications.some(function (item) {
     return item.type === "parent_task_request" && item.title === "老师已为孩子准备定制任务";
   }));
+});
+
+test("18:00 auto-send delivers leftover drafts exactly once", async function () {
+  /* 教师当天未点「确认无误」，草稿应由定时任务自动推送给 AI 判定的家长 */
+  let result = await request("/api/teacher/daily-updates", {
+    method: "POST",
+    token: teacherToken,
+    body: { transcript: "自动推送测试：今天测试孩子在课堂上主动举手回答问题。" }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.update.status, "draft");
+  const autoId = Number(result.data.update.id);
+  assert.ok(autoId);
+
+  /* 未到点（force 未开）时不应推送 */
+  result = await request("/api/teacher/daily-updates?limit=30", { token: teacherToken });
+  const stillDraft = result.data.updates.find(function (item) { return Number(item.id) === autoId; });
+  assert.equal(stillDraft.is_draft, true, "未确认的记录应保持草稿状态");
+
+  /* 模拟到点：force 直接执行一次自动推送 */
+  result = await request("/api/teacher/daily-updates/auto-send?force=1", {
+    method: "POST",
+    token: teacherToken
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.ok, true);
+  assert.ok(result.data.sent.some(function (item) { return Number(item.id) === autoId; }),
+    "到点后应自动推送该草稿");
+
+  /* 家长确实收到通知 */
+  result = await request("/api/parent/notifications?limit=30", { token: parentToken });
+  assert.ok(result.data.notifications.some(function (item) {
+    return item.type === "teacher_daily_update";
+  }), "自动推送后家长应收到通知");
+
+  /* 幂等：再次执行不应重复推送 */
+  const beforeCount = result.data.notifications.filter(function (item) {
+    return item.type === "teacher_daily_update";
+  }).length;
+  result = await request("/api/teacher/daily-updates/auto-send?force=1", {
+    method: "POST",
+    token: teacherToken
+  });
+  assert.equal(result.data.sent.length, 0, "已发送的记录不应重复推送");
+  result = await request("/api/parent/notifications?limit=30", { token: parentToken });
+  const afterCount = result.data.notifications.filter(function (item) {
+    return item.type === "teacher_daily_update";
+  }).length;
+  assert.equal(afterCount, beforeCount, "重复执行不应产生重复通知");
+
+  /* 自动推送后状态应为 auto_sent */
+  result = await request("/api/teacher/daily-updates?limit=30", { token: teacherToken });
+  const autoSent = result.data.updates.find(function (item) { return Number(item.id) === autoId; });
+  assert.equal(autoSent.status, "auto_sent");
+  assert.equal(autoSent.is_draft, false);
+  assert.ok(autoSent.sent_at);
+});
+
+test("drafts never appear on the parent timeline before being sent", async function () {
+  let result = await request("/api/teacher/daily-updates", {
+    method: "POST",
+    token: teacherToken,
+    body: { transcript: "草稿可见性测试：今天测试孩子主动帮助同学捡起掉落的文具。" }
+  });
+  assert.equal(result.response.status, 200);
+  const draftId = Number(result.data.update.id);
+
+  /* 草稿阶段：家长时间线不应出现该条记录 */
+  result = await request("/api/timeline?childId=" + childId, { token: parentToken });
+  assert.equal(result.response.status, 200);
+  const leaked = result.data.items.find(function (item) {
+    return item.timeline_type === "teacher_observation" && String(item.id) === String(draftId);
+  });
+  assert.ok(!leaked, "未发送的草稿不应出现在家长时间线");
+
+  /* 确认发送后才会出现在家长时间线 */
+  result = await request("/api/teacher/daily-updates/confirm", {
+    method: "POST",
+    token: teacherToken,
+    body: { ids: [draftId] }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.sent.length, 1);
+
+  result = await request("/api/timeline?childId=" + childId, { token: parentToken });
+  assert.ok(result.data.items.some(function (item) {
+    return item.timeline_type === "teacher_observation" && String(item.id) === String(draftId);
+  }), "确认发送后家长时间线才可见");
 });
 
 test("input and static file boundaries are enforced", async function () {

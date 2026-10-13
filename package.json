@@ -8,6 +8,7 @@
     "test": "node --test",
     "check": "node --check server.js && node --check database.js && node --check js/api.js && node --check js/login.js && node --check js/teacher-page.js && node --check js/teacher-daily.js",
     "check:mp": "node scripts/check-mp.js",
+    "daily:auto-send": "node --experimental-sqlite scripts/auto-send-daily-updates.js",
     "migrate:neon": "node --experimental-sqlite scripts/migrate-sqlite-to-neon.js"
   },
   "engines": {

@@ -1271,6 +1271,193 @@ async function generateDailySchoolUpdate(transcript, children) {
   }
 }
 
+/* ============ 今日成长记录：草稿校对 + 定时自动推送 ============ */
+
+const DAILY_UPDATE_DRAFT = "draft";
+const DAILY_UPDATE_SENT = "sent";
+const DAILY_UPDATE_AUTO_SENT = "auto_sent";
+const MAX_DAILY_AUTO_SEND_BATCH = 200;
+
+function pad2(value) {
+  return String(value).length >= 2 ? String(value) : "0" + value;
+}
+
+/* 服务端可能运行在 UTC（Render），所有「今天/几点」都按北京时间（UTC+8）计算，
+ * 与 teacher_daily_updates.created_at 的 Asia/Shanghai 口径保持一致 */
+function shanghaiClock(date) {
+  const shifted = new Date((date || new Date()).getTime() + 8 * 3600 * 1000);
+  const day = shifted.getUTCFullYear() + "-" + pad2(shifted.getUTCMonth() + 1) + "-" + pad2(shifted.getUTCDate());
+  const clock = pad2(shifted.getUTCHours()) + ":" + pad2(shifted.getUTCMinutes()) + ":" + pad2(shifted.getUTCSeconds());
+  return {
+    date: day,
+    time: clock,
+    stamp: day + " " + clock,
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
+  };
+}
+
+/* 自动推送时间，默认每天 18:00，可用 DAILY_AUTO_SEND_TIME="18:30" 覆盖 */
+function dailyAutoSendConfig() {
+  const raw = String(process.env.DAILY_AUTO_SEND_TIME || "18:00");
+  const matched = raw.match(/^\s*(\d{1,2})\s*[:：]\s*(\d{1,2})\s*$/);
+  const hour = matched ? Math.min(23, Math.max(0, Number(matched[1]))) : 18;
+  const minute = matched ? Math.min(59, Math.max(0, Number(matched[2]))) : 0;
+  return { hour: hour, minute: minute, text: pad2(hour) + ":" + pad2(minute), minutes: hour * 60 + minute };
+}
+
+function normalizeIdList(value) {
+  let list = value;
+  if (typeof list === "string") {
+    try { list = JSON.parse(list); } catch (error) { list = []; }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const result = [];
+  list.forEach(function (item) {
+    const raw = item && typeof item === "object" ? (item.userId != null ? item.userId : item.id) : item;
+    const id = Number(raw);
+    if (Number.isInteger(id) && id > 0 && !seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  });
+  return result;
+}
+
+/* 某位学生对应的真实家长（AI 判定的默认推送对象） */
+async function resolveChildParentIds(childId) {
+  if (!childId) return [];
+  const rows = await db.prepare(
+    "SELECT DISTINCT u.id FROM users u JOIN bindings b ON b.user_id = u.id " +
+    "WHERE b.child_id = ? AND " + realParentWhere("u") + " ORDER BY u.id"
+  ).all(childId, ...demoParams(1));
+  return rows.map(function (row) { return Number(row.id); });
+}
+
+/* 教师可见学生对应的家长清单，用于「校对推送对象」时增删 */
+async function resolveVisibleParentOptions(user) {
+  const children = await getTeacherVisibleChildren(user);
+  const childIds = children.map(function (child) { return Number(child.id); })
+    .filter(function (id) { return Number.isInteger(id) && id > 0; });
+  if (!childIds.length) return [];
+  const placeholders = childIds.map(function () { return "?"; }).join(",");
+  const rows = await db.prepare(
+    "SELECT u.id AS user_id, u.display_name, b.relation, b.child_id, c.name AS child_name " +
+    "FROM bindings b JOIN users u ON u.id = b.user_id JOIN children c ON c.id = b.child_id " +
+    "WHERE b.child_id IN (" + placeholders + ") AND " + realParentWhere("u") + " " +
+    "ORDER BY c.id, u.id"
+  ).all(...childIds.concat(demoParams(1)));
+  return rows.map(function (row) {
+    return {
+      userId: Number(row.user_id),
+      name: row.display_name || "家长",
+      relation: row.relation || "家长",
+      childId: Number(row.child_id),
+      childName: row.child_name || "学生"
+    };
+  });
+}
+
+/* 推送对象明细：家长姓名 + 关系 + 孩子姓名，用于在清单上标注「会推送给谁」 */
+async function loadRecipientProfiles(userIds) {
+  const ids = normalizeIdList(userIds);
+  if (!ids.length) return [];
+  const placeholders = ids.map(function () { return "?"; }).join(",");
+  const rows = await db.prepare(
+    "SELECT u.id AS user_id, u.display_name, b.relation, c.name AS child_name " +
+    "FROM users u LEFT JOIN bindings b ON b.user_id = u.id " +
+    "LEFT JOIN children c ON c.id = b.child_id " +
+    "WHERE u.id IN (" + placeholders + ") ORDER BY u.id"
+  ).all(...ids);
+  const profiles = new Map();
+  rows.forEach(function (row) {
+    const userId = Number(row.user_id);
+    let profile = profiles.get(userId);
+    if (!profile) {
+      profile = { userId: userId, name: row.display_name || "家长", relation: row.relation || "家长", childNames: [] };
+      profiles.set(userId, profile);
+    }
+    const childName = row.child_name ? String(row.child_name) : "";
+    if (childName && profile.childNames.indexOf(childName) < 0) profile.childNames.push(childName);
+  });
+  return Array.from(profiles.values()).map(function (profile) {
+    return {
+      userId: profile.userId,
+      name: profile.name,
+      relation: profile.relation,
+      childNames: profile.childNames,
+      childNameText: profile.childNames.join("、")
+    };
+  });
+}
+
+function dailyUpdateNotificationTitle(row) {
+  const studentName = String(row.student_name || "").trim();
+  return studentName && studentName !== "学生" && studentName !== "全班"
+    ? "今日校园观察 · " + studentName
+    : "今日校园观察";
+}
+
+/* 真正写入家长通知中心。
+ * 用「条件更新抢占」保证幂等：只有仍处于 draft 的记录才会被推送，
+ * 因此定时任务、教师手动确认、以及请求补偿三者并发也不会重复送达。 */
+async function deliverDailyUpdate(row, recipientIds, mode) {
+  const targets = normalizeIdList(recipientIds);
+  if (!targets.length) return { delivered: false, reason: "no-recipients", recipientCount: 0 };
+  const now = shanghaiClock().stamp;
+  const nextStatus = mode === "auto" ? DAILY_UPDATE_AUTO_SENT : DAILY_UPDATE_SENT;
+  const content = String(row.parent_message || row.summary || "").trim();
+  const title = dailyUpdateNotificationTitle(row);
+  return await db.transaction(async function (tx) {
+    const claimed = await tx.prepare(
+      "UPDATE teacher_daily_updates SET status = ?, recipient_count = ?, sent_at = ?, confirmed_at = ? " +
+      "WHERE id = ? AND teacher_id = ? AND status = ?"
+    ).run(nextStatus, targets.length, now, mode === "auto" ? null : now, row.id, row.teacher_id, DAILY_UPDATE_DRAFT);
+    if (!claimed.changes) return { delivered: false, reason: "already-sent", recipientCount: 0 };
+    for (const parentId of targets) {
+      await tx.prepare(
+        "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+      ).run(parentId, row.teacher_id, "teacher_daily_update", title, content);
+    }
+    return { delivered: true, reason: "", recipientCount: targets.length };
+  });
+}
+
+/* 扫描仍处于草稿状态的记录：
+ * - 当天的记录，等到自动推送时间（默认 18:00）才发出；
+ * - 之前日期遗留未确认的记录，任何时候都立即补发，避免家长永远收不到。
+ * Render 免费实例会休眠，因此本函数既由定时器调用，也由每个请求惰性触发，
+ * 并可通过 scripts/auto-send-daily-updates.js 由外部 cron 准时触发。 */
+async function runDailyUpdateAutoSend(options) {
+  options = options || {};
+  const clock = shanghaiClock();
+  const config = dailyAutoSendConfig();
+  const rows = await db.prepare(
+    "SELECT id, teacher_id, child_id, student_name, summary, parent_message, recipient_ids, record_date " +
+    "FROM teacher_daily_updates WHERE status = ? AND record_date <= ? " +
+    "ORDER BY id ASC LIMIT " + MAX_DAILY_AUTO_SEND_BATCH
+  ).all(DAILY_UPDATE_DRAFT, clock.date);
+  const result = { checkedAt: clock.stamp, autoSendTime: config.text, sent: [], skipped: [] };
+  for (const row of rows) {
+    const overdue = !!row.record_date && row.record_date < clock.date;
+    if (!overdue && !options.force && clock.minutes < config.minutes) {
+      result.skipped.push({ id: row.id, reason: "before-auto-send-time" });
+      continue;
+    }
+    const outcome = await deliverDailyUpdate(row, normalizeIdList(row.recipient_ids), "auto");
+    if (outcome.delivered) {
+      result.sent.push({ id: row.id, recipientCount: outcome.recipientCount, mode: overdue ? "overdue" : "auto" });
+    } else {
+      result.skipped.push({ id: row.id, reason: outcome.reason });
+    }
+  }
+  if (result.sent.length) {
+    console.log("[成长记录] 自动推送 " + result.sent.length + " 条：" +
+      result.sent.map(function (item) { return "#" + item.id; }).join(","));
+  }
+  return result;
+}
+
 async function teacherParentInfo(childId) {
   const rows = await db.prepare(
     "SELECT u.display_name, b.relation FROM bindings b JOIN users u ON u.id = b.user_id " +
@@ -3283,9 +3470,10 @@ async function handleApi(req, res, pathname, query) {
       "SELECT d.id, d.child_id, d.student_name, d.summary, d.analysis, d.tags, d.ai_status, " +
       "d.recipient_count, d.created_at, c.name AS child_name, c.grade, u.display_name AS teacher_name " +
       "FROM teacher_daily_updates d LEFT JOIN children c ON c.id = d.child_id " +
-      "LEFT JOIN users u ON u.id = d.teacher_id WHERE 1 = 1" + updateChildClause +
+      // 与家长端一致：只统计已确认发送的记录，草稿不计入成长时间线
+      "LEFT JOIN users u ON u.id = d.teacher_id WHERE d.status <> ?" + updateChildClause +
       " ORDER BY d.created_at DESC, d.id DESC LIMIT " + requestedLimit
-    ).all(...updateParams);
+    ).all(DAILY_UPDATE_DRAFT, ...updateParams);
     const items = submissions.map(function (row) {
       return {
         id: "submission-" + row.id,
@@ -3768,8 +3956,9 @@ async function handleApi(req, res, pathname, query) {
       "d.tags, d.ai_status, d.recipient_count, d.created_at, u.display_name AS teacher_name, " +
       "'teacher_observation' AS timeline_type " +
       "FROM teacher_daily_updates d LEFT JOIN users u ON u.id = d.teacher_id " +
-      "WHERE d.child_id = ?"
-    ).all(childId);
+      // 草稿尚未推送给家长，不能出现在家长看到的时间线里
+      "WHERE d.child_id = ? AND d.status <> ?"
+    ).all(childId, DAILY_UPDATE_DRAFT);
     const items = submissionItems.concat(observationItems.map(function (item) {
       return {
         id: item.id,
@@ -3891,17 +4080,95 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, { ok: true, recipientCount: parents.length });
   }
 
+  /* ---- 今日成长记录：可推送家长清单（供教师校对推送对象） ---- */
+  if (req.method === "GET" && pathname === "/api/teacher/daily-update-recipients") {
+    const options = await resolveVisibleParentOptions(user);
+    return sendJson(res, 200, { options: options });
+  }
+
+  /* ---- 今日成长记录列表：草稿 + 已发送，并标注每条将推送给谁 ---- */
   if (req.method === "GET" && pathname === "/api/teacher/daily-updates") {
     const requestedLimit = Number(query.get("limit") || 20);
     const limit = Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 20));
-    const updates = await db.prepare(
+    const rows = await db.prepare(
       "SELECT id, child_id, student_name, transcript, summary, analysis, parent_message, tags, " +
-      "ai_status, recipient_count, created_at FROM teacher_daily_updates " +
-      "WHERE teacher_id = ? ORDER BY id DESC LIMIT " + limit
+      "ai_status, recipient_count, status, recipient_ids, record_date, sent_at, confirmed_at, created_at " +
+      "FROM teacher_daily_updates WHERE teacher_id = ? ORDER BY id DESC LIMIT " + limit
     ).all(user.id);
-    return sendJson(res, 200, { updates: updates });
+    const updates = [];
+    for (const row of rows) {
+      const recipientIds = normalizeIdList(row.recipient_ids);
+      updates.push(Object.assign({}, row, {
+        recipient_ids: recipientIds,
+        recipient_count: row.status === DAILY_UPDATE_DRAFT ? recipientIds.length : Number(row.recipient_count || 0),
+        recipients: await loadRecipientProfiles(recipientIds),
+        is_draft: row.status === DAILY_UPDATE_DRAFT
+      }));
+    }
+    const clock = shanghaiClock();
+    const config = dailyAutoSendConfig();
+    return sendJson(res, 200, {
+      updates: updates,
+      autoSendTime: config.text,
+      today: clock.date,
+      now: clock.stamp,
+      draftCount: updates.filter(function (item) { return item.is_draft; }).length,
+      todayDraftCount: updates.filter(function (item) { return item.is_draft && (!item.record_date || item.record_date === clock.date); }).length
+    });
   }
 
+  /* ---- 确认无误后推送（支持指定 id 或一键确认当天全部草稿） ---- */
+  if (req.method === "POST" && pathname === "/api/teacher/daily-updates/confirm") {
+    const body = await readBody(req);
+    const clock = shanghaiClock();
+    let rows;
+    if (body.all) {
+      const date = String(body.date || clock.date).slice(0, 10);
+      rows = await db.prepare(
+        "SELECT id, teacher_id, child_id, student_name, summary, parent_message, status, recipient_ids, record_date " +
+        "FROM teacher_daily_updates WHERE teacher_id = ? AND status = ? AND (record_date = ? OR record_date = '') " +
+        "ORDER BY id ASC"
+      ).all(user.id, DAILY_UPDATE_DRAFT, date);
+    } else {
+      const ids = normalizeIdList(body.ids || body.id);
+      if (!ids.length) return sendJson(res, 400, { message: "请选择要发送的记录" });
+      const placeholders = ids.map(function () { return "?"; }).join(",");
+      rows = await db.prepare(
+        "SELECT id, teacher_id, child_id, student_name, summary, parent_message, status, recipient_ids, record_date " +
+        "FROM teacher_daily_updates WHERE teacher_id = ? AND id IN (" + placeholders + ")"
+      ).all(user.id, ...ids);
+    }
+    if (!rows.length) return sendJson(res, 404, { message: "没有待发送的记录" });
+
+    const sent = [];
+    const failed = [];
+    for (const row of rows) {
+      if (row.status !== DAILY_UPDATE_DRAFT) {
+        failed.push({ id: row.id, reason: "already-sent" });
+        continue;
+      }
+      const outcome = await deliverDailyUpdate(row, normalizeIdList(row.recipient_ids), "manual");
+      if (outcome.delivered) sent.push({ id: row.id, recipientCount: outcome.recipientCount });
+      else failed.push({ id: row.id, reason: outcome.reason });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      sent: sent,
+      failed: failed,
+      recipientCount: sent.reduce(function (sum, item) { return sum + item.recipientCount; }, 0),
+      message: failed.length
+        ? "已发送 " + sent.length + " 条，" + failed.length + " 条未发送（可能未设置推送对象）"
+        : "已确认无误，发送给 " + sent.reduce(function (sum, item) { return sum + item.recipientCount; }, 0) + " 位家长"
+    });
+  }
+
+  /* ---- 手动触发一次自动推送补偿（用于测试与运维核对） ---- */
+  if (req.method === "POST" && pathname === "/api/teacher/daily-updates/auto-send") {
+    const result = await runDailyUpdateAutoSend({ force: query.get("force") === "1" });
+    return sendJson(res, 200, Object.assign({ ok: true }, result));
+  }
+
+  /* ---- 新建记录：只生成草稿，写入待校对清单，不直接推送 ---- */
   if (req.method === "POST" && pathname === "/api/teacher/daily-updates") {
     const body = await readBody(req);
     const transcript = String(body.transcript || "").trim().slice(0, 2000);
@@ -3917,46 +4184,47 @@ async function handleApi(req, res, pathname, query) {
     }) || null;
     if (resolvedChild) update.studentName = resolvedChild.name;
 
-    let parents = [];
+    /* AI 判定的默认推送对象：能识别到学生就只推给该学生家长，否则推给全部可见家长 */
+    let recipientIds = [];
     if (resolvedChild) {
-      parents = await db.prepare(
-        "SELECT DISTINCT u.id FROM users u JOIN bindings b ON b.user_id = u.id " +
-        "WHERE b.child_id = ? AND " + realParentWhere("u") + " ORDER BY u.id"
-      ).all(resolvedChild.id, ...demoParams(1));
+      recipientIds = await resolveChildParentIds(resolvedChild.id);
     } else {
-      parents = await db.prepare(
-        "SELECT id FROM users WHERE " + realParentWhere("users") + " ORDER BY id"
-      ).all(...demoParams(1));
+      const options = await resolveVisibleParentOptions(user);
+      const seen = new Set();
+      recipientIds = options.filter(function (item) {
+        if (seen.has(item.userId)) return false;
+        seen.add(item.userId);
+        return true;
+      }).map(function (item) { return item.userId; });
+    }
+    /* 教师本次已手动指定推送对象时，以教师选择为准 */
+    const requestedRecipients = normalizeIdList(body.recipientIds);
+    if (requestedRecipients.length) {
+      const allowed = new Set((await resolveVisibleParentOptions(user)).map(function (item) { return item.userId; }));
+      recipientIds = requestedRecipients.filter(function (id) { return allowed.has(id); });
     }
 
     const parentMessage = update.parentMessage || update.summary;
-    const title = update.studentName && update.studentName !== "学生"
-      ? "今日校园观察 · " + update.studentName
-      : "今日校园观察";
-    const updateId = await db.transaction(async function (tx) {
-      const id = await tx.prepare(
-        "INSERT INTO teacher_daily_updates " +
-        "(teacher_id, child_id, student_name, transcript, summary, analysis, parent_message, tags, ai_status, recipient_count) " +
-        "VALUES (?,?,?,?,?,?,?,?,?,?)"
-      ).run(
-        user.id,
-        resolvedChild ? resolvedChild.id : null,
-        update.studentName || "学生",
-        transcript,
-        update.summary,
-        update.analysis || "",
-        parentMessage,
-        (update.tags || []).join(","),
-        update.aiStatus || "fallback",
-        parents.length
-      ).lastInsertRowid;
-      for (const parent of parents) {
-        await tx.prepare(
-          "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
-        ).run(parent.id, user.id, "teacher_daily_update", title, parentMessage);
-      }
-      return id;
-    });
+    const clock = shanghaiClock();
+    const updateId = await db.prepare(
+      "INSERT INTO teacher_daily_updates " +
+      "(teacher_id, child_id, student_name, transcript, summary, analysis, parent_message, tags, ai_status, recipient_count, status, recipient_ids, record_date) " +
+      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      user.id,
+      resolvedChild ? resolvedChild.id : null,
+      update.studentName || "学生",
+      transcript,
+      update.summary,
+      update.analysis || "",
+      parentMessage,
+      (update.tags || []).join(","),
+      update.aiStatus || "fallback",
+      recipientIds.length,
+      DAILY_UPDATE_DRAFT,
+      JSON.stringify(recipientIds),
+      clock.date
+    ).lastInsertRowid;
 
     return sendJson(res, 200, {
       ok: true,
@@ -3971,10 +4239,80 @@ async function handleApi(req, res, pathname, query) {
         parent_message: parentMessage,
         tags: (update.tags || []).join(","),
         ai_status: update.aiStatus || "fallback",
-        recipient_count: parents.length,
-        created_at: new Date().toISOString()
+        status: DAILY_UPDATE_DRAFT,
+        recipient_ids: recipientIds,
+        recipient_count: recipientIds.length,
+        recipients: await loadRecipientProfiles(recipientIds),
+        record_date: clock.date,
+        created_at: clock.stamp,
+        is_draft: true
       },
-      recipientCount: parents.length
+      recipientCount: recipientIds.length,
+      autoSendTime: dailyAutoSendConfig().text
+    });
+  }
+
+  /* ---- 校对草稿：修改内容或推送对象（仅草稿可改） ---- */
+  const dailyUpdateDetailMatch = pathname.match(/^\/api\/teacher\/daily-updates\/(\d+)$/);
+  if (dailyUpdateDetailMatch && (req.method === "PUT" || req.method === "DELETE")) {
+    const updateId = Number(dailyUpdateDetailMatch[1]);
+    const existing = await db.prepare(
+      "SELECT id, teacher_id, child_id, student_name, transcript, summary, analysis, parent_message, tags, " +
+      "ai_status, recipient_count, status, recipient_ids, record_date, sent_at, confirmed_at, created_at " +
+      "FROM teacher_daily_updates WHERE id = ? AND teacher_id = ?"
+    ).get(updateId, user.id);
+    if (!existing) return sendJson(res, 404, { message: "记录不存在" });
+
+    if (req.method === "DELETE") {
+      if (existing.status !== DAILY_UPDATE_DRAFT) {
+        return sendJson(res, 400, { message: "已发送的记录不能删除" });
+      }
+      await db.prepare("DELETE FROM teacher_daily_updates WHERE id = ? AND teacher_id = ? AND status = ?")
+        .run(updateId, user.id, DAILY_UPDATE_DRAFT);
+      return sendJson(res, 200, { ok: true, id: updateId });
+    }
+
+    if (existing.status !== DAILY_UPDATE_DRAFT) {
+      return sendJson(res, 400, { message: "记录已发送，不能再修改" });
+    }
+    const body = await readBody(req);
+    const summary = body.summary == null ? existing.summary : String(body.summary).trim().slice(0, 260);
+    const parentMessage = body.parentMessage == null
+      ? existing.parent_message
+      : String(body.parentMessage).trim().slice(0, 500);
+    const studentName = body.studentName == null
+      ? existing.student_name
+      : (String(body.studentName).trim().slice(0, 30) || existing.student_name);
+    if (!summary) return sendJson(res, 400, { message: "记录内容不能为空" });
+    if (!parentMessage) return sendJson(res, 400, { message: "发送给家长的内容不能为空" });
+
+    let recipientIds = normalizeIdList(existing.recipient_ids);
+    if (body.recipientIds != null) {
+      const allowed = new Set((await resolveVisibleParentOptions(user)).map(function (item) { return item.userId; }));
+      const requested = normalizeIdList(body.recipientIds);
+      const invalid = requested.filter(function (id) { return !allowed.has(id); });
+      if (invalid.length) return sendJson(res, 403, { message: "推送对象中包含非本班家长，请重新选择" });
+      recipientIds = requested;
+    }
+
+    await db.prepare(
+      "UPDATE teacher_daily_updates SET summary = ?, parent_message = ?, student_name = ?, " +
+      "recipient_ids = ?, recipient_count = ? WHERE id = ? AND teacher_id = ? AND status = ?"
+    ).run(summary, parentMessage, studentName, JSON.stringify(recipientIds), recipientIds.length,
+      updateId, user.id, DAILY_UPDATE_DRAFT);
+
+    const fresh = await db.prepare(
+      "SELECT id, child_id, student_name, transcript, summary, analysis, parent_message, tags, " +
+      "ai_status, recipient_count, status, recipient_ids, record_date, sent_at, confirmed_at, created_at " +
+      "FROM teacher_daily_updates WHERE id = ?"
+    ).get(updateId);
+    return sendJson(res, 200, {
+      ok: true,
+      update: Object.assign({}, fresh, {
+        recipient_ids: recipientIds,
+        recipients: await loadRecipientProfiles(recipientIds),
+        is_draft: true
+      })
     });
   }
 
@@ -5168,6 +5506,48 @@ async function handleApi(req, res, pathname, query) {
   return sendJson(res, 404, { message: "接口不存在" });
 }
 
+/* ============ 今日成长记录 · 自动推送调度 ============ */
+/* 三重保障，保证教师当天忘记点「确认无误」也能送达家长：
+ * 1) 进程内定时器：实例存活时每分钟检查一次；
+ * 2) 请求惰性补偿：Render 免费实例会休眠，任何进来的请求都会唤醒并补发；
+ * 3) 外部 cron：scripts/auto-send-daily-updates.js 由 Render Cron Job 定时拉起，
+ *    这是 18:00 准时送达的主要保障（见 render.yaml）。
+ * 推送本身用「条件更新抢占」做幂等，三条路径并发也不会重复发送。 */
+const DAILY_AUTO_SEND_INTERVAL_MS = 60 * 1000;
+let dailyAutoSendRunning = false;
+let dailyAutoSendLastCheck = 0;
+
+function dailyAutoSendEnabled() {
+  return String(process.env.DAILY_AUTO_SEND_DISABLED || "") !== "1";
+}
+
+/** 触发一次自动推送检查：不阻塞调用方，重叠调用会被忽略 */
+function scheduleDailyAutoSend(options) {
+  if (!dailyAutoSendEnabled() || dailyAutoSendRunning) return;
+  const now = Date.now();
+  if (!options || !options.force) {
+    if (now - dailyAutoSendLastCheck < DAILY_AUTO_SEND_INTERVAL_MS) return;
+  }
+  dailyAutoSendLastCheck = now;
+  setTimeout(function () {
+    dailyAutoSendRunning = true;
+    databaseReady
+      .then(function () { return runDailyUpdateAutoSend({}); })
+      .catch(function (error) { console.warn("[成长记录] 自动推送检查失败：", error.message); })
+      .then(function () { dailyAutoSendRunning = false; });
+  }, 0);
+}
+
+let dailyAutoSendTimer = null;
+function startDailyAutoSendScheduler() {
+  if (dailyAutoSendTimer || !dailyAutoSendEnabled()) return;
+  dailyAutoSendTimer = setInterval(function () {
+    scheduleDailyAutoSend();
+  }, DAILY_AUTO_SEND_INTERVAL_MS);
+  if (typeof dailyAutoSendTimer.unref === "function") dailyAutoSendTimer.unref();
+  scheduleDailyAutoSend();
+}
+
 /* ============ 静态文件 ============ */
 const serveStatic = createStaticServer(ROOT);
 
@@ -5188,6 +5568,8 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const pathname = decodeURIComponent(url.pathname);
   try {
+    /* 实例休眠后被任意请求唤醒时，顺带补发已到点的成长记录 */
+    scheduleDailyAutoSend();
     await databaseReady;
     if (pathname.startsWith("/api/")) {
       await handleApi(req, res, pathname, url.searchParams);
@@ -5209,9 +5591,22 @@ function startServer(port) {
     const actualPort = address && typeof address === "object" ? address.port : listenPort;
     console.log("家校共育系统已启动: http://localhost:" + actualPort);
     console.log(db.isPostgres ? "数据库：Neon PostgreSQL" : "数据库：本地 SQLite");
+    if (dailyAutoSendEnabled()) {
+      console.log("成长记录自动推送时间：每天 " + dailyAutoSendConfig().text + "（北京时间）");
+    }
+    startDailyAutoSendScheduler();
   });
 }
 
 if (require.main === module) startServer();
 
-module.exports = { server, db, databaseReady, handleApi, startServer };
+module.exports = {
+  server,
+  db,
+  databaseReady,
+  handleApi,
+  startServer,
+  runDailyUpdateAutoSend,
+  dailyAutoSendConfig,
+  shanghaiClock
+};

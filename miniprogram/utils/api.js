@@ -514,13 +514,38 @@ var api = {
     });
   },
   getDailyUpdates: function (limit) {
-    return request("/api/teacher/daily-updates", { method: "GET", query: { limit: limit || 20 } });
+    return request("/api/teacher/daily-updates", { method: "GET", query: { limit: limit || 20 }, silent: true });
   },
-  createDailyUpdate: function (transcript) {
+  /** 新建记录：只生成草稿进入待校对清单，不会直接推送给家长 */
+  createDailyUpdate: function (data) {
+    var payload = typeof data === "string" ? { transcript: data } : (data || {});
     return request("/api/teacher/daily-updates", {
       method: "POST",
-      data: { transcript: transcript },
+      data: payload,
       loading: "AI 整理中"
+    });
+  },
+  /** 可推送家长清单（教师可见学生的家长），用于校对推送对象 */
+  getDailyUpdateRecipients: function () {
+    return request("/api/teacher/daily-update-recipients", { method: "GET", silent: true });
+  },
+  /** 校对草稿：修改内容或推送对象 */
+  updateDailyUpdate: function (id, data) {
+    return request("/api/teacher/daily-updates/" + id, {
+      method: "PUT",
+      data: data || {},
+      loading: "保存中"
+    });
+  },
+  deleteDailyUpdate: function (id) {
+    return request("/api/teacher/daily-updates/" + id, { method: "DELETE", silent: true });
+  },
+  /** 确认无误后推送；传 { all: true } 表示一键确认当天全部草稿 */
+  confirmDailyUpdates: function (data) {
+    return request("/api/teacher/daily-updates/confirm", {
+      method: "POST",
+      data: data || {},
+      silent: true
     });
   },
   transcribeAudio: function (attachment) {

@@ -1,0 +1,153 @@
+<view class="page page-with-nav">
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+  <view class="card" wx:if="{{!loading && error}}">
+    <view class="empty">
+      <view class="empty__text">{{error}}</view>
+      <button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button>
+    </view>
+  </view>
+
+  <block wx:if="{{!loading && !error}}">
+    <view class="ai-state {{aiStatus}}">
+      <view class="ai-state__title">{{aiStatusText}}</view>
+      <view class="ai-state__error" wx:if="{{aiError}}">{{aiError}}</view>
+      <view class="ai-state__stale" wx:if="{{aiStale}}">当前先展示上一次报告，新报告完成后会自动替换。</view>
+    </view>
+
+    <view class="card" wx:if="{{report}}">
+      <view class="between mb-16">
+        <text class="badge {{report.riskCls}}">{{report.riskTitle}}</text>
+        <text class="text-sm text-muted">{{report.generatedAt}}</text>
+      </view>
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{report.completionRate}}%</view>
+          <view class="stat__label">本周完成率</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.submittedCount}}</view>
+          <view class="stat__label">已提交</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value" style="color:#b42318">{{report.pendingFeedback}}</view>
+          <view class="stat__label">待点评</view>
+        </view>
+      </view>
+      <view class="field__hint mt-16" wx:if="{{report.reminderWindow}}">
+        建议提醒时段：{{report.reminderWindow}}
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{report && report.stats}}">
+      <view class="card-title"><text class="card-title__text">整体数据</text></view>
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{report.stats.totalStudents || 0}}</view>
+          <view class="stat__label">学生</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.stats.profileCompleteness || 0}}%</view>
+          <view class="stat__label">档案完整度</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.stats.totalSubmissions || 0}}</view>
+          <view class="stat__label">累计提交</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.stats.activeStudents || 0}}</view>
+          <view class="stat__label">活跃学生</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.stats.peakCompletionTime || '-'}}</view>
+          <view class="stat__label">完成高峰</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{report.stats.avgTextLength || 0}}</view>
+          <view class="stat__label">平均字数</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{report && report.aiText}}">
+      <view class="card-title">
+        <text class="card-title__text">AI 洞察</text>
+        <text class="badge badge-teal" wx:if="{{report.aiEnabled}}">已启用</text>
+      </view>
+      <view class="ai-text">{{report.aiText}}</view>
+      <button class="btn btn-outline btn-sm mt-16" bindtap="goAsk">继续向 AI 提问</button>
+    </view>
+
+    <view class="card" wx:if="{{report}}">
+      <view class="card-title"><text class="card-title__text">家长通知动作</text></view>
+      <button class="btn btn-gray btn-block" bindtap="onGenerateNotice">生成家长通知</button>
+      <textarea wx:if="{{noticeDraft}}" class="field__textarea field__textarea--sm mt-16" value="{{noticeDraft}}" bindinput="onNoticeInput" maxlength="1200" />
+      <view class="notice-actions" wx:if="{{noticeDraft}}">
+        <button class="btn btn-gray" bindtap="copyNotice">复制催交通知模板</button>
+        <button wx:if="{{!isAdmin}}" class="btn btn-primary" bindtap="sendGeneratedNotice" disabled="{{sendingNotice}}">{{sendingNotice ? '发送中…' : '写入家长通知中心'}}</button>
+      </view>
+      <view class="field__hint mt-12" wx:if="{{isAdmin}}">管理员为只读模式，可以生成和复制模板，但不能代教师发送。</view>
+    </view>
+
+    <view class="card" wx:if="{{!isAdmin}}">
+      <view class="card-title"><text class="card-title__text">发班级公告</text></view>
+      <input
+        class="field__input mb-16"
+        placeholder="通知标题（选填，默认「教师通知」）"
+        placeholder-class="ph"
+        value="{{announceTitle}}"
+        data-key="announceTitle"
+        bindinput="onAnnounceInput"
+      />
+      <textarea
+        class="field__textarea field__textarea--sm"
+        placeholder="通知内容…"
+        placeholder-class="ph"
+        maxlength="1200"
+        value="{{announceContent}}"
+        data-key="announceContent"
+        bindinput="onAnnounceInput"
+      />
+      <button class="btn btn-teal btn-block mt-16" bindtap="onSendAnnounce" disabled="{{sending}}">
+        {{sending ? '发送中…' : '推送给全班家长'}}
+      </button>
+    </view>
+
+    <!-- 学生分层 -->
+    <view class="card" wx:if="{{report && report.untouched.length}}">
+      <view class="card-title"><text class="card-title__text">尚未触达（{{report.untouched.length}}）</text></view>
+      <view class="ov-chips">
+        <text class="badge badge-danger" wx:for="{{report.untouched}}" wx:key="id">{{item.name}}</text>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{report && report.viewedNotStarted.length}}">
+      <view class="card-title"><text class="card-title__text">看过未开始（{{report.viewedNotStarted.length}}）</text></view>
+      <view class="ov-chips">
+        <text class="badge badge-warning" wx:for="{{report.viewedNotStarted}}" wx:key="id">{{item.name}}</text>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{report && report.draftStalled.length}}">
+      <view class="card-title"><text class="card-title__text">草稿卡住（{{report.draftStalled.length}}）</text></view>
+      <view class="ov-chips">
+        <text class="badge badge-gray" wx:for="{{report.draftStalled}}" wx:key="id">{{item.name}}</text>
+      </view>
+    </view>
+
+    <!-- 维度分析 -->
+    <view class="card" wx:for="{{report.dimensions}}" wx:key="key">
+      <view class="card-title"><text class="card-title__text">{{item.title}}</text></view>
+      <view class="ai-text" wx:if="{{item.summary}}">{{item.summary}}</view>
+      <view class="ov-insight" wx:for="{{item.findings}}" wx:for-item="fd" wx:key="*this">· {{fd}}</view>
+      <view class="quote quote-teal mt-16" wx:for="{{item.actions}}" wx:for-item="ac" wx:key="*this">
+        {{ac}}
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{!isAdmin}}">
+      <view class="card-title"><text class="card-title__text">校园观察</text></view>
+      <view class="field__hint mb-16">语音或文字记录今天的观察，AI 会自动整理并推送给对应家长。</view>
+      <button class="btn btn-primary btn-block" bindtap="goDaily">去记录校园观察</button>
+    </view>
+  </block>
+</view>

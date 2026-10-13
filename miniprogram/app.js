@@ -141,7 +141,7 @@ App({
       var roles = null;
       if (route.indexOf("pages/parent/") === 0) roles = ["parent"];
       else if (route.indexOf("pages/student/") === 0) roles = ["student"];
-      else if (route === "pages/teacher/ai/ai" || route === "pages/teacher/students/students") roles = ["teacher", "admin"];
+      else if (route === "pages/teacher/ai/ai" || route === "pages/teacher/ai/report/report" || route === "pages/teacher/students/students") roles = ["teacher", "admin"];
       else if (route.indexOf("pages/teacher/") === 0) roles = ["teacher"];
       else if (route.indexOf("pages/admin/") === 0) roles = ["admin"];
       else if (route !== "pages/login/login") roles = [];

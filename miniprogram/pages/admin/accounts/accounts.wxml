@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="ac-head">
-    <view class="ac-head__title">账号管理</view>
-    <view class="ac-head__sub">教师、学生、家长账号的统一创建与维护</view>
-  </view>
-
   <view class="segment">
     <view class="segment__item {{tab === 'all' ? 'active' : ''}}" data-tab="all" bindtap="switchTab">
       全部 {{teachers.length + students.length + parents.length}}

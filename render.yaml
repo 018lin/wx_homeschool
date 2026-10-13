@@ -31,3 +31,30 @@ services:
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
+      # 今日成长记录：教师未手动确认时，每天北京时间 18:00 自动推送给对应家长
+      - key: DAILY_AUTO_SEND_TIME
+        value: "18:00"
+
+  # 教师当天忘记点「确认无误」的兜底推送。
+  # 免费 web 实例会休眠，进程内定时器在实例睡着时不会执行，
+  # 因此用 cron 任务每 10 分钟拉起一次脚本，保证 18:00 前后必定送达。
+  - type: cron
+    name: wx-homeschool-daily-auto-send
+    runtime: node
+    plan: free
+    region: ohio
+    branch: main
+    schedule: "*/10 * * * *"
+    buildCommand: npm install
+    command: node --experimental-sqlite scripts/auto-send-daily-updates.js
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: ZHIPU_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DAILY_AUTO_SEND_TIME
+        value: "18:00"

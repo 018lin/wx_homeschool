@@ -27,7 +27,7 @@ const SERIAL_TABLES = new Set([
   "class_members"
 ]);
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 9;
 
 function replaceQuestionMarks(sql) {
   let index = 0;
@@ -248,7 +248,16 @@ function postgresSchema() {
     "CREATE TABLE IF NOT EXISTS parent_task_requests (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, status TEXT NOT NULL DEFAULT 'pending', teacher_id BIGINT, teacher_comment TEXT NOT NULL DEFAULT '', task_id BIGINT, concern_category TEXT NOT NULL DEFAULT '', observed_behavior TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '', frequency TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '', parent_expectation TEXT NOT NULL DEFAULT '', family_constraints TEXT NOT NULL DEFAULT '', ai_plan TEXT NOT NULL DEFAULT '{}', ai_status TEXT NOT NULL DEFAULT 'pending', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), reviewed_at TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS notifications (id BIGSERIAL PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, type TEXT NOT NULL DEFAULT 'announcement', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
     "CREATE TABLE IF NOT EXISTS direct_messages (id BIGSERIAL PRIMARY KEY, sender_user_id BIGINT NOT NULL, recipient_user_id BIGINT NOT NULL, content TEXT NOT NULL, read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
-    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id BIGSERIAL PRIMARY KEY, teacher_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    // status: draft=待校对（尚未推送） / sent=教师确认后已推送 / auto_sent=每日 18:00 自动推送
+    // recipient_ids: JSON 数组，保存「这条记录将推送给哪些家长」，教师可编辑
+    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id BIGSERIAL PRIMARY KEY, teacher_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), status TEXT NOT NULL DEFAULT 'sent', recipient_ids TEXT NOT NULL DEFAULT '[]', record_date TEXT NOT NULL DEFAULT '', sent_at TEXT, confirmed_at TEXT)",
+    // 线上库的这张表早已建好，上面的 CREATE TABLE IF NOT EXISTS 不会补列，
+    // 必须先补列再建下方 idx_teacher_daily_updates_status，否则会因 column "status" does not exist 导致启动崩溃
+    "ALTER TABLE teacher_daily_updates ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'sent'",
+    "ALTER TABLE teacher_daily_updates ADD COLUMN IF NOT EXISTS recipient_ids TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE teacher_daily_updates ADD COLUMN IF NOT EXISTS record_date TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE teacher_daily_updates ADD COLUMN IF NOT EXISTS sent_at TEXT",
+    "ALTER TABLE teacher_daily_updates ADD COLUMN IF NOT EXISTS confirmed_at TEXT",
     "CREATE TABLE IF NOT EXISTS engagement_preferences (user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), UNIQUE(user_id, child_id))",
     "CREATE TABLE IF NOT EXISTS ai_report_cache (cache_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'ready', error TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
     "CREATE TABLE IF NOT EXISTS ai_vector_documents (id BIGSERIAL PRIMARY KEY, namespace TEXT NOT NULL DEFAULT 'teacher', doc_key TEXT UNIQUE NOT NULL, doc_type TEXT NOT NULL, ref_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', embedding TEXT NOT NULL DEFAULT '[]', embedding_model TEXT NOT NULL DEFAULT '', embedding_provider TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
@@ -263,6 +272,7 @@ function postgresSchema() {
     "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications(recipient_user_id, read_at, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_user_id, recipient_user_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_status ON teacher_daily_updates(status, record_date)",
     "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
   ].join(";\n") + ";";
 }
@@ -284,7 +294,7 @@ function sqliteSchema() {
     "CREATE TABLE IF NOT EXISTS parent_task_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, status TEXT NOT NULL DEFAULT 'pending', teacher_id INTEGER, teacher_comment TEXT NOT NULL DEFAULT '', task_id INTEGER, concern_category TEXT NOT NULL DEFAULT '', observed_behavior TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '', frequency TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '', parent_expectation TEXT NOT NULL DEFAULT '', family_constraints TEXT NOT NULL DEFAULT '', ai_plan TEXT NOT NULL DEFAULT '{}', ai_status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), reviewed_at TEXT)",
     "CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, recipient_user_id INTEGER NOT NULL, sender_user_id INTEGER, type TEXT NOT NULL DEFAULT 'announcement', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
     "CREATE TABLE IF NOT EXISTS direct_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id INTEGER NOT NULL, recipient_user_id INTEGER NOT NULL, content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
-    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), status TEXT NOT NULL DEFAULT 'sent', recipient_ids TEXT NOT NULL DEFAULT '[]', record_date TEXT NOT NULL DEFAULT '', sent_at TEXT, confirmed_at TEXT)",
     "CREATE TABLE IF NOT EXISTS engagement_preferences (user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), UNIQUE(user_id, child_id))",
     "CREATE TABLE IF NOT EXISTS ai_report_cache (cache_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'ready', error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
     "CREATE TABLE IF NOT EXISTS ai_vector_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT NOT NULL DEFAULT 'teacher', doc_key TEXT UNIQUE NOT NULL, doc_type TEXT NOT NULL, ref_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', embedding TEXT NOT NULL DEFAULT '[]', embedding_model TEXT NOT NULL DEFAULT '', embedding_provider TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
@@ -299,6 +309,8 @@ function sqliteSchema() {
     "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications(recipient_user_id, read_at, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_user_id, recipient_user_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
+    // status/record_date 索引不在此处创建：SQLite 的 ALTER TABLE 不支持 IF NOT EXISTS，
+    // 本机若存在旧结构的表，必须先由 migration 9 补列再建索引，否则建索引会因缺列失败导致启动崩溃。
     "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
   ].join(";\n") + ";";
 }
@@ -391,6 +403,21 @@ const MIGRATIONS = [
       "ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''"
     ],
     allowAlreadyApplied: true
+  },
+  {
+    /* 今日成长记录改为「先草稿校对、再推送家长」：
+     * status=draft 尚未推送，sent 教师确认后已推送，auto_sent 每日 18:00 自动推送
+     * recipient_ids 保存该条记录将推送给哪些家长（JSON 数组），供教师校对时编辑 */
+    version: 9,
+    statements: [
+      "ALTER TABLE teacher_daily_updates ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'",
+      "ALTER TABLE teacher_daily_updates ADD COLUMN recipient_ids TEXT NOT NULL DEFAULT '[]'",
+      "ALTER TABLE teacher_daily_updates ADD COLUMN record_date TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE teacher_daily_updates ADD COLUMN sent_at TEXT",
+      "ALTER TABLE teacher_daily_updates ADD COLUMN confirmed_at TEXT",
+      "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_status ON teacher_daily_updates(status, record_date)"
+    ],
+    allowAlreadyApplied: true
   }
 ];
 
@@ -402,8 +429,11 @@ async function applyMigrations(database) {
   for (const migration of MIGRATIONS) {
     if (applied.has(migration.version)) continue;
     await database.transaction(async function (tx) {
-      // Postgres 以 postgresSchema() 为准（均为幂等 DDL），跳过仅适用于 SQLite 的迁移语句
-      const statements = database.isPostgres && [1, 3, 4, 6, 7].includes(migration.version)
+      // Postgres 以 postgresSchema() 为准（均为幂等 DDL，含 ALTER TABLE ADD COLUMN IF NOT EXISTS 补列），
+      // 跳过仅适用于 SQLite 的迁移语句。
+      // 注意：Postgres 一条语句报错后整个事务即进入 aborted 状态，后续语句全部被忽略，
+      // 因此凡是在 postgresSchema() 里已用 IF NOT EXISTS 声明过的列，其迁移都必须整段跳过。
+      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9].includes(migration.version)
         ? []
         : migration.statements;
       for (const statement of statements) {

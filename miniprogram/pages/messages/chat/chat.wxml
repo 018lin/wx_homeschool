@@ -4,14 +4,18 @@
       <view class="chat-tip" wx:if="{{loading}}">加载中…</view>
       <view class="chat-empty" wx:if="{{!loading && !messages.length}}">还没有消息，发一句问候吧</view>
       <view class="msg {{item.mine ? 'msg--mine' : 'msg--theirs'}}" wx:for="{{messages}}" wx:key="id" id="msg-{{item.id}}">
-        <image class="msg__avatar msg__avatar--img" wx:if="{{!item.mine && hasPeerAvatar}}" src="{{peerAvatar}}" mode="aspectFill" />
-        <view class="msg__avatar" wx:elif="{{!item.mine}}">{{peerInitial}}</view>
+        <view class="msg__avatar" wx:if="{{!item.mine}}">
+          <image class="msg__avatar__img" wx:if="{{peerAvatarOk}}" src="{{peerAvatar}}" mode="aspectFill" binderror="onPeerAvatarError" />
+          <text wx:else>{{peerInitial}}</text>
+        </view>
         <view class="msg__col">
           <view class="msg__bubble">{{item.content}}</view>
           <view class="msg__time">{{item.timeText}}</view>
         </view>
-        <image class="msg__avatar msg__avatar--img msg__avatar--me" wx:if="{{item.mine && hasMyAvatar}}" src="{{myAvatar}}" mode="aspectFill" />
-        <view class="msg__avatar msg__avatar--me" wx:elif="{{item.mine}}">{{myInitial}}</view>
+        <view class="msg__avatar msg__avatar--me" wx:if="{{item.mine}}">
+          <image class="msg__avatar__img" wx:if="{{myAvatarOk}}" src="{{myAvatar}}" mode="aspectFill" binderror="onMyAvatarError" />
+          <text wx:else>{{myInitial}}</text>
+        </view>
       </view>
     </view>
   </scroll-view>

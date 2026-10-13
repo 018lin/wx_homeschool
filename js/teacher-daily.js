@@ -139,14 +139,28 @@
         return tag.trim();
       }).filter(Boolean);
       var status = item.ai_status === "ai" ? "AI 已整理" : "本地已整理";
-      var recipient = Number(item.recipient_count || 0);
+      var recipients = item.recipients || [];
+      /* 记录先进入待校对清单，确认无误（或到点自动发送）后才会真正通知家长 */
+      var recipientText;
+      if (item.status === "draft") {
+        recipientText = recipients.length
+          ? "待校对，将推送给：" + recipients.map(function (person) {
+              return person.name + (person.childNameText ? "（" + person.childNameText + "）" : "");
+            }).join("、")
+          : "待校对，尚未设置推送对象";
+      } else {
+        var recipient = Number(item.recipient_count || 0);
+        recipientText = recipient
+          ? "已通知 " + recipient + " 位家长" + (item.status === "auto_sent" ? "（自动发送）" : "")
+          : "暂未匹配家长";
+      }
       return '<article class="daily-entry">' +
         '<div class="entry-head"><h3 class="entry-title">' + esc(item.student_name || "学生") +
         '</h3><time class="entry-meta">' + esc(formatDate(item.created_at)) + '</time></div>' +
         '<p class="entry-summary">' + esc(item.summary || "") + '</p>' +
         (item.analysis ? '<div class="entry-analysis"><strong>教育观察</strong><br>' + esc(item.analysis) + '</div>' : "") +
         '<div class="entry-foot"><span class="entry-status">' + esc(status) + '</span>' +
-        '<span>' + (recipient ? "已通知 " + recipient + " 位家长" : "暂未匹配家长") + '</span>' +
+        '<span>' + esc(recipientText) + '</span>' +
         tags.map(function (tag) { return '<span class="entry-tag">' + esc(tag) + '</span>'; }).join("") +
         '</div></article>';
     }).join("");
@@ -155,6 +169,11 @@
   function loadTimeline() {
     return api("/api/teacher/daily-updates?limit=30").then(function (data) {
       renderTimeline(data.updates || []);
+      var draftCount = Number(data.draftCount || 0);
+      if (draftCount) {
+        setMessage("有 " + draftCount + " 条记录待校对，确认无误后才会通知家长；当天未确认将于 " +
+          (data.autoSendTime || "18:00") + " 自动发送。");
+      }
     }).catch(function () {
       timelineList.innerHTML = '<div class="timeline-empty">记录暂时无法加载，请刷新页面重试。</div>';
     });
@@ -175,7 +194,7 @@
       setRecordingUi(false);
     }
     analyzeButton.disabled = true;
-    setMessage("AI 正在整理，并同步通知家长…");
+    setMessage("AI 正在整理，并匹配要通知的家长…");
     api("/api/teacher/daily-updates", {
       method: "POST",
       body: { transcript: transcript },
@@ -185,7 +204,9 @@
       transcriptInput.value = "";
       state.finalTranscript = "";
       updateCharCount();
-      setMessage(count ? "已整理并通知 " + count + " 位家长。" : "已保存到时间线，暂未找到可通知的家长账号。");
+      setMessage(count
+        ? "已加入待校对清单，确认无误后将通知 " + count + " 位家长。"
+        : "已加入待校对清单，暂未找到可通知的家长账号。");
       return loadTimeline();
     }).catch(function (error) {
       setMessage(error && error.message ? error.message : "整理失败，请稍后重试。", true);

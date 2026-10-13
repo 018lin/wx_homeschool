@@ -1,0 +1,35 @@
+.ai-text {
+  font-size: 27rpx;
+  color: #374151;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.ov-insight {
+  font-size: 26rpx;
+  color: #536174;
+  line-height: 1.9;
+}
+
+.ov-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.ph {
+  color: #b6c0cd;
+}
+
+.field__textarea--sm {
+  min-height: 140rpx;
+}
+
+.ai-state { margin-bottom: 20rpx; padding: 18rpx 22rpx; border-radius: 14rpx; background: #edf5ff; color: #0057b8; }
+.ai-state.done { background: #e9f8f0; color: #157a45; }
+.ai-state.failed { background: #fff1f0; color: #b42318; }
+.ai-state.unconfigured { background: #f1f5f9; color: #536174; }
+.ai-state__title { font-size: 25rpx; font-weight: 650; }
+.ai-state__error, .ai-state__stale { margin-top: 8rpx; font-size: 22rpx; line-height: 1.55; }
+.notice-actions { display: flex; gap: 14rpx; margin-top: 14rpx; }
+.notice-actions .btn { flex: 1; }

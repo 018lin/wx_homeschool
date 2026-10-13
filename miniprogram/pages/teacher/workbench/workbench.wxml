@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="wb-head">
-    <view class="wb-head__title">教师工作台</view>
-    <view class="wb-head__sub" wx:if="{{weekStart}}">本周起始 {{weekStart}}</view>
-  </view>
-
   <!-- 主视觉：一句话记录学生活动 -->
   <view class="daily-feature" bindtap="goDaily">
     <view class="daily-feature__eyebrow">✦ 今日校园观察</view>

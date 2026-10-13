@@ -1,9 +1,4 @@
 <view class="page page-with-nav">
-  <view class="ov-head">
-    <view class="ov-head__title">班级概览</view>
-    <view class="ov-head__sub">本周完成情况与家庭结构画像</view>
-  </view>
-
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
   <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
 

@@ -2,6 +2,41 @@ var app = getApp();
 var request = require("../../../utils/api.js");
 var api = request.api;
 var util = require("../../../utils/util.js");
+var voiceInput = require("../../../utils/voice-input.js");
+
+/* 把接口返回的草稿/已发送记录映射成清单项 */
+function mapUpdate(item) {
+  var status = item.status === "draft" ? "draft" : "sent";
+  var recipients = (item.recipients || []).map(function (person) {
+    return {
+      userId: Number(person.userId),
+      name: person.name || "家长",
+      relation: person.relation || "家长",
+      childNames: person.childNames || [],
+      childNameText: person.childNameText || ""
+    };
+  });
+  return {
+    id: Number(item.id),
+    studentName: item.student_name || "全班",
+    summary: item.summary || "",
+    parentMessage: item.parent_message || item.summary || "",
+    tags: (item.tags || "").split(",").filter(Boolean),
+    recordDate: item.record_date || util.dateKey(new Date()),
+    isDraft: status === "draft",
+    isAutoSent: item.status === "auto_sent",
+    statusText: status === "draft"
+      ? "待校对"
+      : (item.status === "auto_sent" ? "已自动发送 " + (item.sent_at || "").slice(11, 16) : "已确认发送 " + (item.sent_at || "").slice(11, 16)),
+    timeText: util.fromNow(item.created_at),
+    recipients: recipients,
+    recipientCount: recipients.length || Number(item.recipient_count || 0),
+    recipientText: recipients.length
+      ? recipients.map(function (person) { return person.name + (person.childNameText ? "（" + person.childNameText + "）" : ""); }).join("、")
+      : "未设置推送对象",
+    aiStatus: item.ai_status === "ai" ? "AI 已整理" : "本地已整理"
+  };
+}
 
 Page({
   data: {
@@ -13,12 +48,20 @@ Page({
     recordSeconds: 0,
     transcribing: false,
     uploadProgress: 0,
-    publishing: false,
+    creating: false,
     voiceBackendState: "checking",
     statusTone: "idle",
     statusText: "正在检查语音服务…",
-    lastPublished: null,
-    recent: []
+    /* 待校对清单 */
+    drafts: [],
+    sentList: [],
+    autoSendTime: "18:00",
+    draftCount: 0,
+    confirming: false,
+    /* 编辑弹层 */
+    editing: null,
+    recipientOptions: [],
+    saving: false
   },
 
   onLoad: function () {
@@ -27,7 +70,7 @@ Page({
 
   onShow: function () {
     if (!app.isLogin()) return;
-    this.loadRecent();
+    this.loadList();
     this.checkVoiceBackend();
   },
 
@@ -36,41 +79,41 @@ Page({
   },
 
   onUnload: function () {
-    this.stopRecordingIfNeeded();
+    if (this.__voice) {
+      this.__voice.destroy();
+      this.__voice = null;
+    }
   },
 
   onPullDownRefresh: function () {
-    this.loadRecent(function () { wx.stopPullDownRefresh(); });
+    this.loadList(function () { wx.stopPullDownRefresh(); });
   },
 
-  loadRecent: function (done) {
+  onRetry: function () {
+    this.loadList();
+  },
+
+  /* ---------- 列表 ---------- */
+  loadList: function (done) {
     var self = this;
     this.setData({ loading: true, error: "" });
-    api.getDailyUpdates(5).then(function (res) {
+    api.getDailyUpdates(30).then(function (res) {
+      var items = ((res && res.updates) || []).map(mapUpdate);
       self.setData({
         loading: false,
-        recent: ((res && res.updates) || []).map(function (item) {
-          return {
-            id: item.id,
-            studentName: item.student_name || "全班",
-            summary: item.summary || "",
-            timeText: util.fromNow(item.created_at),
-            recipientCount: Number(item.recipient_count || 0),
-            aiStatus: item.ai_status === "ai" ? "AI 已整理" : "本地已整理"
-          };
-        })
+        drafts: items.filter(function (item) { return item.isDraft; }),
+        sentList: items.filter(function (item) { return !item.isDraft; }).slice(0, 10),
+        autoSendTime: (res && res.autoSendTime) || "18:00",
+        draftCount: Number((res && res.draftCount) || 0)
       });
       if (done) done();
     }).catch(function (error) {
-      self.setData({ loading: false, error: (error && error.message) || "校园观察记录加载失败" });
+      self.setData({ loading: false, error: (error && error.message) || "成长记录加载失败" });
       if (done) done();
     });
   },
 
-  onRetry: function () {
-    this.loadRecent();
-  },
-
+  /* ---------- 录入（语音 / 文字） ---------- */
   checkVoiceBackend: function () {
     var self = this;
     this.setData({ voiceBackendState: "checking", statusTone: "processing", statusText: "正在检查语音服务…" });
@@ -82,7 +125,7 @@ Page({
       self.setData({
         voiceBackendState: "unconfigured",
         statusTone: "error",
-        statusText: "语音上传暂不可用：服务端尚未配置对象存储，可直接输入文字发布"
+        statusText: "语音上传暂不可用：服务端尚未配置语音转写，可直接输入文字"
       });
     }).catch(function (error) {
       var isOutdated = error && (error.status === 404 || String(error.message || "").indexOf("接口不存在") >= 0);
@@ -90,7 +133,7 @@ Page({
         voiceBackendState: isOutdated ? "outdated" : "unknown",
         statusTone: isOutdated ? "error" : "idle",
         statusText: isOutdated
-          ? "线上后端版本未更新，语音接口尚未部署；当前可直接输入文字发布"
+          ? "线上后端版本未更新，语音接口尚未部署；当前可直接输入文字"
           : "暂时无法检查语音服务，可重试录音或直接输入文字"
       });
     });
@@ -103,199 +146,286 @@ Page({
 
   setupRecorder: function () {
     var self = this;
-    if (!wx.getRecorderManager) {
-      this.setData({ statusTone: "error", statusText: "当前微信基础库不支持录音，请直接输入文字" });
-      return;
-    }
-    this.__recorder = wx.getRecorderManager();
-    this.__recorder.onStart(function () {
-      self.setData({ recording: true, statusTone: "recording", statusText: "正在录音，说完后点击停止" });
-      self.startRecordTimer();
-    });
-    this.__recorder.onStop(function (result) {
-      self.stopRecordTimer();
-      self.setData({ recording: false });
-      if (!result || !result.tempFilePath) {
-        self.setData({ statusTone: "error", statusText: "录音文件生成失败，请直接输入文字" });
-        return;
+    this.__voice = voiceInput.createVoiceInput({
+      mode: "tap",
+      maxDuration: 60000,
+      isBusy: function () { return self.data.creating; },
+      onTick: function (seconds) { self.setData({ recordSeconds: seconds, uploadProgress: 0 }); },
+      onText: function (text) { self.appendVoiceText(text); },
+      onState: function (state, payload) {
+        if (state === "recording") {
+          self.setData({ recording: true, statusTone: "recording", statusText: "正在录音，说完后点击停止" });
+        } else if (state === "transcribing") {
+          self.setData({ recording: false, transcribing: true, uploadProgress: 10, statusTone: "processing", statusText: "正在上传并转写…" });
+        } else if (state === "success") {
+          self.setData({
+            transcribing: false,
+            uploadProgress: 100,
+            statusTone: "success",
+            statusText: "转写完成，可修改文字后加入待校对清单"
+          });
+        } else if (state === "error") {
+          var outdated = payload && String(payload.message || "").indexOf("尚未部署") >= 0;
+          self.setData({
+            transcribing: false,
+            statusTone: "error",
+            voiceBackendState: outdated ? "outdated" : self.data.voiceBackendState,
+            statusText: (payload && payload.message) || "录音转写失败，请直接输入文字"
+          });
+        } else if (state === "idle") {
+          self.setData({ transcribing: false });
+          if (payload && payload.message) self.setData({ statusTone: "idle", statusText: payload.message });
+        } else if (state === "checking") {
+          self.setData({ statusTone: "processing", statusText: "正在检查语音服务…" });
+        }
+      },
+      scopeGuard: function (backendState) {
+        wx.showModal({
+          title: backendState === "outdated" ? "线上后端尚未更新" : "语音转写暂不可用",
+          content: backendState === "outdated"
+            ? "当前 Render 服务缺少附件上传和语音转写接口，暂时可以直接输入文字。"
+            : "服务端需要配置语音转写密钥后才能上传录音，暂时可以直接输入文字。",
+          showCancel: false
+        });
       }
-      self.uploadAndTranscribe(result.tempFilePath);
     });
-    this.__recorder.onError(function (error) {
-      self.stopRecordTimer();
-      self.setData({
-        recording: false,
-        transcribing: false,
-        statusTone: "error",
-        statusText: (error && error.errMsg) || "录音失败，请检查麦克风权限"
-      });
-    });
+    this.__voice.setup();
+  },
+
+  appendVoiceText: function (text) {
+    var value = String(text || "").trim();
+    if (!value) return;
+    var current = String(this.data.transcript || "").replace(/\s+$/, "");
+    var transcript = current ? current + "\n" + value : value;
+    this.setData({ transcript: transcript, charCount: transcript.length, recordSeconds: 0 });
   },
 
   startRecording: function () {
-    var self = this;
-    if (!this.__recorder || this.data.transcribing || this.data.publishing) return;
-    if (this.data.voiceBackendState === "checking") {
-      wx.showToast({ title: "正在检查语音服务，请稍候", icon: "none" });
-      return;
-    }
-    if (this.data.voiceBackendState === "outdated") {
-      wx.showModal({
-        title: "线上后端尚未更新",
-        content: "当前 Render 服务缺少附件上传和语音转写接口。请先部署最新版 server.js；暂时可以直接输入文字并发布。",
-        showCancel: false
-      });
-      return;
-    }
-    if (this.data.voiceBackendState === "unconfigured") {
-      wx.showModal({
-        title: "语音上传尚未配置",
-        content: "服务端需要配置对象存储后才能上传录音；暂时可以直接输入文字并发布。",
-        showCancel: false
-      });
-      return;
-    }
-    wx.getSetting({
-      success: function (setting) {
-        function start() {
-          self.setData({ recordSeconds: 0, statusTone: "recording", statusText: "正在启动麦克风…" });
-          self.__recorder.start({
-            duration: 60000,
-            format: "mp3",
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            encodeBitRate: 48000
-          });
-        }
-        if (setting.authSetting["scope.record"] === false) {
-          wx.showModal({
-            title: "需要麦克风权限",
-            content: "请在小程序设置中开启麦克风权限；也可以直接输入文字记录。",
-            confirmText: "去设置",
-            success: function (result) {
-              if (!result.confirm) return;
-              wx.openSetting({
-                success: function (opened) {
-                  if (opened.authSetting["scope.record"]) start();
-                  else self.setData({ statusTone: "error", statusText: "麦克风权限未开启，请直接输入文字" });
-                }
-              });
-            }
-          });
-        } else if (setting.authSetting["scope.record"] === true) {
-          start();
-        } else {
-          wx.authorize({
-            scope: "scope.record",
-            success: start,
-            fail: function () {
-              self.setData({ statusTone: "error", statusText: "未获得麦克风权限，请直接输入文字" });
-            }
-          });
-        }
-      },
-      fail: function () {
-        self.setData({ statusTone: "error", statusText: "无法检查麦克风权限，请直接输入文字" });
-      }
-    });
+    if (this.__voice) this.__voice.start();
   },
 
   stopRecording: function () {
-    if (this.__recorder && this.data.recording) {
-      this.setData({ statusText: "录音结束，正在生成文件…" });
-      this.__recorder.stop();
-    }
+    if (this.__voice) this.__voice.stop();
   },
 
   stopRecordingIfNeeded: function () {
-    if (this.__recorder && this.data.recording) this.__recorder.stop();
-    this.stopRecordTimer();
+    if (this.__voice) this.__voice.release();
   },
 
-  startRecordTimer: function () {
-    var self = this;
-    this.stopRecordTimer();
-    this.__recordTimer = setInterval(function () {
-      self.setData({ recordSeconds: self.data.recordSeconds + 1 });
-    }, 1000);
-  },
-
-  stopRecordTimer: function () {
-    if (this.__recordTimer) clearInterval(this.__recordTimer);
-    this.__recordTimer = null;
-  },
-
-  uploadAndTranscribe: function (filePath) {
-    var self = this;
-    this.setData({ transcribing: true, uploadProgress: 0, statusTone: "processing", statusText: "正在上传录音…" });
-    api.uploadAttachment(filePath, {
-      name: "teacher-observation-" + Date.now() + ".mp3",
-      purpose: "transcription",
-      onProgress: function (progress) {
-        self.setData({ uploadProgress: progress, statusText: "正在上传录音 " + progress + "%" });
-      }
-    }).then(function (attachment) {
-      self.setData({ statusText: "录音已上传，正在转成文字…" });
-      return api.transcribeAudio(attachment);
-    }).then(function (result) {
-      var oldText = (self.data.transcript || "").trim();
-      var transcript = oldText ? oldText + "\n" + result.text : result.text;
-      self.setData({
-        transcript: transcript,
-        charCount: transcript.length,
-        transcribing: false,
-        statusTone: "success",
-        statusText: "转写完成，可修改文字后整理发布"
-      });
-    }).catch(function (error) {
-      var isMissingApi = error && (error.status === 404 || String(error.message || "").indexOf("接口不存在") >= 0 || String(error.message || "").indexOf("尚未部署") >= 0);
-      self.setData({
-        transcribing: false,
-        statusTone: "error",
-        voiceBackendState: isMissingApi ? "outdated" : self.data.voiceBackendState,
-        statusText: isMissingApi ? "线上后端版本未更新，语音接口尚未部署" : ((error && error.message) || "录音转写失败，请直接输入文字")
-      });
-      wx.showModal({
-        title: isMissingApi ? "线上后端尚未更新" : "语音转写未完成",
-        content: isMissingApi
-          ? "请部署包含 /api/uploads 和 /api/teacher/transcribe 的最新版后端。当前可直接输入文字发布。"
-          : ((error && error.message) || "请直接输入文字作为降级方案"),
-        showCancel: false
-      });
-    });
-  },
-
-  onPublish: function () {
+  /* ---------- 新建记录 → 进入待校对清单（不直接发送） ---------- */
+  onCreate: function () {
     var self = this;
     var transcript = (this.data.transcript || "").trim();
     if (!transcript) {
       wx.showToast({ title: "请先录音或输入校园观察", icon: "none" });
       return;
     }
-    if (this.data.recording || this.data.transcribing || this.data.publishing) return;
-    this.setData({ publishing: true, statusTone: "processing", statusText: "AI 正在整理并匹配家长…" });
-    api.createDailyUpdate(transcript).then(function (res) {
-      var update = (res && res.update) || {};
-      var recipientCount = Number(res && res.recipientCount || 0);
+    if (this.data.recording || this.data.transcribing || this.data.creating) return;
+    this.setData({ creating: true, statusTone: "processing", statusText: "AI 正在整理，并匹配要通知的家长…" });
+    api.createDailyUpdate({ transcript: transcript }).then(function (res) {
+      var draft = mapUpdate(((res && res.update) || {}));
       self.setData({
-        publishing: false,
+        creating: false,
         transcript: "",
         charCount: 0,
         statusTone: "success",
-        statusText: recipientCount ? "已整理，并写入 " + recipientCount + " 位家长的通知中心" : "已保存观察记录，暂未匹配到可通知的家长",
-        lastPublished: {
-          studentName: update.student_name || "全班",
-          summary: update.summary || transcript,
-          recipientCount: recipientCount
-        }
+        statusText: draft.recipientCount
+          ? "已加入待校对清单，将推送给：" + draft.recipientText
+          : "已加入待校对清单，但未匹配到家长，请点击「校对推送对象」指定"
       });
-      self.loadRecent();
+      self.loadList();
+      if (draft.recipientCount) {
+        setTimeout(function () {
+          wx.showToast({ title: "已加入待校对清单", icon: "none" });
+        }, 400);
+      }
     }).catch(function (error) {
       self.setData({
-        publishing: false,
+        creating: false,
         statusTone: "error",
-        statusText: (error && error.message) || "整理发布失败，请稍后重试"
+        statusText: (error && error.message) || "整理失败，请稍后重试"
       });
+    });
+  },
+
+  /* ---------- 校对：编辑推送对象与文案 ---------- */
+  onEditDraft: function (e) {
+    var id = Number(e.currentTarget.dataset.id);
+    var target = null;
+    for (var i = 0; i < this.data.drafts.length; i++) {
+      if (this.data.drafts[i].id === id) target = this.data.drafts[i];
+    }
+    if (!target) return;
+    var self = this;
+    var selected = target.recipients.map(function (person) { return person.userId; });
+    this.setData({
+      editing: {
+        id: target.id,
+        studentName: target.studentName,
+        summary: target.summary,
+        parentMessage: target.parentMessage,
+        selected: selected,
+        selectedCount: selected.length
+      },
+      recipientOptions: [],
+      saving: false
+    });
+    api.getDailyUpdateRecipients().then(function (res) {
+      var options = ((res && res.options) || []).map(function (item) {
+        var userId = Number(item.userId);
+        return {
+          userId: userId,
+          name: item.name || "家长",
+          relation: item.relation || "家长",
+          childId: Number(item.childId),
+          childName: item.childName || "学生",
+          checked: selected.indexOf(userId) >= 0
+        };
+      });
+      /* 同一家长可能绑定多个孩子，这里按家长去重，避免重复勾选 */
+      var seen = {};
+      var unique = [];
+      options.forEach(function (item) {
+        if (seen[item.userId]) return;
+        seen[item.userId] = true;
+        unique.push(item);
+      });
+      self.setData({ recipientOptions: unique });
+    }).catch(function () {
+      self.setData({ recipientOptions: [] });
+    });
+  },
+
+  onEditCancel: function () {
+    this.setData({ editing: null, recipientOptions: [], saving: false });
+  },
+
+  onToggleRecipient: function (e) {
+    var userId = Number(e.currentTarget.dataset.id);
+    var editing = this.data.editing;
+    if (!editing) return;
+    var selected = (editing.selected || []).slice();
+    var index = selected.indexOf(userId);
+    if (index >= 0) selected.splice(index, 1);
+    else selected.push(userId);
+    this.setData({
+      "editing.selected": selected,
+      "editing.selectedCount": selected.length,
+      recipientOptions: this.data.recipientOptions.map(function (option) {
+        return Object.assign({}, option, { checked: selected.indexOf(option.userId) >= 0 });
+      })
+    });
+  },
+
+  onEditMessageInput: function (e) {
+    this.setData({ "editing.parentMessage": e.detail.value || "" });
+  },
+
+  onEditSummaryInput: function (e) {
+    this.setData({ "editing.summary": e.detail.value || "" });
+  },
+
+  onEditSave: function () {
+    var self = this;
+    var editing = this.data.editing;
+    if (!editing || this.data.saving) return;
+    var parentMessage = String(editing.parentMessage || "").trim();
+    var summary = String(editing.summary || "").trim();
+    if (!parentMessage) {
+      wx.showToast({ title: "请填写发送给家长的内容", icon: "none" });
+      return;
+    }
+    if (!summary) {
+      wx.showToast({ title: "请填写记录摘要", icon: "none" });
+      return;
+    }
+    this.setData({ saving: true });
+    api.updateDailyUpdate(editing.id, {
+      summary: summary,
+      parentMessage: parentMessage,
+      recipientIds: editing.selected || []
+    }).then(function (res) {
+      self.setData({ editing: null, recipientOptions: [], saving: false, statusTone: "success", statusText: "校对内容已保存" });
+      var updated = mapUpdate(((res && res.update) || {}));
+      var drafts = self.data.drafts.map(function (item) {
+        return item.id === updated.id ? updated : item;
+      });
+      self.setData({ drafts: drafts, draftCount: drafts.length });
+    }).catch(function (error) {
+      self.setData({ saving: false });
+      wx.showToast({ title: (error && error.message) || "保存失败，请重试", icon: "none", duration: 2500 });
+    });
+  },
+
+  /* ---------- 确认无误后发送 ---------- */
+  onConfirmOne: function (e) {
+    var id = Number(e.currentTarget.dataset.id);
+    this.confirmDrafts([id], "确认这条记录无误并发送给家长？");
+  },
+
+  /* 阻止弹层内部点击冒泡到遮罩 */
+  noop: function () {},
+
+  onConfirmAll: function () {
+    var self = this;
+    var ids = this.data.drafts.map(function (item) { return item.id; });
+    if (!ids.length) {
+      wx.showToast({ title: "没有待校对的记录", icon: "none" });
+      return;
+    }
+    this.confirmDrafts(ids, "确认今天 " + ids.length + " 条记录均无误，发送给对应家长？");
+  },
+
+  confirmDrafts: function (ids, content) {
+    var self = this;
+    wx.showModal({
+      title: "确认无误",
+      content: content,
+      confirmText: "确认发送",
+      success: function (result) {
+        if (!result.confirm) return;
+        self.setData({ confirming: true, statusTone: "processing", statusText: "正在发送给家长…" });
+        api.confirmDailyUpdates({ ids: ids }).then(function (res) {
+          var sent = ((res && res.sent) || []).length;
+          var count = Number((res && res.recipientCount) || 0);
+          self.setData({
+            confirming: false,
+            statusTone: "success",
+            statusText: sent
+              ? "已确认无误，发送给 " + count + " 位家长"
+              : "发送失败：所选记录没有推送对象，请先校对推送对象"
+          });
+          if (!sent) {
+            wx.showToast({ title: "请先设置推送对象", icon: "none", duration: 2500 });
+          }
+          self.loadList();
+        }).catch(function (error) {
+          self.setData({
+            confirming: false,
+            statusTone: "error",
+            statusText: (error && error.message) || "发送失败，请稍后重试"
+          });
+        });
+      }
+    });
+  },
+
+  onDeleteDraft: function (e) {
+    var self = this;
+    var id = Number(e.currentTarget.dataset.id);
+    wx.showModal({
+      title: "删除记录",
+      content: "删除后这条待校对记录将不再推送，确定继续吗？",
+      confirmText: "删除",
+      success: function (result) {
+        if (!result.confirm) return;
+        api.deleteDailyUpdate(id).then(function () {
+          var drafts = self.data.drafts.filter(function (item) { return item.id !== id; });
+          self.setData({ drafts: drafts, draftCount: drafts.length, statusTone: "idle", statusText: "已删除该记录" });
+        }).catch(function (error) {
+          wx.showToast({ title: (error && error.message) || "删除失败", icon: "none" });
+        });
+      }
     });
   }
 });
