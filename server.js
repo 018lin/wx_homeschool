@@ -23,6 +23,8 @@ const configuredPort = process.env.PORT == null || process.env.PORT === ""
   : Number(process.env.PORT);
 const PORT = Number.isFinite(configuredPort) ? configuredPort : 3123;
 const ROOT = __dirname;
+/* 头像以 data URL 存库，限制在约 400KB 以内，避免登录/资料接口返回体过大 */
+const MAX_AVATAR_URL_LENGTH = 550000;
 
 function loadLocalEnv(root) {
   [".env.local", ".env"].forEach(function (name) {
@@ -234,9 +236,18 @@ async function getAuthUser(req) {
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return null;
   const row = await db.prepare(
-    "SELECT u.id, u.account, u.display_name, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
+    "SELECT u.id, u.account, u.display_name, u.role, u.avatar_url FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
   ).get(token);
   return row || null;
+}
+function publicUser(user) {
+  return {
+    id: user.id,
+    account: user.account,
+    displayName: user.display_name,
+    role: user.role,
+    avatarUrl: user.avatar_url || ""
+  };
 }
 async function createSession(userId) {
   const token = crypto.randomBytes(24).toString("hex");
@@ -2519,7 +2530,7 @@ async function handleApi(req, res, pathname, query) {
     await logParentLoginEvents(user);
     return sendJson(res, 200, {
       token,
-      user: { account: user.account, displayName: user.display_name, role: user.role }
+      user: publicUser(user)
     });
   }
 
@@ -2582,6 +2593,27 @@ async function handleApi(req, res, pathname, query) {
     const token = req.headers["authorization"].slice(7);
     await db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
     return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 当前账号资料（含自定义头像） ---- */
+  if (req.method === "GET" && pathname === "/api/me") {
+    const fresh = await db.prepare("SELECT id, account, display_name, role, avatar_url FROM users WHERE id = ?").get(user.id);
+    if (!fresh) return sendJson(res, 404, { message: "账号不存在" });
+    return sendJson(res, 200, { user: publicUser(fresh) });
+  }
+
+  /* ---- 更新自定义头像：url 为空表示恢复默认角色头像 ---- */
+  if ((req.method === "PUT" || req.method === "POST") && pathname === "/api/me/avatar") {
+    const body = await readBody(req);
+    const url = String(body.url || "").trim();
+    if (url && !/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(url) && !/^https:\/\/[^\s]+$/i.test(url)) {
+      return sendJson(res, 400, { message: "头像格式不正确，仅支持 JPG / PNG / WebP" });
+    }
+    if (url.length > MAX_AVATAR_URL_LENGTH) {
+      return sendJson(res, 413, { message: "头像图片过大，请重新选择更小的图片", errorCode: "AVATAR_TOO_LARGE" });
+    }
+    await db.prepare("UPDATE users SET avatar_url = ? WHERE id = ?").run(url, user.id);
+    return sendJson(res, 200, { user: Object.assign(publicUser(user), { avatarUrl: url }) });
   }
 
   /* ---- 信息交流：所有登录角色均可一对一收发站内私信 ---- */
@@ -2926,11 +2958,11 @@ async function handleApi(req, res, pathname, query) {
     }
   }
 
-  /* ---- 管理员班级管理：创建班级并绑定教师/学生/家长 ---- */
-  if (pathname === "/api/admin/classes") {
+  /* ---- 管理员班级管理：创建班级并绑定教师/学生/家长，支持编辑更新 ---- */
+  if (pathname === "/api/admin/classes" || /^\/api\/admin\/classes\/\d+$/.test(pathname)) {
     if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
 
-    if (req.method === "GET") {
+    if (req.method === "GET" && pathname === "/api/admin/classes") {
       const classRows = await db.prepare(
         "SELECT id, name, grade, head_teacher_id, created_at FROM classes ORDER BY id DESC"
       ).all();
@@ -3023,7 +3055,7 @@ async function handleApi(req, res, pathname, query) {
       });
     }
 
-    if (req.method === "POST") {
+    if (req.method === "POST" && pathname === "/api/admin/classes") {
       const body = await readBody(req);
       const name = String(body.name || "").trim();
       const grade = String(body.grade || "").trim();
@@ -3076,6 +3108,78 @@ async function handleApi(req, res, pathname, query) {
         return classId;
       });
       return sendJson(res, 201, { ok: true, id: Number(created) });
+    }
+
+    /* ---- 编辑班级：更新基本信息，并按前端提交的名单增删成员 ---- */
+    const classId = Number(pathname.split("/").pop());
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      const existing = await db.prepare(
+        "SELECT id, name, grade, head_teacher_id FROM classes WHERE id = ?"
+      ).get(classId);
+      if (!existing) return sendJson(res, 404, { message: "班级不存在" });
+
+      const name = String(body.name || "").trim();
+      const grade = String(body.grade || "").trim();
+      const headTeacherId = body.headTeacherId ? Number(body.headTeacherId) : null;
+      const teacherIds = normalizeIdList(body.teacherIds);
+      const studentIds = normalizeIdList(body.studentIds);
+      const parentIds = normalizeIdList(body.parentIds);
+      if (!name) return sendJson(res, 400, { message: "请填写班级名称" });
+      if (!headTeacherId) return sendJson(res, 400, { message: "请选择负责教师" });
+      const headTeacher = await db.prepare("SELECT id, role FROM users WHERE id = ?").get(headTeacherId);
+      if (!headTeacher || headTeacher.role !== "teacher") return sendJson(res, 400, { message: "负责教师账号不存在" });
+      if (teacherIds.indexOf(headTeacherId) < 0) teacherIds.push(headTeacherId);
+
+      await db.transaction(async function (tx) {
+        await tx.prepare(
+          "UPDATE classes SET name = ?, grade = ?, head_teacher_id = ? WHERE id = ?"
+        ).run(name, grade, headTeacherId, classId);
+
+        // 目标成员名单：教师 / 学生 / 家长（所选学生绑定的家长自动纳入）
+        const desired = {};
+        function mark(uid, role) {
+          const n = Number(uid);
+          if (!Number.isFinite(n) || n <= 0 || desired[n]) return;
+          desired[n] = role;
+        }
+        teacherIds.forEach(function (id) { mark(id, "teacher"); });
+        studentIds.forEach(function (id) { mark(id, "student"); });
+        parentIds.forEach(function (id) { mark(id, "parent"); });
+        for (const raw of studentIds) {
+          const studentUid = Number(raw);
+          if (!Number.isFinite(studentUid)) continue;
+          const child = await tx.prepare("SELECT id FROM children WHERE user_id = ?").get(studentUid);
+          if (!child) continue;
+          const rows = await tx.prepare("SELECT DISTINCT user_id FROM bindings WHERE child_id = ?").all(child.id);
+          for (const row of rows) mark(row.user_id, "parent");
+        }
+
+        // 与现有成员比对：移除不在名单中的成员，补入新增成员
+        const currentRows = await tx.prepare(
+          "SELECT user_id, role FROM class_members WHERE class_id = ?"
+        ).all(classId);
+        const current = {};
+        currentRows.forEach(function (row) { current[Number(row.user_id)] = row.role; });
+
+        for (const key of Object.keys(current)) {
+          const uid = Number(key);
+          if (!desired[uid]) {
+            await tx.prepare("DELETE FROM class_members WHERE class_id = ? AND user_id = ?").run(classId, uid);
+          }
+        }
+        for (const key of Object.keys(desired)) {
+          const uid = Number(key);
+          const role = desired[uid];
+          if (current[uid] === role) continue;
+          const target = await tx.prepare("SELECT id, role FROM users WHERE id = ?").get(uid);
+          if (!target || target.role !== role) continue;
+          await tx.prepare(
+            "INSERT OR IGNORE INTO class_members (class_id, user_id, role) VALUES (?,?,?)"
+          ).run(classId, uid, role);
+        }
+      });
+      return sendJson(res, 200, { ok: true, id: classId });
     }
   }
 
