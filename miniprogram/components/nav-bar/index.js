@@ -10,6 +10,7 @@ var TABS = {
   ],
   student: [
     { key: "home", label: "我的任务", url: "/pages/student/home/home" },
+    { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],
   teacher: [
@@ -22,7 +23,6 @@ var TABS = {
   ],
   admin: [
     { key: "overview", label: "概览", url: "/pages/admin/overview/overview" },
-    { key: "accounts", label: "账号", url: "/pages/admin/accounts/accounts" },
     { key: "tasks", label: "任务", url: "/pages/admin/tasks/tasks" },
     { key: "timeline", label: "时间线", url: "/pages/admin/timeline/timeline" },
     { key: "ai", label: "AI 洞察", url: "/pages/teacher/ai/ai" },

@@ -3,11 +3,24 @@ var request = require("../../../utils/api.js");
 var api = request.api;
 var util = require("../../../utils/util.js");
 
+function emptyClassForm() {
+  return { id: null, name: "", grade: "", headTeacherId: null };
+}
+
 Page({
   data: {
     loading: true,
     stats: null,
-    generatedAt: ""
+    generatedAt: "",
+    // 已有班级列表与详情/编辑弹窗
+    classes: [],
+    classesLoading: true,
+    teacherOptions: [],
+    classModalVisible: false,
+    activeClass: null,
+    classEditMode: false,
+    classForm: emptyClassForm(),
+    classSubmitting: false
   },
 
   onShow: function () {
@@ -51,6 +64,36 @@ Page({
         self.setData({ loading: false });
         if (done) done();
       });
+    this.loadClasses();
+  },
+
+  /** 加载已有班级（含教师账号，供弹窗内编辑负责教师） */
+  loadClasses: function () {
+    var self = this;
+    this.setData({ classesLoading: true });
+    api
+      .getAdminClasses()
+      .then(function (res) {
+        var classes = (res && res.classes) || [];
+        var teachers = (res && res.accounts && res.accounts.teachers) || [];
+        var patch = {
+          classesLoading: false,
+          classes: classes,
+          teacherOptions: teachers
+        };
+        // 弹窗处于打开状态时，同步最新数据，保证编辑后详情即时刷新
+        var active = self.data.activeClass;
+        if (active) {
+          var latest = classes.filter(function (c) {
+            return c.id === active.id;
+          })[0];
+          if (latest) patch.activeClass = latest;
+        }
+        self.setData(patch);
+      })
+      .catch(function () {
+        self.setData({ classesLoading: false });
+      });
   },
 
   goAccounts: function () {
@@ -58,5 +101,105 @@ Page({
   },
   goClasses: function () {
     wx.navigateTo({ url: "/pages/admin/classes/classes" });
+  },
+
+  /* ---------- 班级详情弹窗 ---------- */
+  openClassModal: function (e) {
+    var id = Number(e.currentTarget.dataset.id);
+    var item = (this.data.classes || []).filter(function (c) {
+      return c.id === id;
+    })[0];
+    if (!item) return;
+    this.setData({
+      classModalVisible: true,
+      activeClass: item,
+      classEditMode: false,
+      classForm: emptyClassForm()
+    });
+  },
+
+  closeClassModal: function () {
+    this.setData({
+      classModalVisible: false,
+      activeClass: null,
+      classEditMode: false,
+      classForm: emptyClassForm(),
+      classSubmitting: false
+    });
+  },
+
+  /** 阻止弹窗内点击/滚动冒泡（空实现） */
+  noop: function () {},
+
+  openClassEdit: function () {
+    var c = this.data.activeClass;
+    if (!c) return;
+    this.setData({
+      classEditMode: true,
+      classForm: {
+        id: c.id,
+        name: c.name || "",
+        grade: c.grade || "",
+        headTeacherId: c.headTeacherId || null
+      }
+    });
+  },
+
+  cancelClassEdit: function () {
+    this.setData({ classEditMode: false, classForm: emptyClassForm() });
+  },
+
+  onClassFormInput: function (e) {
+    var patch = {};
+    patch["classForm." + e.currentTarget.dataset.key] = e.detail.value;
+    this.setData(patch);
+  },
+
+  pickClassHeadTeacher: function (e) {
+    this.setData({ "classForm.headTeacherId": Number(e.currentTarget.dataset.id) });
+  },
+
+  submitClassEdit: function () {
+    var self = this;
+    var form = this.data.classForm;
+    var cls = this.data.activeClass;
+    if (!cls) return;
+    if (!String(form.name || "").trim()) {
+      wx.showToast({ title: "请填写班级名称", icon: "none" });
+      return;
+    }
+    if (!form.headTeacherId) {
+      wx.showToast({ title: "请选择负责教师", icon: "none" });
+      return;
+    }
+    // 保留现有成员名单，仅更新基本信息与负责教师
+    var teacherIds = (cls.teachers || []).map(function (t) {
+      return t.id;
+    });
+    if (teacherIds.indexOf(form.headTeacherId) < 0) teacherIds.push(form.headTeacherId);
+    var payload = {
+      name: String(form.name).trim(),
+      grade: String(form.grade || "").trim(),
+      headTeacherId: form.headTeacherId,
+      teacherIds: teacherIds,
+      studentIds: (cls.students || []).map(function (s) {
+        return s.id;
+      }),
+      parentIds: (cls.parents || []).map(function (p) {
+        return p.id;
+      })
+    };
+    this.setData({ classSubmitting: true });
+    api
+      .updateClass(form.id, payload)
+      .then(function () {
+        self.setData({ classSubmitting: false, classEditMode: false });
+        wx.showToast({ title: "已保存修改", icon: "success" });
+        // 重新加载班级列表，同步列表与弹窗内的详情
+        self.loadClasses();
+      })
+      .catch(function () {
+        self.setData({ classSubmitting: false });
+      });
   }
 });

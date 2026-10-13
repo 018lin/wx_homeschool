@@ -32,10 +32,152 @@
       <view class="text-sm text-muted">
         创建班级并绑定教师、学生与家长。教师仅能管理自己所在的班级，学生与家长的提交会归入该班级的负责教师。
       </view>
-      <button class="btn btn-primary btn-block mt-24" bindtap="goClasses">创建班级</button>
+      <button class="btn btn-primary btn-block mt-24" bindtap="goClasses">班级管理</button>
+    </view>
+
+    <!-- 已有班级列表：点击班级查看详情，弹窗内可编辑班级信息 -->
+    <view class="card">
+      <view class="card-title">
+        <text class="card-title__text">已有班级</text>
+        <text class="card-title__more" wx:if="{{classes.length}}">共 {{classes.length}} 个</text>
+      </view>
+
+      <view class="loading-wrap cl-list__loading" wx:if="{{classesLoading}}">加载中…</view>
+
+      <block wx:elif="{{classes.length}}">
+        <view class="cl-item" wx:for="{{classes}}" wx:key="id" data-id="{{item.id}}" bindtap="openClassModal">
+          <view class="flex-1">
+            <view class="cl-item__name">{{item.name}}</view>
+            <view class="text-sm text-muted mt-8">
+              {{item.grade || '未填年级'}} · 负责教师 {{item.headTeacherName || '未指定'}}
+            </view>
+            <view class="cl-counts mt-8">
+              <text class="badge badge-primary">教师 {{item.teacherCount}}</text>
+              <text class="badge badge-teal">学生 {{item.studentCount}}</text>
+              <text class="badge badge-gray">家长 {{item.parentCount}}</text>
+            </view>
+          </view>
+          <view class="cl-item__arrow">›</view>
+        </view>
+      </block>
+
+      <view class="empty cl-list__empty" wx:else>
+        <view class="empty__text">还没有班级</view>
+        <view class="empty__hint">点击上方「创建班级」，从已有教师、学生、家长账号中组建班级</view>
+      </view>
     </view>
 
   </block>
+</view>
+
+<!-- 班级详情 / 编辑弹窗 -->
+<view class="modal-mask" wx:if="{{classModalVisible}}" catchtap="closeClassModal" catchtouchmove="noop">
+  <view class="modal-sheet" catchtap="noop">
+    <view class="modal-head">
+      <text class="modal-head__title">{{classEditMode ? '编辑班级' : '班级详情'}}</text>
+      <text class="modal-head__close" bindtap="closeClassModal">{{classEditMode ? '取消' : '关闭'}}</text>
+    </view>
+
+    <scroll-view scroll-y class="modal-body">
+      <!-- 班级详细资料 -->
+      <block wx:if="{{!classEditMode && activeClass}}">
+        <view class="cl-modal__name">{{activeClass.name}}</view>
+        <view class="cl-modal__counts">
+          <text class="badge badge-primary">教师 {{activeClass.teacherCount}}</text>
+          <text class="badge badge-teal">学生 {{activeClass.studentCount}}</text>
+          <text class="badge badge-gray">家长 {{activeClass.parentCount}}</text>
+        </view>
+
+        <view class="cd-row">
+          <view class="cd-row__label">年级</view>
+          <view class="cd-row__body">{{activeClass.grade || '未填'}}</view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">负责教师</view>
+          <view class="cd-row__body">{{activeClass.headTeacherName || '未指定'}}</view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">任课教师</view>
+          <view class="cd-row__body">
+            <block wx:if="{{activeClass.teachers.length}}">
+              <text class="tag" wx:for="{{activeClass.teachers}}" wx:for-item="t" wx:key="id">
+                {{t.name}}<text wx:if="{{t.id === activeClass.headTeacherId}}"> · 负责</text>
+              </text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定教师</text>
+          </view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">学生</view>
+          <view class="cd-row__body">
+            <block wx:if="{{activeClass.students.length}}">
+              <text class="tag" wx:for="{{activeClass.students}}" wx:for-item="s" wx:key="id">
+                {{s.name}}<text wx:if="{{s.grade}}">（{{s.grade}}）</text>
+              </text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定学生</text>
+          </view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">家长</view>
+          <view class="cd-row__body">
+            <block wx:if="{{activeClass.parents.length}}">
+              <text class="tag" wx:for="{{activeClass.parents}}" wx:for-item="p" wx:key="id">{{p.name}}</text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定家长</text>
+          </view>
+        </view>
+
+        <view class="field__hint cl-modal__tip">
+          需要增减学生、家长等成员时，请前往「班级管理」页操作
+        </view>
+      </block>
+
+      <!-- 编辑班级信息 -->
+      <block wx:if="{{classEditMode}}">
+        <view class="field">
+          <view class="field__label">班级名称 <text class="text-danger">*</text></view>
+          <input class="field__input" placeholder="如：四年级一班" placeholder-class="ph" value="{{classForm.name}}" data-key="name" bindinput="onClassFormInput" />
+        </view>
+        <view class="field">
+          <view class="field__label">年级</view>
+          <input class="field__input" placeholder="如：四年级" placeholder-class="ph" value="{{classForm.grade}}" data-key="grade" bindinput="onClassFormInput" />
+        </view>
+        <view class="field">
+          <view class="field__label">负责教师 <text class="text-danger">*</text></view>
+          <view class="field__hint">该班学生与家长的提交会归入这位教师的端</view>
+          <view class="wrap mt-8">
+            <view
+              class="option {{item.id === classForm.headTeacherId ? 'active' : ''}}"
+              wx:for="{{teacherOptions}}"
+              wx:key="id"
+              data-id="{{item.id}}"
+              bindtap="pickClassHeadTeacher"
+            >{{item.name}}<text class="option__sub" wx:if="{{item.subject}}"> {{item.subject}}</text></view>
+          </view>
+          <view class="text-sm text-muted mt-8" wx:if="{{!teacherOptions.length}}">
+            暂无教师账号，请先在「账号管理」中创建
+          </view>
+        </view>
+        <view class="field__hint">
+          当前成员（教师 {{activeClass.teacherCount}} · 学生 {{activeClass.studentCount}} · 家长 {{activeClass.parentCount}}）将保持不变
+        </view>
+      </block>
+    </scroll-view>
+
+    <view class="modal-foot">
+      <view class="flex gap-16" wx:if="{{!classEditMode}}">
+        <button class="btn btn-outline flex-1" bindtap="goClasses">班级管理</button>
+        <button class="btn btn-primary flex-1" bindtap="openClassEdit">编辑班级信息</button>
+      </view>
+      <view class="flex gap-16" wx:else>
+        <button class="btn btn-outline flex-1" bindtap="cancelClassEdit">取消</button>
+        <button class="btn btn-primary flex-1" bindtap="submitClassEdit" disabled="{{classSubmitting}}">
+          {{classSubmitting ? '保存中…' : '保存修改'}}
+        </button>
+      </view>
+    </view>
+  </view>
 </view>
 
 <nav-bar role="admin" active="overview" />

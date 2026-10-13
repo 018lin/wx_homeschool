@@ -53,13 +53,31 @@
   color: #b6c0cd;
 }
 
+/* 密码输入框：右侧眼睛图标切换明文/密文 */
+.login__pwd {
+  position: relative;
+}
+
+.login__pwd-input {
+  padding-right: 104rpx;
+}
+
 .login__toggle {
   position: absolute;
-  right: 24rpx;
-  margin-top: -56rpx;
-  font-size: 24rpx;
-  color: #0057b8;
-  padding: 8rpx 12rpx;
+  right: 10rpx;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10rpx;
+}
+
+/* 眼睛图标：密文=闭眼带斜杠 eye-off.png，明文=睁眼 eye.png */
+.login__eye {
+  display: block;
+  width: 48rpx;
+  height: 48rpx;
 }
 
 .login__error {

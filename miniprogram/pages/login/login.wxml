@@ -23,18 +23,21 @@
 
     <view class="field">
       <view class="field__label">密码</view>
-      <input
-        class="field__input"
-        password="{{!showPwd}}"
-        placeholder="请输入密码"
-        placeholder-class="login__placeholder"
-        maxlength="64"
-        value="{{password}}"
-        bindinput="onPasswordInput"
-        bindconfirm="onSubmit"
-      />
-      <view class="login__toggle" bindtap="onTogglePwd">
-        {{showPwd ? '隐藏' : '显示'}}
+      <view class="login__pwd">
+        <input
+          class="field__input login__pwd-input"
+          password="{{!showPwd}}"
+          placeholder="请输入密码"
+          placeholder-class="login__placeholder"
+          maxlength="64"
+          value="{{password}}"
+          bindinput="onPasswordInput"
+          bindconfirm="onSubmit"
+        />
+        <view class="login__toggle" bindtap="onTogglePwd">
+          <image class="login__eye" src="/assets/eye-off.png" mode="aspectFit" wx:if="{{!showPwd}}" />
+          <image class="login__eye" src="/assets/eye.png" mode="aspectFit" wx:else />
+        </view>
       </view>
     </view>
 

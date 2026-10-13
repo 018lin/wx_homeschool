@@ -2,14 +2,15 @@ var app = getApp();
 var request = require("../../../utils/api.js");
 var api = request.api;
 var util = require("../../../utils/util.js");
+var avatar = require("../../../utils/avatar.js");
 
 var ROLE_LABEL = { parent: "家长", teacher: "教师", admin: "管理员", student: "学生" };
 var POLL_INTERVAL = 6000; // 聊天页轮询拉取新消息
 
 Page({
   data: {
-    peerId: 0, peer: {}, peerName: "", peerInitial: "",
-    myInitial: "我",
+    peerId: 0, peer: {}, peerName: "", peerInitial: "", peerAvatar: "", hasPeerAvatar: false,
+    myInitial: "我", myAvatar: "", hasMyAvatar: false,
     messages: [], draft: "", canSend: false, sending: false,
     scrollIntoView: "", loading: true
   },
@@ -18,7 +19,9 @@ Page({
     var user = (app.globalData.user || {});
     var peerId = Number(options && options.peerId);
     this.setData({
-      myInitial: String(user.displayName || "我").slice(0, 1)
+      myInitial: String(user.displayName || "我").slice(0, 1),
+      myAvatar: avatar.resolve(user, true),
+      hasMyAvatar: avatar.hasCustom(user, true)
     });
     if (!peerId) {
       wx.showToast({ title: "联系人参数无效", icon: "none" });
@@ -29,7 +32,16 @@ Page({
     this.loadConversation();
   },
 
-  onShow: function () { this.startPolling(); },
+  onShow: function () {
+    // 回到本页时同步一次自己的头像（个人页换头像后立即生效）
+    var user = app.globalData.user || {};
+    this.setData({
+      myInitial: String(user.displayName || "我").slice(0, 1),
+      myAvatar: avatar.resolve(user, true),
+      hasMyAvatar: avatar.hasCustom(user, true)
+    });
+    this.startPolling();
+  },
   onHide: function () { this.stopPolling(); },
   onUnload: function () { this.stopPolling(); },
 
@@ -68,6 +80,8 @@ Page({
         peer: peer,
         peerName: name,
         peerInitial: String(name).slice(0, 1),
+        peerAvatar: avatar.resolve(peer, false),
+        hasPeerAvatar: avatar.hasCustom(peer, false),
         messages: messages,
         scrollIntoView: messages.length ? "msg-" + messages[messages.length - 1].id : ""
       });

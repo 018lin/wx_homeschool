@@ -231,7 +231,7 @@ class DatabaseAdapter {
 function postgresSchema() {
   return [
     "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
-    "CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', avatar_url TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
     "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id BIGINT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
     "CREATE TABLE IF NOT EXISTS children (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), gender TEXT NOT NULL DEFAULT '', age INTEGER, caregiver TEXT NOT NULL DEFAULT '', interests TEXT NOT NULL DEFAULT '', family_note TEXT NOT NULL DEFAULT '', user_id BIGINT UNIQUE)",
     "CREATE TABLE IF NOT EXISTS bindings (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, relation TEXT NOT NULL DEFAULT '家长', UNIQUE(user_id, child_id))",
@@ -270,7 +270,7 @@ function postgresSchema() {
 function sqliteSchema() {
   return [
     "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
-    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', avatar_url TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
     "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
     "CREATE TABLE IF NOT EXISTS children (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), gender TEXT NOT NULL DEFAULT '', age INTEGER, caregiver TEXT NOT NULL DEFAULT '', interests TEXT NOT NULL DEFAULT '', family_note TEXT NOT NULL DEFAULT '', user_id INTEGER UNIQUE)",
     "CREATE TABLE IF NOT EXISTS bindings (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, relation TEXT NOT NULL DEFAULT '家长', UNIQUE(user_id, child_id))",
@@ -382,6 +382,13 @@ const MIGRATIONS = [
     statements: [
       "CREATE TABLE IF NOT EXISTS direct_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id INTEGER NOT NULL, recipient_user_id INTEGER NOT NULL, content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
       "CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_user_id, recipient_user_id, id)"
+    ],
+    allowAlreadyApplied: true
+  },
+  {
+    version: 8,
+    statements: [
+      "ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''"
     ],
     allowAlreadyApplied: true
   }

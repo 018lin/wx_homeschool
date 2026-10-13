@@ -1,7 +1,11 @@
 <view class="page page-with-nav">
   <view class="mine-head">
-    <view class="mine-head__avatar-wrap">
-      <image class="mine-head__avatar" src="{{avatarImage}}" mode="aspectFill" />
+    <view class="mine-head__avatar-box">
+      <view class="mine-head__avatar-wrap" bindtap="onTapAvatar" hover-class="mine-head__avatar-wrap--hover">
+        <image class="mine-head__avatar" src="{{avatarImage}}" mode="aspectFill" />
+        <view class="mine-head__avatar-mask" wx:if="{{uploading}}">上传中</view>
+      </view>
+      <view class="mine-head__avatar-tip" wx:if="{{!uploading}}">更换</view>
     </view>
     <view class="mine-head__name">{{user.displayName || '未设置姓名'}}</view>
     <view class="mine-head__account">账号 {{user.account || '-'}}</view>

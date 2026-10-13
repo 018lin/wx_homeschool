@@ -2628,7 +2628,7 @@ async function handleApi(req, res, pathname, query) {
         if (allowedPeers !== null && allowedPeers.indexOf(peerId) < 0) {
           return sendJson(res, 403, { message: "你没有查看该会话的权限" });
         }
-        const peer = await db.prepare("SELECT id, account, display_name, role FROM users WHERE id = ?").get(peerId);
+        const peer = await db.prepare("SELECT id, account, display_name, role, avatar_url FROM users WHERE id = ?").get(peerId);
         if (!peer) return sendJson(res, 404, { message: "联系人不存在" });
         const messages = await db.prepare(
           "SELECT m.id, m.sender_user_id, m.recipient_user_id, m.content, m.read_at, m.created_at, " +
@@ -2646,13 +2646,13 @@ async function handleApi(req, res, pathname, query) {
       if (allowedIds === null) {
         // 管理员：全部用户
         contacts = await db.prepare(
-          "SELECT id, account, display_name, role FROM users WHERE id <> ? ORDER BY " +
+          "SELECT id, account, display_name, role, avatar_url FROM users WHERE id <> ? ORDER BY " +
           "CASE role WHEN 'teacher' THEN 1 WHEN 'parent' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, display_name, id"
         ).all(user.id);
       } else if (allowedIds.length) {
         const holders = allowedIds.map(function () { return "?"; }).join(",");
         contacts = await db.prepare(
-          "SELECT id, account, display_name, role FROM users WHERE id IN (" + holders + ") ORDER BY " +
+          "SELECT id, account, display_name, role, avatar_url FROM users WHERE id IN (" + holders + ") ORDER BY " +
           "CASE role WHEN 'teacher' THEN 1 WHEN 'parent' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, display_name, id"
         ).all(...allowedIds);
       } else {

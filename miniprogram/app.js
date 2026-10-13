@@ -38,6 +38,17 @@ App({
     } catch (e) {}
   },
 
+  /** 局部更新当前用户信息（如自定义头像），并同步到本地缓存 */
+  updateUser: function (patch) {
+    var user = Object.assign({}, this.globalData.user || {}, patch || {});
+    this.globalData.user = user;
+    if (user.role) this.globalData.role = user.role;
+    try {
+      wx.setStorageSync("user", user);
+    } catch (e) {}
+    return user;
+  },
+
   clearSession: function () {
     this.globalData.token = "";
     this.globalData.user = null;

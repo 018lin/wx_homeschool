@@ -17,3 +17,102 @@
   margin-top: 6rpx;
 }
 
+.ph {
+  color: #b6c0cd;
+}
+
+/* ---------- 已有班级列表 ---------- */
+.cl-list__loading {
+  padding: 40rpx 0;
+}
+
+.cl-list__empty {
+  padding: 48rpx 40rpx;
+}
+
+.cl-item {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.cl-item:last-child {
+  border-bottom: none;
+}
+
+.cl-item:active {
+  opacity: 0.7;
+}
+
+.cl-item__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cl-item__arrow {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 36rpx;
+  color: var(--text-muted);
+}
+
+.cl-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+/* ---------- 班级详情弹窗 ---------- */
+.cl-modal__name {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 16rpx;
+}
+
+.cl-modal__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 16rpx 0 24rpx;
+}
+
+.cl-modal__tip {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx dashed var(--line);
+}
+
+.cd-row {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 16rpx;
+}
+
+.cd-row:last-child {
+  margin-bottom: 0;
+}
+
+.cd-row__label {
+  width: 140rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+.cd-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 表单弹窗（底部弹层，与账号管理页一致） ---------- */
+.modal-mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, .5); z-index: 1000; display: flex; align-items: flex-end; }
+.modal-sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; display: flex; flex-direction: column; overflow: hidden; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 28rpx 30rpx 22rpx; border-bottom: 2rpx solid #e1e8f0; }
+.modal-head__title { font-size: 32rpx; font-weight: 600; color: #1f2937; }
+.modal-head__close { font-size: 26rpx; color: #8795a7; padding: 8rpx 0 8rpx 24rpx; }
+.modal-body { max-height: 62vh; padding: 10rpx 30rpx 30rpx; box-sizing: border-box; }
+.modal-foot { padding: 20rpx 30rpx calc(20rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid #e1e8f0; background: #fff; }
+

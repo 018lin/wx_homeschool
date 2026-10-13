@@ -367,6 +367,19 @@ var api = {
     return request("/api/auth/logout", { method: "POST", silent: true });
   },
 
+  /* ---- 当前账号资料 / 自定义头像 ---- */
+  getMe: function () {
+    return request("/api/me", { method: "GET", silent: true });
+  },
+  /** url 传空字符串表示恢复默认角色头像 */
+  updateMyAvatar: function (url) {
+    return request("/api/me/avatar", {
+      method: "PUT",
+      data: { url: url || "" },
+      silent: true
+    });
+  },
+
   /* ---- 埋点（失败静默） ---- */
   track: function (eventType, payload) {
     if (!getToken()) return Promise.resolve();
@@ -594,6 +607,10 @@ var api = {
   },
   createClass: function (data) {
     return request("/api/admin/classes", { method: "POST", data: data, loading: "创建中" });
+  },
+  /** 编辑班级：更新基本信息，并按名单增删成员 */
+  updateClass: function (id, data) {
+    return request("/api/admin/classes/" + id, { method: "PUT", data: data, loading: "保存中" });
   }
 };
 

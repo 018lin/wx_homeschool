@@ -41,16 +41,17 @@
 2. POST /api/auth/login
 3. 【登录校验】getAuthUser
 4. POST /api/auth/logout
-5. admin 专属接口（overview / accounts / tasks / growth-timeline）
-6. POST /api/events                 （任意登录角色）
-7. POST /api/children               （parent）
-8. GET  /api/student/home           （student）
-9. GET  /api/home                   （parent）
-10. parent/* 系列接口
-11. POST /api/questionnaire         （parent）
-12. POST /api/submissions           （parent | student）
-13. GET  /api/timeline              （任意，但需 canAccessChild）
-14. parent/engagement* 三个接口
+5. GET  /api/me、PUT /api/me/avatar （任意登录角色，个人资料 / 头像）
+6. admin 专属接口（overview / accounts / tasks / growth-timeline）
+7. POST /api/events                 （任意登录角色）
+8. POST /api/children               （parent）
+9. GET  /api/student/home           （student）
+10. GET  /api/home                   （parent）
+11. parent/* 系列接口
+12. POST /api/questionnaire         （parent）
+13. POST /api/submissions           （parent | student）
+14. GET  /api/timeline              （任意，但需 canAccessChild）
+15. parent/engagement* 三个接口
 15. 【门禁】if (role !== 'teacher' && role !== 'admin') → 403 "仅教师或管理员账号可访问"
 16. teacher/* 系列接口
 17. 兜底 404 {"message":"接口不存在"}
@@ -253,19 +254,19 @@ engagement_judgment_corrected
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `token` | string | 48 位 hex，后续放 `Authorization: Bearer <token>` |
+| `user.id` | string | `users.id`（SQLite 下由驱动返回为字符串） |
 | `user.account` | string | |
 | `user.displayName` | string | **注意是驼峰**，映射自 `users.display_name` |
 | `user.role` | string | `parent`/`student`/`teacher`/`admin` |
+| `user.avatarUrl` | string | 自定义头像，未设置时为 `""`，前端回落到角色默认头像 |
 
 ```json
-{ "token": "a1b2...", "user": { "account": "parent01", "displayName": "张妈妈", "role": "parent" } }
+{ "token": "a1b2...", "user": { "id": "12", "account": "parent01", "displayName": "张妈妈", "role": "parent", "avatarUrl": "" } }
 ```
 
 - 错误：
   - `401 {"message":"账号或密码错误"}`（账号不存在或密码错误，同一提示）
 - 副作用：若为 `parent` 角色，会为每个已绑定孩子写一条 `parent_logged_in` 事件。
-
-> ⚠️ **坑**：登录响应**不含 `user.id`**。需要 user id 的场景目前没有接口，只能靠 token 换取（`getAuthUser` 内部有 id 但不返回给前端）。
 
 ### 1.3 `POST /api/auth/logout`
 
@@ -274,6 +275,28 @@ engagement_judgment_corrected
 - 成功 `200`：`{ "ok": true }`
 - 行为：`DELETE FROM sessions WHERE token = <token>`（仅删当前 token）
 - 注意：源码直接 `req.headers["authorization"].slice(7)`，因前置已鉴权，header 必然存在。
+
+### 1.4 `GET /api/me`
+
+- 权限：**需登录**（任意角色）
+- 成功 `200`：`{ "user": { id, account, displayName, role, avatarUrl } }`
+- 行为：按当前 token 重新查一次 `users`，用于同步最新资料（主要是头像）。
+
+### 1.5 `PUT /api/me/avatar`
+
+- 权限：**需登录**（任意角色）
+- 请求体：
+
+| 字段 | 类型 | 必填 | 校验 |
+|---|---|---|---|
+| `url` | string | 是 | 为空字符串表示**恢复默认角色头像**；否则必须匹配 `data:image/(jpeg\|jpg\|png\|webp);base64,...` 或 `https://...`，且长度 ≤ `MAX_AVATAR_URL_LENGTH`（550000） |
+
+- 成功 `200`：`{ "user": { ..., "avatarUrl": "<url>" } }`
+- 错误：
+  - `400 {"message":"头像格式不正确，仅支持 JPG / PNG / WebP"}`
+  - `413 {"message":"头像图片过大，请重新选择更小的图片","errorCode":"AVATAR_TOO_LARGE"}`
+- 行为：`UPDATE users SET avatar_url = ? WHERE id = ?`。
+- 小程序端流程：`wx.chooseMedia` → 离屏 canvas 裁成 320×320 JPEG → `FileSystemManager.readFile({encoding:"base64"})` 拼成 data URL → 调本接口落库。不经过 `POST /api/uploads`，避免 multipart 的 Content-Type 判定问题。
 
 ---
 
@@ -1089,7 +1112,7 @@ engagement_judgment_corrected
 
 ## 7. 小程序端落地注意事项（坑清单）
 
-1. **登录响应没有 `user.id`**，只有 `account` / `displayName` / `role`。
+1. ~~**登录响应没有 `user.id`**~~（已修复）。登录响应现为 `id` / `account` / `displayName` / `role` / `avatarUrl`，其中 `id` 在 SQLite 下由驱动返回为**字符串**，比较时不要直接用 `===`。
 2. **字段名混用**，绝不能统一：
    - 登录 → `displayName`（驼峰）；
    - `/api/teacher/students` 与 `/api/teacher/student-suggestions` 的 student → `familyNote`（驼峰）；

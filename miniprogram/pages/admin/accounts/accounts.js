@@ -203,6 +203,9 @@ Page({
     this.setData({ mode: null, form: emptyForm() });
   },
 
+  /** 阻止弹窗内点击/滚动冒泡（空实现） */
+  noop: function () {},
+
   pickRole: function (e) {
     this.setData({ "form.role": e.currentTarget.dataset.value });
   },

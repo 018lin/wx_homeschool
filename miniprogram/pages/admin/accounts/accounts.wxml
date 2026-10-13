@@ -94,14 +94,16 @@
     </view>
   </block>
 
-  <!-- 表单 -->
-  <view class="card" wx:if="{{mode}}">
-    <view class="card-title">
-      <text class="card-title__text">{{mode === 'edit' ? '编辑账号' : '新建账号'}}</text>
-      <text class="card-title__more" bindtap="closeForm">取消</text>
-    </view>
+  <!-- 表单弹窗 -->
+  <view class="modal-mask" wx:if="{{mode}}" catchtap="closeForm" catchtouchmove="noop">
+    <view class="modal-sheet" catchtap="noop">
+      <view class="modal-head">
+        <text class="modal-head__title">{{mode === 'edit' ? '编辑账号' : '新建账号'}}</text>
+        <text class="modal-head__close" bindtap="closeForm">取消</text>
+      </view>
 
-    <view class="field" wx:if="{{mode === 'create'}}">
+      <scroll-view scroll-y class="modal-body">
+        <view class="field" wx:if="{{mode === 'create'}}">
       <view class="field__label">账号类型</view>
       <view class="wrap">
         <view
@@ -199,15 +201,20 @@
       </view>
     </block>
 
-    <button class="btn btn-primary btn-block mt-16" bindtap="onSubmit" disabled="{{submitting}}">
-      {{submitting ? '保存中…' : '保存'}}
-    </button>
-    <button
-      wx:if="{{mode === 'edit'}}"
-      class="btn btn-danger btn-block mt-16"
-      bindtap="onDelete"
-      disabled="{{submitting}}"
-    >删除此账号</button>
+      </scroll-view>
+
+      <view class="modal-foot">
+        <button class="btn btn-primary btn-block" bindtap="onSubmit" disabled="{{submitting}}">
+          {{submitting ? '保存中…' : '保存'}}
+        </button>
+        <button
+          wx:if="{{mode === 'edit'}}"
+          class="btn btn-danger btn-block mt-16"
+          bindtap="onDelete"
+          disabled="{{submitting}}"
+        >删除此账号</button>
+      </view>
+    </view>
   </view>
 </view>
 

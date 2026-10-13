@@ -29,7 +29,10 @@
             <text class="badge badge-gray">家长 {{item.parentCount}}</text>
           </view>
         </view>
-        <text class="text-sm text-primary">{{expandedId === item.id ? '收起' : '详情'}} ›</text>
+        <view class="cl-card__side">
+          <text class="text-sm text-primary">{{expandedId === item.id ? '收起' : '详情'}} ›</text>
+          <text class="cl-card__edit" catchtap="openEdit" data-id="{{item.id}}">编辑</text>
+        </view>
       </view>
 
       <view class="cl-detail" wx:if="{{expandedId === item.id}}">
@@ -75,11 +78,15 @@
     </view>
   </block>
 
-  <!-- 创建班级表单 -->
+  <!-- 创建 / 编辑班级表单 -->
   <view class="card" wx:if="{{mode}}">
     <view class="card-title">
-      <text class="card-title__text">创建班级</text>
+      <text class="card-title__text">{{mode === 'edit' ? '编辑班级' : '创建班级'}}</text>
       <text class="card-title__more" bindtap="closeForm">取消</text>
+    </view>
+
+    <view class="field__hint" wx:if="{{mode === 'edit'}}">
+      当前成员：教师 {{form.teacherIds.length}} · 学生 {{form.studentIds.length}} · 家长 {{form.parentIds.length}}
     </view>
 
     <view class="field">
@@ -109,59 +116,149 @@
       </view>
     </view>
 
-    <view class="field">
-      <view class="field__label">任课教师（可多选）</view>
-      <scroll-view scroll-y class="pick-list">
-        <view class="wrap">
-          <view
-            class="option {{item.selected ? 'active' : ''}}"
-            wx:for="{{teacherOptions}}"
-            wx:key="id"
-            data-id="{{item.id}}"
-            bindtap="toggleTeacher"
-          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
-        </view>
-      </scroll-view>
-      <view class="text-sm text-muted mt-8" wx:if="{{!teacherOptions.length}}">暂无教师账号</view>
-    </view>
-
-    <view class="field">
-      <view class="field__label">学生（可多选）</view>
-      <scroll-view scroll-y class="pick-list">
-        <view class="wrap">
-          <view
-            class="option {{item.selected ? 'active' : ''}}"
-            wx:for="{{studentOptions}}"
-            wx:key="id"
-            data-id="{{item.id}}"
-            bindtap="toggleStudent"
-          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
-        </view>
-      </scroll-view>
-      <view class="field__hint" wx:if="{{studentOptions.length}}">
-        已选 {{form.studentIds.length}} 人 · 学生绑定的家长会一并纳入班级
+    <!-- 创建模式：勾选式成员选择 -->
+    <block wx:if="{{mode !== 'edit'}}">
+      <view class="field">
+        <view class="field__label">任课教师（可多选）</view>
+        <scroll-view scroll-y class="pick-list">
+          <view class="wrap">
+            <view
+              class="option {{item.selected ? 'active' : ''}}"
+              wx:for="{{teacherOptions}}"
+              wx:key="id"
+              data-id="{{item.id}}"
+              bindtap="toggleTeacher"
+            >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+        </scroll-view>
+        <view class="text-sm text-muted mt-8" wx:if="{{!teacherOptions.length}}">暂无教师账号</view>
       </view>
-      <view class="text-sm text-muted mt-8" wx:elif="{{!studentOptions.length}}">暂无学生账号</view>
-    </view>
 
-    <view class="field">
-      <view class="field__label">家长（可多选）</view>
-      <scroll-view scroll-y class="pick-list">
-        <view class="wrap">
-          <view
-            class="option {{item.selected ? 'active' : ''}}"
-            wx:for="{{parentOptions}}"
-            wx:key="id"
-            data-id="{{item.id}}"
-            bindtap="toggleParent"
-          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+      <view class="field">
+        <view class="field__label">学生（可多选）</view>
+        <scroll-view scroll-y class="pick-list">
+          <view class="wrap">
+            <view
+              class="option {{item.selected ? 'active' : ''}}"
+              wx:for="{{studentOptions}}"
+              wx:key="id"
+              data-id="{{item.id}}"
+              bindtap="toggleStudent"
+            >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+        </scroll-view>
+        <view class="field__hint" wx:if="{{studentOptions.length}}">
+          已选 {{form.studentIds.length}} 人 · 学生绑定的家长会一并纳入班级
         </view>
-      </scroll-view>
-      <view class="text-sm text-muted mt-8" wx:if="{{!parentOptions.length}}">暂无家长账号</view>
-    </view>
+        <view class="text-sm text-muted mt-8" wx:elif="{{!studentOptions.length}}">暂无学生账号</view>
+      </view>
+
+      <view class="field">
+        <view class="field__label">家长（可多选）</view>
+        <scroll-view scroll-y class="pick-list">
+          <view class="wrap">
+            <view
+              class="option {{item.selected ? 'active' : ''}}"
+              wx:for="{{parentOptions}}"
+              wx:key="id"
+              data-id="{{item.id}}"
+              bindtap="toggleParent"
+            >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+        </scroll-view>
+        <view class="text-sm text-muted mt-8" wx:if="{{!parentOptions.length}}">暂无家长账号</view>
+      </view>
+    </block>
+
+    <!-- 编辑模式：成员管理（当前成员可移除，可添加新成员） -->
+    <block wx:elif="{{mode === 'edit'}}">
+      <view class="field">
+        <view class="field__label">教师成员</view>
+        <view class="member-list">
+          <view
+            class="member-tag {{m.isHead ? 'member-tag--head' : ''}}"
+            wx:for="{{editMembers.teachers}}"
+            wx:for-item="m"
+            wx:key="id"
+          >
+            <text class="member-tag__name">{{m.name}}</text>
+            <text class="member-tag__badge" wx:if="{{m.isHead}}">负责</text>
+            <text class="member-tag__del" wx:else catchtap="removeMember" data-role="teacher" data-id="{{m.id}}">×</text>
+          </view>
+        </view>
+        <view class="text-sm text-muted mt-8" wx:if="{{!editMembers.teachers.length}}">暂无教师成员</view>
+        <view class="member-add">
+          <view class="text-sm text-muted">添加教师</view>
+          <view class="wrap mt-8">
+            <view
+              class="option option--add"
+              wx:for="{{addableTeachers}}"
+              wx:key="id"
+              data-role="teacher"
+              data-id="{{item.id}}"
+              bindtap="addMember"
+            >+ {{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+          <view class="text-sm text-muted mt-8" wx:if="{{!addableTeachers.length}}">没有可添加的教师账号</view>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="field__label">学生成员</view>
+        <view class="member-list">
+          <view class="member-tag" wx:for="{{editMembers.students}}" wx:for-item="m" wx:key="id">
+            <text class="member-tag__name">{{m.name}}</text>
+            <text class="member-tag__del" catchtap="removeMember" data-role="student" data-id="{{m.id}}">×</text>
+          </view>
+        </view>
+        <view class="text-sm text-muted mt-8" wx:if="{{!editMembers.students.length}}">暂无学生成员</view>
+        <view class="field__hint" wx:if="{{editMembers.students.length}}">
+          移除学生不会自动移除其家长，可在下方家长成员中单独管理
+        </view>
+        <view class="member-add">
+          <view class="text-sm text-muted">添加学生</view>
+          <view class="wrap mt-8">
+            <view
+              class="option option--add"
+              wx:for="{{addableStudents}}"
+              wx:key="id"
+              data-role="student"
+              data-id="{{item.id}}"
+              bindtap="addMember"
+            >+ {{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+          <view class="text-sm text-muted mt-8" wx:if="{{!addableStudents.length}}">没有可添加的学生账号</view>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="field__label">家长成员</view>
+        <view class="member-list">
+          <view class="member-tag" wx:for="{{editMembers.parents}}" wx:for-item="m" wx:key="id">
+            <text class="member-tag__name">{{m.name}}</text>
+            <text class="member-tag__del" catchtap="removeMember" data-role="parent" data-id="{{m.id}}">×</text>
+          </view>
+        </view>
+        <view class="text-sm text-muted mt-8" wx:if="{{!editMembers.parents.length}}">暂无家长成员</view>
+        <view class="member-add">
+          <view class="text-sm text-muted">添加家长</view>
+          <view class="wrap mt-8">
+            <view
+              class="option option--add"
+              wx:for="{{addableParents}}"
+              wx:key="id"
+              data-role="parent"
+              data-id="{{item.id}}"
+              bindtap="addMember"
+            >+ {{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+          </view>
+          <view class="text-sm text-muted mt-8" wx:if="{{!addableParents.length}}">没有可添加的家长账号</view>
+        </view>
+      </view>
+    </block>
 
     <button class="btn btn-primary btn-block mt-16" bindtap="onSubmit" disabled="{{submitting}}">
-      {{submitting ? '创建中…' : '创建班级'}}
+      {{submitting ? (mode === 'edit' ? '保存中…' : '创建中…') : (mode === 'edit' ? '保存修改' : '创建班级')}}
     </button>
   </view>
 </view>

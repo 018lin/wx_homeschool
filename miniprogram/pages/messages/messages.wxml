@@ -7,7 +7,7 @@
   </view>
   <view class="msg-list">
     <view class="msg-item" wx:for="{{filteredContacts}}" wx:key="id" data-id="{{item.id}}" bindtap="openPeer" hover-class="msg-item--hover">
-      <view class="msg-item__avatar role-{{item.role}}">{{item.initial}}</view>
+      <image class="msg-item__avatar role-{{item.role}}" src="{{item.avatar}}" mode="aspectFill" />
       <view class="msg-item__main">
         <view class="msg-item__top">
           <view class="msg-item__name">{{item.name}}</view>

@@ -21,6 +21,81 @@
   color: var(--text);
 }
 
+/* 卡片头部操作区：详情 / 编辑 */
+.cl-card__side {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  flex-shrink: 0;
+}
+
+.cl-card__edit {
+  font-size: 24rpx;
+  color: var(--primary);
+  background: var(--primary-light);
+  border-radius: 8rpx;
+  padding: 8rpx 20rpx;
+}
+
+.cl-card__edit:active {
+  opacity: 0.7;
+}
+
+/* 编辑模式：当前成员标签 */
+.member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.member-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 10rpx 6rpx 16rpx;
+  border-radius: 8rpx;
+  background: #f8fbff;
+  border: 2rpx solid var(--line);
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.member-tag--head {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.member-tag__badge {
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6rpx;
+  padding: 2rpx 10rpx;
+}
+
+.member-tag__del {
+  margin-left: 8rpx;
+  padding: 0 6rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--danger);
+  line-height: 1;
+}
+
+/* 编辑模式：添加成员区 */
+.member-add {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx dashed var(--line);
+}
+
+.option--add {
+  border-style: dashed;
+  color: var(--primary);
+}
+
 .cl-counts {
   display: flex;
   flex-wrap: wrap;
