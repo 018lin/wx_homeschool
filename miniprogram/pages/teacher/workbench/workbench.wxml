@@ -1,0 +1,79 @@
+<view class="page page-with-nav">
+  <view class="wb-head">
+    <view class="wb-head__title">教师工作台</view>
+    <view class="wb-head__sub" wx:if="{{weekStart}}">本周起始 {{weekStart}}</view>
+  </view>
+
+  <!-- 主视觉：一句话记录学生活动 -->
+  <view class="daily-feature" bindtap="goDaily">
+    <view class="daily-feature__eyebrow">✦ 今日校园观察</view>
+    <view class="daily-feature__body">
+      <view class="daily-feature__copy">
+        <view class="daily-feature__title">一句话记录学生活动</view>
+      </view>
+      <view class="daily-feature__record">
+        <view class="daily-feature__mic-button">
+          <view class="daily-feature__mic" aria-hidden="true">
+            <view class="daily-feature__mic-head"></view>
+            <view class="daily-feature__mic-cage"></view>
+            <view class="daily-feature__mic-stem"></view>
+            <view class="daily-feature__mic-base"></view>
+          </view>
+        </view>
+        <view class="daily-feature__action">点击录音</view>
+      </view>
+      <view class="daily-feature__footer">
+        <view class="daily-feature__desc">说出学生姓名和发生的事，AI 整理后通知对应家长。</view>
+        <view class="daily-feature__hint">支持语音转文字，也可直接输入</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <!-- 本周任务 -->
+    <view class="card" wx:if="{{task}}">
+      <view class="card-title">
+        <text class="card-title__text">本周班级任务</text>
+        <text class="badge badge-primary">已发布</text>
+      </view>
+      <view class="task-title">{{task.title}}</view>
+      <view class="task-meta mt-16">
+        <text class="tag" wx:if="{{task.task_type}}">{{task.task_type}}</text>
+        <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
+        <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+      </view>
+      <view class="quote mt-24" wx:if="{{task.goal}}">{{task.goal}}</view>
+    </view>
+
+    <view class="card" wx:else>
+      <view class="empty">
+        <view class="empty__icon">📝</view>
+        <view class="empty__text">本周还没有发布班级任务</view>
+        <view class="empty__hint">点击「发布任务」创建本周共育任务</view>
+      </view>
+      <button class="btn btn-primary btn-block" bindtap="goPublish">发布任务</button>
+    </view>
+
+    <!-- 最近提交 -->
+    <view class="card" wx:if="{{recent.length}}">
+      <view class="card-title">
+        <text class="card-title__text">最近提交</text>
+        <text class="card-title__more" bindtap="goSubmissions">全部 ›</text>
+      </view>
+      <view class="list-item" wx:for="{{recent}}" wx:key="id" data-id="{{item.id}}" bindtap="goSubmissions">
+        <view class="list-item__main">
+          <view class="list-item__title">{{item.childName}} · {{item.title}}</view>
+          <view class="list-item__desc clamp-1">{{item.content}}</view>
+        </view>
+        <view class="badge {{item.feedbackCount ? 'badge-teal' : 'badge-warning'}}">
+          {{item.feedbackCount ? '已点评' : '待点评'}}
+        </view>
+      </view>
+    </view>
+
+  </block>
+</view>
+
+<nav-bar role="teacher" active="workbench" />

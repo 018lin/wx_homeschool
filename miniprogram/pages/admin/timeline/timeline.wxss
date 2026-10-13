@@ -1,0 +1,92 @@
+.al-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.al-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.al-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+.picker-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fbff;
+  border: 2rpx solid #e1e8f0;
+  border-radius: 14rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.picker-box__arrow {
+  color: #8795a7;
+  font-size: 24rpx;
+}
+.filter-grid { display: flex; gap: 16rpx; }
+.filter-field { flex: 1; min-width: 0; }
+.kind-filter { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.trend-chart { display: flex; height: 230rpx; align-items: flex-end; gap: 10rpx; }
+.trend-day { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; }
+.trend-count, .trend-label { height: 34rpx; color: #8795a7; font-size: 19rpx; }
+.trend-track { position: relative; flex: 1; width: 34rpx; border-radius: 10rpx; background: #eef2f7; overflow: hidden; }
+.trend-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 10rpx; background: linear-gradient(#0f766e, #0057b8); }
+.rank-row { display: flex; align-items: center; gap: 12rpx; margin: 16rpx 0; }
+.rank-no { width: 34rpx; color: #8795a7; font-size: 23rpx; }
+.rank-name { width: 130rpx; color: #1f2937; font-size: 25rpx; }
+.rank-track { flex: 1; height: 16rpx; border-radius: 999rpx; background: #eef2f7; overflow: hidden; }
+.rank-fill { height: 100%; border-radius: 999rpx; background: #0057b8; }
+.rank-count { width: 50rpx; color: #536174; font-size: 23rpx; text-align: right; }
+
+.ml {
+  margin-left: 12rpx;
+}
+
+.al-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.al-content {
+  font-size: 27rpx;
+  color: #374151;
+  line-height: 1.75;
+  margin-top: 12rpx;
+  background: #f8fbff;
+  border-radius: 12rpx;
+  padding: 18rpx;
+  white-space: pre-wrap;
+}
+
+.al-fb {
+  margin-top: 16rpx;
+  background: #e9f8f0;
+  border-radius: 12rpx;
+  padding: 18rpx;
+}
+
+.al-fb__label {
+  font-size: 22rpx;
+  color: #0f766e;
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.al-fb__text {
+  font-size: 26rpx;
+  color: #1f2937;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}

@@ -1,0 +1,50 @@
+{
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "家校共育系统",
+  "description": "家校共育系统（Web 网站 + 微信小程序）。小程序代码在 miniprogram/ 目录下",
+  "appid": "wx18af8940724074b9",
+  "compileType": "miniprogram",
+  "libVersion": "3.16.1",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "node_modules" },
+      { "type": "folder", "value": "data" },
+      { "type": "folder", "value": "uploads" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "test" },
+      { "type": "folder", "value": "css" },
+      { "type": "folder", "value": "js" },
+      { "type": "folder", "value": "lib" },
+      { "type": "folder", "value": ".git" },
+      { "type": "suffix", "value": ".html" },
+      { "type": "suffix", "value": ".db" }
+    ],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "minifyWXML": true,
+    "minifyWXSS": true,
+    "uglifyFileName": false,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "useCompilerPlugins": false,
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "checkInvalidKey": true,
+    "checkSiteMap": false,
+    "autoAudits": false
+  },
+  "editorSetting": {}
+}

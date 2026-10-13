@@ -1,0 +1,4756 @@
+/**
+ * 家校共育系统 · 后端服务
+ * 技术栈：Node.js 内置 http + 本地 SQLite / 线上 Neon PostgreSQL
+ * 启动：node --experimental-sqlite server.js
+ */
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { DatabaseAdapter, initializeDatabase } = require("./database");
+const { ApiError, errorPayload } = require("./lib/errors");
+const { fetchWithRetry } = require("./lib/ai-client");
+const { createStaticServer } = require("./lib/static-server");
+const { normalizeAttachments } = require("./lib/attachments");
+const { createRequestContext } = require("./lib/request-context");
+
+const configuredPort = process.env.PORT == null || process.env.PORT === ""
+  ? 3123
+  : Number(process.env.PORT);
+const PORT = Number.isFinite(configuredPort) ? configuredPort : 3123;
+const ROOT = __dirname;
+
+function loadLocalEnv(root) {
+  [".env.local", ".env"].forEach(function (name) {
+    const file = path.join(root, name);
+    if (!fs.existsSync(file)) return;
+    String(fs.readFileSync(file, "utf8")).split(/\r?\n/).forEach(function (line) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!m || Object.prototype.hasOwnProperty.call(process.env, m[1])) return;
+      let value = m[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      process.env[m[1]] = value;
+    });
+  });
+}
+loadLocalEnv(ROOT);
+
+const db = new DatabaseAdapter({ root: ROOT });
+/* ============ 工具函数 ============ */
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 32).toString("hex");
+  return salt + ":" + hash;
+}
+function verifyPassword(password, stored) {
+  const [salt, hash] = String(stored).split(":");
+  if (!salt || !hash) return false;
+  const check = crypto.scryptSync(password, salt, 32).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(check, "hex"));
+}
+function mondayOf(d) {
+  const dt = new Date(d);
+  const wd = dt.getDay() === 0 ? 7 : dt.getDay();
+  dt.setDate(dt.getDate() - (wd - 1));
+  const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, "0"), day = String(dt.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+function lastMondayOf(d) {
+  const mon = new Date(mondayOf(d));
+  mon.setDate(mon.getDate() - 7);
+  return mondayOf(mon);
+}
+
+function sendJson(res, code, obj) {
+  if (code >= 400 && obj && typeof obj === "object" && res.requestId && obj.requestId == null) {
+    obj = Object.assign({ requestId: res.requestId }, obj);
+  }
+  const body = JSON.stringify(obj);
+  const headers = { "Content-Type": "application/json; charset=utf-8" };
+  if (res.requestId) headers["X-Request-Id"] = res.requestId;
+  res.writeHead(code, headers);
+  res.end(body);
+}
+
+function sendSseHeaders(res) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.write(": connected\n\n");
+}
+
+function writeSse(res, event, data) {
+  res.write("event: " + event + "\n");
+  res.write("data: " + JSON.stringify(data || {}) + "\n\n");
+}
+
+function delay(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+async function streamPlainText(res, text) {
+  const value = String(text || "");
+  for (let i = 0; i < value.length; i += 24) {
+    writeSse(res, "delta", { content: value.slice(i, i + 24) });
+    await delay(10);
+  }
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    let bytes = 0;
+    let settled = false;
+    req.on("data", (c) => {
+      if (settled) return;
+      bytes += Buffer.byteLength(c);
+      data += c;
+      if (bytes > 6e6) {
+        settled = true;
+        reject(new ApiError(413, "请求内容过大", "BODY_TOO_LARGE"));
+        req.resume();
+      }
+    });
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      try { resolve(data ? JSON.parse(data) : {}); }
+      catch (e) { reject(new ApiError(400, "请求格式不正确", "INVALID_JSON")); }
+    });
+    req.on("error", function (error) {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+  });
+}
+async function getAuthUser(req) {
+  const header = req.headers["authorization"] || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return null;
+  const row = await db.prepare(
+    "SELECT u.id, u.account, u.display_name, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
+  ).get(token);
+  return row || null;
+}
+async function createSession(userId) {
+  const token = crypto.randomBytes(24).toString("hex");
+  await db.prepare("INSERT INTO sessions (token, user_id) VALUES (?, ?)").run(token, userId);
+  return token;
+}
+async function isBoundChild(userId, childId) {
+  return !!await db.prepare("SELECT id FROM bindings WHERE user_id = ? AND child_id = ?").get(userId, childId);
+}
+async function canAccessChild(user, childId) {
+  if (!childId) return false;
+  if (user.role === "teacher") {
+    const child = await db.prepare("SELECT id FROM children WHERE id = ?").get(childId);
+    if (!child) return false;
+    // 已分班教师只能操作本班学生；未分班教师保持原有全量可见，避免影响历史数据
+    const classIds = await getTeacherClassIds(user.id);
+    if (!classIds.length) return true;
+    const inClass = await db.prepare(
+      "SELECT 1 AS ok FROM children c JOIN class_members cm ON cm.user_id = c.user_id " +
+      "WHERE c.id = ? AND cm.role = 'student' AND cm.class_id IN (" + classIds.join(",") + ") LIMIT 1"
+    ).get(childId);
+    return !!inClass;
+  }
+  return (user.role === "parent" || user.role === "student") && await isBoundChild(user.id, childId);
+}
+async function getVisibleTask(taskId, childId) {
+  const task = await db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  if (!task) return null;
+  if (task.child_id != null && Number(task.child_id) !== Number(childId)) return null;
+  // 班级任务：只能提交到本班任务
+  if (task.child_id == null && task.class_id != null) {
+    const classId = await getChildClassId(childId);
+    if (classId == null || Number(task.class_id) !== Number(classId)) return null;
+  }
+  return task;
+}
+function cleanTags(tags) {
+  return String(tags || "")
+    .split(/[，,]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(",");
+}
+async function logEvent(user, eventType, childId, taskId, meta, database) {
+  const type = String(eventType || "").trim().slice(0, 60);
+  if (!type) return;
+  const store = database || db;
+  await store.prepare(
+    "INSERT INTO events (user_id, child_id, task_id, event_type, meta) VALUES (?,?,?,?,?)"
+  ).run(
+    user ? user.id : null,
+    childId || null,
+    taskId || null,
+    type,
+    JSON.stringify(meta || {})
+  );
+}
+
+async function logParentLoginEvents(user) {
+  if (!user || user.role !== "parent") return;
+  try {
+    const children = await db.prepare(
+      "SELECT DISTINCT c.id FROM children c " +
+      "WHERE EXISTS (SELECT 1 FROM bindings b WHERE b.child_id = c.id AND b.user_id = ?) " +
+      "OR EXISTS (SELECT 1 FROM questionnaires q WHERE q.child_id = c.id AND q.user_id = ?) " +
+      "ORDER BY c.id"
+    ).all(user.id, user.id);
+    const meta = { role: "parent", displayName: user.display_name || "" };
+    if (!children.length) {
+      await logEvent(user, "parent_logged_in", null, null, meta);
+      return;
+    }
+    for (const child of children) {
+      await logEvent(user, "parent_logged_in", child.id, null, meta);
+    }
+  } catch (e) {
+    console.warn("家长登录事件记录失败：", e.message);
+  }
+}
+
+const DEMO_PARENT_ACCOUNTS = ["demo"];
+const TASK_PREFERENCE_OPTIONS = ["低负担", "短时长", "高参与度", "长时长"];
+const MAX_VISIBLE_CHILDREN = 1000;
+const MAX_REPORT_ROWS = 5000;
+const MAX_BEHAVIOR_ROWS = 10000;
+function demoAccountPlaceholders() {
+  return DEMO_PARENT_ACCOUNTS.map(function () { return "?"; }).join(",");
+}
+function realStudentWhere(alias) {
+  alias = alias || "c";
+  const demoAccounts = demoAccountPlaceholders();
+  return "(" +
+    "EXISTS (SELECT 1 FROM bindings rb JOIN users ru ON ru.id = rb.user_id " +
+      "WHERE rb.child_id = " + alias + ".id AND ru.role = 'parent' AND ru.account NOT IN (" + demoAccounts + ")) " +
+    "OR EXISTS (SELECT 1 FROM questionnaires rq JOIN users qu ON qu.id = rq.user_id " +
+      "WHERE rq.child_id = " + alias + ".id AND qu.role = 'parent' AND qu.account NOT IN (" + demoAccounts + "))" +
+  ")";
+}
+function demoParams(multiplier) {
+  let params = [];
+  for (let i = 0; i < (multiplier || 1); i++) params = params.concat(DEMO_PARENT_ACCOUNTS);
+  return params;
+}
+function realParentWhere(alias) {
+  alias = alias || "u";
+  return alias + ".role = 'parent' AND " + alias + ".account NOT IN (" + demoAccountPlaceholders() + ")";
+}
+function latestQuestionnaireJoin() {
+  return "LEFT JOIN questionnaires q ON q.id = (" +
+    "SELECT q2.id FROM questionnaires q2 WHERE q2.child_id = c.id ORDER BY q2.id DESC LIMIT 1" +
+  ") ";
+}
+
+/* ---- 班级作用域（管理员创建班级 → 绑定教师/学生/家长） ---- */
+
+// 教师所属班级 id 列表（含班主任与其他任课教师）
+async function getTeacherClassIds(userId) {
+  if (!userId) return [];
+  try {
+    const rows = await db.prepare(
+      "SELECT DISTINCT class_id FROM class_members WHERE user_id = ? AND role = 'teacher'"
+    ).all(userId);
+    return rows.map(function (row) { return Number(row.class_id); })
+      .filter(function (n) { return Number.isFinite(n); });
+  } catch (error) {
+    return [];
+  }
+}
+
+// 教师任教的“主班级”（用于发布班级任务）：优先班主任身份，其次任一所属班级
+async function getTeacherHeadClassId(userId) {
+  if (!userId) return null;
+  try {
+    const head = await db.prepare(
+      "SELECT id FROM classes WHERE head_teacher_id = ? ORDER BY id LIMIT 1"
+    ).get(userId);
+    if (head) return Number(head.id);
+    const member = await db.prepare(
+      "SELECT cm.class_id FROM class_members cm WHERE cm.user_id = ? AND cm.role = 'teacher' ORDER BY cm.class_id LIMIT 1"
+    ).get(userId);
+    return member ? Number(member.class_id) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// 把「真实学生」过滤与班级作用域合并。保持与 realStudentWhere 相同的占位符数量（2 个 demo ?），
+// 因此原有 .all(...demoParams(2)) 调用无需修改。
+function studentScopeWhere(alias, classIds) {
+  alias = alias || "c";
+  const base = realStudentWhere(alias);
+  if (!classIds || !classIds.length) return base;
+  const ids = classIds.map(function (n) { return Number(n); })
+    .filter(function (n) { return Number.isFinite(n); });
+  if (!ids.length) return base;
+  return "(" + base + " AND " + alias + ".user_id IN (" +
+    "SELECT DISTINCT cm.user_id FROM class_members cm " +
+    "WHERE cm.role = 'student' AND cm.class_id IN (" + ids.join(",") + ")))";
+}
+
+function normalizeIdList(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = {};
+  const out = [];
+  value.forEach(function (raw) {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0 || seen[n]) return;
+    seen[n] = true;
+    out.push(n);
+  });
+  return out;
+}
+
+// 学生（child）所属班级 id，无班级返回 null
+async function getChildClassId(childId) {  if (!childId) return null;
+  try {
+    const row = await db.prepare(
+      "SELECT cm.class_id FROM class_members cm JOIN children c ON c.user_id = cm.user_id " +
+      "WHERE cm.role = 'student' AND c.id = ? ORDER BY cm.class_id LIMIT 1"
+    ).get(childId);
+    return row ? Number(row.class_id) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// 本周班级任务解析：优先孩子所在班级的任务；无则回退到无班级归属的全局班级任务（向后兼容旧数据）
+async function findClassTaskForChild(weekStart, childId) {
+  const classId = await getChildClassId(childId);
+  if (classId != null) {
+    const scoped = await db.prepare(
+      "SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(weekStart, classId);
+    if (scoped) return scoped;
+  }
+  return await db.prepare(
+    "SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id IS NULL ORDER BY id DESC LIMIT 1"
+  ).get(weekStart);
+}
+
+async function getTeacherVisibleChildren(user) {
+  const classIds = user && user.role === "teacher" ? await getTeacherClassIds(user.id) : [];
+  return await db.prepare(
+    "SELECT c.*, q.answers AS q_answers FROM children c " +
+    latestQuestionnaireJoin() +
+    "WHERE " + studentScopeWhere("c", classIds) + " ORDER BY c.id LIMIT " + MAX_VISIBLE_CHILDREN
+  ).all(...demoParams(2));
+}
+
+async function getParentEngagement(userId, childId) {
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
+  const sinceText = since.getFullYear() + "-" +
+    String(since.getMonth() + 1).padStart(2, "0") + "-" +
+    String(since.getDate()).padStart(2, "0") + " 00:00:00";
+
+  const rows = await db.prepare(
+    "SELECT event_type, created_at FROM events " +
+    "WHERE user_id = ? AND child_id = ? AND created_at >= ? " +
+    "ORDER BY created_at DESC"
+  ).all(userId, childId, sinceText);
+
+  const count = {};
+  const activeDays = new Set();
+  rows.forEach(function (row) {
+    count[row.event_type] = (count[row.event_type] || 0) + 1;
+    if (["parent_logged_in", "task_detail_viewed", "timeline_viewed", "feedback_card_viewed",
+      "submission_drafted", "submission_submitted", "teacher_contact_started", "parent_task_request_submitted"].includes(row.event_type)) {
+      activeDays.add(String(row.created_at).slice(0, 10));
+    }
+  });
+
+  const touchpoints = (count.task_card_viewed || 0) +
+    (count.feedback_card_viewed || 0) +
+    (count.task_detail_viewed || 0);
+  const exploration = (count.task_detail_viewed || 0) +
+    (count.timeline_viewed || 0) +
+    (count.feedback_card_viewed || 0);
+  const followThrough = (count.submission_drafted || 0) +
+    (count.submission_submitted || 0) +
+    (count.teacher_contact_started || 0) +
+    (count.parent_task_request_submitted || 0);
+  const strongSignals = (count.timeline_viewed || 0) +
+    (count.submission_drafted || 0) +
+    (count.submission_submitted || 0) +
+    (count.teacher_contact_started || 0) +
+    (count.parent_task_request_submitted || 0);
+
+  let score = 0;
+  score += Math.min(24, (count.task_detail_viewed || 0) * 8);
+  score += Math.min(18, (count.timeline_viewed || 0) * 6);
+  score += Math.min(28, (count.submission_submitted || 0) * 14);
+  score += Math.min(12, (count.submission_drafted || 0) * 6);
+  score += Math.min(18, (count.teacher_contact_started || 0) * 18);
+  score += Math.min(18, (count.parent_task_request_submitted || 0) * 18);
+  if (activeDays.size >= 2) score += 10;
+  score = Math.min(100, score);
+
+  const evidenceCount = rows.length;
+  const confidence = evidenceCount >= 5 || activeDays.size >= 2 ? "高"
+    : evidenceCount >= 2 ? "中" : "低";
+  const level = evidenceCount === 0 ? "证据不足"
+    : score >= 60 ? "主动关注证据较高"
+    : score >= 30 ? "有一定主动关注"
+    : "近期主动关注证据较少";
+  const status = evidenceCount === 0 ? "insufficient"
+    : score >= 60 ? "high" : score >= 30 ? "medium" : "low";
+
+  const evidence = [];
+  if (count.parent_logged_in) evidence.push("登录系统 " + count.parent_logged_in + " 次");
+  if (count.task_detail_viewed) evidence.push("查看任务详情 " + count.task_detail_viewed + " 次");
+  if (count.timeline_viewed) evidence.push("回看成长档案 " + count.timeline_viewed + " 次");
+  if (count.submission_submitted) evidence.push("完成提交 " + count.submission_submitted + " 次");
+  if (count.teacher_contact_started) evidence.push("发起沟通 " + count.teacher_contact_started + " 次");
+  if (count.parent_task_request_submitted) evidence.push("提交自主定制任务 " + count.parent_task_request_submitted + " 次");
+  if (!evidence.length && touchpoints) evidence.push("接触过 " + touchpoints + " 次家校信息");
+
+  let recommendation = "继续提供简短、可直接行动的信息";
+  if (status === "insufficient") recommendation = "暂不下结论，先提供一次清晰摘要";
+  else if (status === "low") recommendation = "减少信息负担，给出一个明确的下一步";
+  else if (status === "medium") recommendation = "在重要事项后补充一次轻量跟进";
+  else if (followThrough > 0) recommendation = "提供更深入的趋势和家庭支持建议";
+
+  return {
+    windowDays: 30,
+    score: score,
+    level: level,
+    status: status,
+    confidence: confidence,
+    evidence: evidence,
+    recommendation: recommendation,
+    counts: {
+      touchpoints: touchpoints,
+      exploration: exploration,
+      followThrough: followThrough,
+      activeDays: activeDays.size,
+      events: evidenceCount
+    }
+  };
+}
+
+async function getEngagementPreference(userId, childId) {
+  const row = await db.prepare(
+    "SELECT enabled FROM engagement_preferences WHERE user_id = ? AND child_id = ?"
+  ).get(userId, childId);
+  return !row || Number(row.enabled) !== 0;
+}
+
+function pickJsonObject(text) {
+  const raw = String(text || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  try { return JSON.parse(raw); } catch (e) {}
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)); } catch (e) {}
+  }
+  return null;
+}
+
+async function generateDeepSeekReport(report) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return null;
+  const endpoint = process.env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+  function anonymizeRows(rows) {
+    return (rows || []).slice(0, 12).map(function (row, idx) {
+      return {
+        studentAlias: "学生" + (idx + 1),
+        grade: row.grade || "",
+        caregiver: row.caregiver || "",
+        interests: row.interests || "",
+        timeAvailable: row.timeAvailable || "",
+        taskPreference: row.taskPreference || "",
+        completeness: row.completeness
+      };
+    });
+  }
+  function anonymizeSamples(samples) {
+    return (samples || []).slice(0, 6).map(function (sample, idx) {
+      return {
+        studentAlias: "学生" + (idx + 1),
+        taskTitle: sample.taskTitle || "",
+        snippet: String(sample.snippet || "").slice(0, 80)
+      };
+    });
+  }
+  function anonymizeBehaviorRows(rows) {
+    return (rows || []).slice(0, 12).map(function (row, idx) {
+      return {
+        studentAlias: "学生" + (idx + 1),
+        touchpoints: row.touchpoints || 0,
+        exploration: row.exploration || 0,
+        followThrough: row.followThrough || 0,
+        activeDays: row.activeDays || 0,
+        events: row.events || 0
+      };
+    });
+  }
+  const payload = {
+    generatedAt: report.generatedAt,
+    dataScope: report.dataScope,
+    stats: report.stats,
+    dimensions: report.dimensions.map(function (d) {
+      return {
+        key: d.key,
+        title: d.title,
+        summary: d.summary,
+        findings: d.findings,
+        actions: d.actions,
+        distribution: d.distribution,
+        weekdayDistribution: d.weekdayDistribution,
+        indicators: d.indicators,
+        samples: anonymizeSamples(d.samples),
+        rows: d.key === "behaviorSignals" ? anonymizeBehaviorRows(d.rows) : anonymizeRows(d.rows)
+      };
+    })
+  };
+  const messages = [
+    {
+      role: "system",
+      content: "你是家校共育系统里的教师数据分析助手。请基于数据输出审慎、温和、可行动的中文报告，不做排名，不贴负面标签，不夸大站内行为证据。所有建议必须尊重自愿参与、隐私保护、过程性评价和不公开比较。只返回 JSON，不要输出 Markdown。"
+    },
+    {
+      role: "user",
+      content: "请从学生档案、家长完成任务时间、家长上传文字素材、家长行为参与信号（埋点）四个维度生成增强分析。其中 behaviorSignals 维度来自家长在系统内的行为埋点（查看、浏览、起草、提交、发起沟通等），只能用于识别参与节奏、活跃时段和沟通时机，绝不能据此断言家长是否关心孩子。返回 JSON，格式必须为 {\"headline\":\"一句总判断\",\"summary\":\"120字以内总览\",\"dimensions\":[{\"key\":\"profiles|completionTime|textMaterials|behaviorSignals\",\"title\":\"维度标题\",\"summary\":\"一句维度判断\",\"findings\":[\"发现1\"],\"actions\":[\"建议1\"]}],\"priorities\":[{\"title\":\"优先事项\",\"reason\":\"为什么优先\",\"action\":\"教师下一步动作\",\"urgency\":\"高|中|低\"}],\"nextWeekPlan\":{\"taskTheme\":\"下周任务主题\",\"targetGroup\":\"适用对象\",\"designNotes\":[\"设计要点\"],\"fallback\":\"低负担替代方案\"},\"followUpGroups\":[{\"group\":\"分层人群\",\"signal\":\"可观察信号\",\"teacherAction\":\"建议动作\",\"tone\":\"沟通语气\"}],\"risks\":[\"需要谨慎解读的点\"]}。要求：1. 不评价家长是否关心孩子；2. 不输出学生姓名；3. 不把低样本当结论；4. 建议必须能在一周内执行；5. 若数据不足，请明确说明证据不足。\n\n数据：" + JSON.stringify(payload)
+    }
+  ];
+  const response = await fetchWithRetry(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      stream: false,
+      temperature: 0.2,
+      max_tokens: 5000
+    })
+  }, { timeoutMs: Number(process.env.AI_REPORT_TIMEOUT_MS) || 45000, retries: 1 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("DeepSeek API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  const data = await response.json();
+  const content = data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content : "";
+  return pickJsonObject(content);
+}
+
+function getZhipuApiKey() {
+  return process.env.ZHIPU_API_KEY || process.env.BIGMODEL_API_KEY || "";
+}
+
+function getDeepSeekApiKey() {
+  return process.env.DEEPSEEK_API_KEY || "";
+}
+
+function getDeepSeekModel() {
+  return process.env.DEEPSEEK_MODEL || "deepseek-chat";
+}
+
+function getDeepSeekEndpoint() {
+  return process.env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions";
+}
+
+function getZhipuEmbeddingModel() {
+  return process.env.ZHIPU_EMBEDDING_MODEL || "embedding-3";
+}
+
+function getZhipuChatModel() {
+  return process.env.ZHIPU_CHAT_MODEL || "glm-4-flash";
+}
+
+function getZhipuEndpoint(kind) {
+  const defaultBase = "https://open.bigmodel.cn/api/paas/v4";
+  const base = String(process.env.ZHIPU_API_BASE || defaultBase).replace(/\/+$/, "");
+  if (kind === "embedding") return process.env.ZHIPU_EMBEDDING_URL || base + "/embeddings";
+  return process.env.ZHIPU_CHAT_URL || base + "/chat/completions";
+}
+
+async function requestZhipuEmbeddings(texts) {
+  const apiKey = getZhipuApiKey();
+  if (!apiKey || !texts.length) return [];
+  const response = await fetchWithRetry(getZhipuEndpoint("embedding"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: getZhipuEmbeddingModel(),
+      input: texts
+    })
+  }, { timeoutMs: Number(process.env.AI_EMBEDDING_TIMEOUT_MS) || 30000, retries: 1 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("智谱 Embedding API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  const data = await response.json();
+  return (data.data || []).sort(function (a, b) {
+    return Number(a.index || 0) - Number(b.index || 0);
+  }).map(function (item) {
+    return Array.isArray(item.embedding) ? item.embedding : [];
+  });
+}
+
+async function requestZhipuChat(messages, options) {
+  const apiKey = getZhipuApiKey();
+  if (!apiKey) return "";
+  options = options || {};
+  const response = await fetchWithRetry(getZhipuEndpoint("chat"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: options.model || getZhipuChatModel(),
+      messages: messages,
+      stream: false,
+      temperature: options.temperature == null ? 0.2 : options.temperature,
+      max_tokens: options.maxTokens || 1200
+    })
+  }, { timeoutMs: Number(process.env.AI_CHAT_TIMEOUT_MS) || 45000, retries: 1 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("智谱 Chat API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  const data = await response.json();
+  return data && data.choices && data.choices[0] && data.choices[0].message
+    ? String(data.choices[0].message.content || "") : "";
+}
+
+async function requestZhipuChatStream(messages, options, onDelta) {
+  const apiKey = getZhipuApiKey();
+  if (!apiKey) return "";
+  options = options || {};
+  const response = await fetchWithRetry(getZhipuEndpoint("chat"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: options.model || getZhipuChatModel(),
+      messages: messages,
+      stream: true,
+      temperature: options.temperature == null ? 0.2 : options.temperature,
+      max_tokens: options.maxTokens || 1200
+    })
+  }, { timeoutMs: Number(process.env.AI_STREAM_TIMEOUT_MS) || 90000, retries: 0 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("智谱 Chat API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+
+  async function handleBlock(block) {
+    const lines = block.split(/\r?\n/).filter(function (line) { return line.startsWith("data:"); });
+    if (!lines.length) return;
+    const dataText = lines.map(function (line) { return line.slice(5).trimStart(); }).join("\n");
+    if (!dataText || dataText === "[DONE]") return;
+    let payload = null;
+    try { payload = JSON.parse(dataText); } catch (e) { return; }
+    const choice = payload && payload.choices && payload.choices[0];
+    const delta = choice && choice.delta ? choice.delta : null;
+    const message = choice && choice.message ? choice.message : null;
+    const content = (delta && delta.content != null) ? delta.content : (message && message.content != null ? message.content : "");
+    if (!content) return;
+    fullText += content;
+    if (onDelta) await onDelta(content);
+  }
+
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || "";
+    for (const block of blocks) await handleBlock(block);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) await handleBlock(buffer);
+  return fullText;
+}
+
+async function requestDeepSeekChat(messages, options) {
+  const apiKey = getDeepSeekApiKey();
+  if (!apiKey) return "";
+  options = options || {};
+  const response = await fetchWithRetry(getDeepSeekEndpoint(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: options.model || getDeepSeekModel(),
+      messages: messages,
+      stream: false,
+      temperature: options.temperature == null ? 0.2 : options.temperature,
+      max_tokens: options.maxTokens || 1200
+    })
+  }, { timeoutMs: Number(process.env.AI_CHAT_TIMEOUT_MS) || 45000, retries: 1 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("DeepSeek Chat API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  const data = await response.json();
+  return data && data.choices && data.choices[0] && data.choices[0].message
+    ? String(data.choices[0].message.content || "") : "";
+}
+
+async function requestDeepSeekChatStream(messages, options, onDelta) {
+  const apiKey = getDeepSeekApiKey();
+  if (!apiKey) return "";
+  options = options || {};
+  const response = await fetchWithRetry(getDeepSeekEndpoint(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({
+      model: options.model || getDeepSeekModel(),
+      messages: messages,
+      stream: true,
+      temperature: options.temperature == null ? 0.2 : options.temperature,
+      max_tokens: options.maxTokens || 1200
+    })
+  }, { timeoutMs: Number(process.env.AI_STREAM_TIMEOUT_MS) || 90000, retries: 0 });
+  if (!response.ok) {
+    const text = await response.text().catch(function () { return ""; });
+    throw new Error("DeepSeek Chat API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+
+  async function handleBlock(block) {
+    const lines = block.split(/\r?\n/).filter(function (line) { return line.startsWith("data:"); });
+    if (!lines.length) return;
+    const dataText = lines.map(function (line) { return line.slice(5).trimStart(); }).join("\n");
+    if (!dataText || dataText === "[DONE]") return;
+    let payload = null;
+    try { payload = JSON.parse(dataText); } catch (e) { return; }
+    const choice = payload && payload.choices && payload.choices[0];
+    const delta = choice && choice.delta ? choice.delta : null;
+    const message = choice && choice.message ? choice.message : null;
+    const content = (delta && delta.content != null) ? delta.content : (message && message.content != null ? message.content : "");
+    if (!content) return;
+    fullText += content;
+    if (onDelta) await onDelta(content);
+  }
+
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || "";
+    for (const block of blocks) await handleBlock(block);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) await handleBlock(buffer);
+  return fullText;
+}
+
+function getInteractionApiKey() {
+  return getDeepSeekApiKey() || getZhipuApiKey();
+}
+
+function getInteractionProvider() {
+  return getDeepSeekApiKey() ? "DeepSeek AI" : (getZhipuApiKey() ? "智谱 AI" : "本地检索");
+}
+
+async function requestInteractionChat(messages, options) {
+  if (getDeepSeekApiKey()) return requestDeepSeekChat(messages, options);
+  return requestZhipuChat(messages, options);
+}
+
+async function requestInteractionChatStream(messages, options, onDelta) {
+  if (getDeepSeekApiKey()) return requestDeepSeekChatStream(messages, options, onDelta);
+  return requestZhipuChatStream(messages, options, onDelta);
+}
+
+function parseJsonField(value) {
+  try { return JSON.parse(value || "{}") || {}; } catch (e) { return {}; }
+}
+
+function studentSuggestionDuration(answers, student) {
+  const timeAvailable = String((answers || {}).timeAvailable || "");
+  const taskPreference = String((answers || {}).taskPreference || "");
+  let duration = 20;
+  if (timeAvailable.includes("充足") || timeAvailable.includes("很多") || timeAvailable.includes("多")) duration = 30;
+  else if (timeAvailable.includes("有限") || timeAvailable.includes("少") || timeAvailable.includes("很少")) duration = 15;
+  if (taskPreference === "低负担" || taskPreference === "短时长") duration = 15;
+  else if (taskPreference === "长时长") duration = Math.max(duration, 30);
+  if (String(student.caregiver || "").includes("祖辈") || ["奶奶", "爷爷", "外婆", "外公"].some(function (name) {
+    return String(student.caregiver || "").includes(name);
+  })) duration = Math.min(duration, 15);
+  return Math.max(5, Math.min(60, duration));
+}
+
+function studentSuggestionFallback(student, answers, history, behavior) {
+  const interests = String(student.interests || answers.interests || "").split(/[，,]/).map(function (item) {
+    return item.trim();
+  }).filter(Boolean);
+  const focus = interests[0] || "日常生活";
+  const duration = studentSuggestionDuration(answers, student);
+  const behaviorCount = behavior && behavior.events ? behavior.events : 0;
+  const completedCount = history ? history.length : 0;
+  return {
+    title: "数据反馈：" + focus + "亲子观察",
+    type: "观察探究",
+    duration: duration,
+    goal: "结合孩子的兴趣和家庭节奏完成一次低负担观察，帮助教师获得可持续调整任务的过程反馈",
+    steps: "1. 围绕「" + focus + "」选择一个家里或身边的观察对象\n" +
+      "2. 和孩子一起观察 " + duration + " 分钟，记录一个具体发现\n" +
+      "3. 请孩子说说最感兴趣或最困难的地方\n" +
+      "4. 家长提交一张照片或两三句话的过程记录",
+    dialogueTips: "「你刚才发现了什么？下次还想怎么试一试？」",
+    submitHint: "提交一张过程照片或两三句话的观察记录",
+    rationale: "根据学生兴趣「" + focus + "」、已完成 " + completedCount + " 个任务" +
+      (behaviorCount ? "和近30天 " + behaviorCount + " 次站内行为" : "及当前可见档案") +
+      "生成的本地兜底建议，适合先用一次轻量任务验证反馈。",
+    source: "ai",
+    aiGenerated: false,
+    aiStatus: "本地规则兜底"
+  };
+}
+
+function normalizeStudentAiSuggestion(raw, fallback, answers, student) {
+  if (!raw || typeof raw !== "object") return fallback;
+  const title = String(raw.title || "").trim();
+  const goal = String(raw.goal || "").trim();
+  const steps = String(raw.steps || "").trim();
+  if (!title || !goal || !steps) return fallback;
+  const duration = Number(raw.duration) || fallback.duration || studentSuggestionDuration(answers, student);
+  const types = ["阅读", "习惯养成", "学科应用", "情绪社交", "家务实践", "运动健身", "观察探究"];
+  const type = types.includes(String(raw.type || "")) ? String(raw.type) : fallback.type;
+  return {
+    title: title.slice(0, 80),
+    type: type.slice(0, 40),
+    duration: Math.max(5, Math.min(60, duration)),
+    goal: goal.slice(0, 240),
+    steps: steps.slice(0, 1600),
+    dialogueTips: String(raw.dialogueTips || fallback.dialogueTips).slice(0, 240),
+    submitHint: String(raw.submitHint || fallback.submitHint).slice(0, 240),
+    rationale: String(raw.rationale || fallback.rationale).slice(0, 500),
+    source: "ai",
+    aiGenerated: true,
+    aiStatus: "AI 已生成"
+  };
+}
+
+async function generateStudentAiSuggestion(student, answers, history, behavior, fallback) {
+  if (!getInteractionApiKey()) return fallback;
+  const profile = {
+    grade: student.grade || "未填写",
+    gender: student.gender || "未填写",
+    age: student.age || "未填写",
+    caregiver: student.caregiver || "未填写",
+    interests: student.interests || answers.interests || "未填写",
+    familyNote: student.family_note || answers.familyNote || "未填写",
+    timeAvailable: answers.timeAvailable || "未填写",
+    taskPreference: answers.taskPreference || "未填写"
+  };
+  const historyData = (history || []).slice(0, 8).map(function (row) {
+    return {
+      taskType: row.task_type || "未填写",
+      taskTitle: row.task_title || "未填写",
+      status: row.status || "submitted",
+      submittedAt: row.created_at || "",
+      content: String(row.content || "").slice(0, 260)
+    };
+  });
+  const behaviorData = {
+    windowDays: 30,
+    events: behavior.events || 0,
+    activeDays: behavior.activeDays || 0,
+    counts: behavior.counts || {}
+  };
+  const messages = [
+    {
+      role: "system",
+      content: "你是家校共育系统中的教师任务设计助手。请根据单个学生的脱敏档案和参与数据，生成一张可在一周内执行的亲子任务建议。不要评价家长是否关心孩子，不贴标签，不做排名；只依据数据提出温和、低负担、可观察的建议。只返回 JSON，不要 Markdown。"
+    },
+    {
+      role: "user",
+      content: "请生成一张与现有模板不同的 AI 个性化任务建议。返回格式必须是 {\"title\":\"任务标题\",\"type\":\"阅读|习惯养成|学科应用|情绪社交|家务实践|运动健身|观察探究\",\"duration\":20,\"goal\":\"任务目标\",\"steps\":\"每行一个步骤\",\"dialogueTips\":\"对话提示\",\"submitHint\":\"提交要求\",\"rationale\":\"说明使用了哪些学生数据\"}。要求：1. 时长适配家庭可用时间和任务偏好；2. 必须结合兴趣、陪伴人或历史记录中的至少两项信息；3. 步骤不超过4步，材料尽量容易获得；4. 不要虚构没有提供的事实；5. 行为埋点只能用于判断参与节奏，不可推断家长态度；6. 数据不足时明确写出“证据有限”，仍给出可执行的低风险任务。\n\n学生档案：" + JSON.stringify(profile) +
+        "\n历史任务与提交：" + JSON.stringify(historyData) +
+        "\n近30天行为摘要：" + JSON.stringify(behaviorData)
+    }
+  ];
+  try {
+    const content = await requestInteractionChat(messages, { maxTokens: 1000, temperature: 0.25 });
+    return normalizeStudentAiSuggestion(pickJsonObject(content), fallback, answers, student);
+  } catch (e) {
+    console.warn("学生 AI 任务建议生成失败，将使用本地规则兜底：", e.message);
+    return fallback;
+  }
+}
+
+function concernNeedsProfessionalReview(input) {
+  const text = [
+    input.observedBehavior,
+    input.context,
+    input.impact,
+    input.parentExpectation
+  ].join(" ");
+  return /(自伤|自杀|不想活|伤害自己|伤人|虐待|严重暴力|极端危险)/.test(text);
+}
+
+function concernPlanFallback(input, child) {
+  const category = input.category || "家庭沟通";
+  const observed = input.observedBehavior || "家长希望更好地理解孩子近期的表现";
+  const expectation = input.parentExpectation || "通过一次轻量互动，帮助家长观察并支持孩子";
+  const needsProfessionalReview = concernNeedsProfessionalReview(input);
+  return {
+    analysisSummary: "家长描述了「" + category + "」方面的观察，当前先将内容理解为一个需要被共同观察和支持的家庭场景，不对孩子做性格或心理诊断。",
+    observations: ["可观察描述：" + observed, input.context ? "发生场景：" + input.context : "具体发生场景仍可在后续沟通中补充"],
+    supportGoal: expectation,
+    boundaryNote: needsProfessionalReview
+      ? "描述中出现需要优先由班主任或学校专业人员进一步了解的风险信号，不建议仅通过家庭任务处理。"
+      : "一次任务只能用于练习和观察，不能据此判断问题是否已经解决。",
+    needsProfessionalReview: needsProfessionalReview,
+    task: {
+      title: "亲子观察：一起理解这件事",
+      type: category === "情绪表达" || category === "同伴交往" ? "情绪社交" : "观察探究",
+      duration: Math.max(10, Math.min(30, Number(input.duration) || 20)),
+      difficulty: "简单",
+      materials: "纸笔可选",
+      goal: "围绕一个具体场景，帮助孩子表达感受和想法，也让家长记录一次有效回应",
+      steps: "1. 家长和孩子一起选择一个最近发生的具体场景\n2. 先请孩子说说当时发生了什么、自己怎么想\n3. 家长只做复述和追问，不急着评价或给答案\n4. 一起记录一个下次可以尝试的小行动",
+      dialogueTips: "「当时发生了什么？你希望我怎样陪你一起想办法？」",
+      submitHint: "提交两三句话的过程记录，说明孩子愿意分享了什么、家长尝试了怎样的回应",
+      fallbackPlan: "孩子不愿长谈时，只完成一次五分钟倾听；也可以由主要陪伴人先记录观察，不强迫孩子完成"
+    },
+    followUp: "完成后继续观察孩子是否愿意表达、哪种回应更容易让对话继续。"
+  };
+}
+
+function normalizeConcernPlan(raw, fallback, input) {
+  if (!raw || typeof raw !== "object") return fallback;
+  const task = raw.task && typeof raw.task === "object" ? raw.task : {};
+  const title = String(task.title || "").trim();
+  const goal = String(task.goal || "").trim();
+  const steps = String(task.steps || "").trim();
+  if (!title || !goal || !steps) return fallback;
+  const types = ["阅读", "习惯养成", "学科应用", "情绪社交", "家务实践", "运动健身", "观察探究"];
+  const rawDuration = Number(task.duration) || Number(input.duration) || 20;
+  return {
+    analysisSummary: String(raw.analysisSummary || fallback.analysisSummary).slice(0, 800),
+    observations: Array.isArray(raw.observations) ? raw.observations.map(function (item) {
+      return String(item || "").trim();
+    }).filter(Boolean).slice(0, 5) : fallback.observations,
+    supportGoal: String(raw.supportGoal || fallback.supportGoal).slice(0, 400),
+    boundaryNote: String(raw.boundaryNote || fallback.boundaryNote).slice(0, 500),
+    needsProfessionalReview: !!raw.needsProfessionalReview || fallback.needsProfessionalReview,
+    task: {
+      title: title.slice(0, 100),
+      type: types.includes(String(task.type || "")) ? String(task.type) : fallback.task.type,
+      duration: Math.max(5, Math.min(60, rawDuration)),
+      difficulty: ["简单", "普通", "进阶"].includes(String(task.difficulty || "")) ? String(task.difficulty) : "简单",
+      materials: String(task.materials || fallback.task.materials).slice(0, 180),
+      goal: goal.slice(0, 300),
+      steps: steps.slice(0, 1800),
+      dialogueTips: String(task.dialogueTips || fallback.task.dialogueTips).slice(0, 300),
+      submitHint: String(task.submitHint || fallback.task.submitHint).slice(0, 300),
+      fallbackPlan: String(task.fallbackPlan || fallback.task.fallbackPlan).slice(0, 400)
+    },
+    followUp: String(raw.followUp || fallback.followUp).slice(0, 500)
+  };
+}
+
+async function generateParentConcernPlan(input, child) {
+  const fallback = concernPlanFallback(input, child);
+  if (!getInteractionApiKey()) return { plan: fallback, status: "fallback" };
+  const profile = {
+    grade: child.grade || "未填写",
+    age: child.age || "未填写",
+    caregiver: child.caregiver || "未填写",
+    interests: child.interests || "未填写",
+    familyNote: child.family_note || "未填写"
+  };
+  const messages = [
+    {
+      role: "system",
+      content: "你是家校共育系统中的教师任务设计助手。家长提交了孩子近期的观察和支持需求。请把描述整理成中性的、可验证的观察，并给出一份低负担、可在一周内完成的亲子任务草案，供教师审核。绝不使用“性格缺陷”“问题儿童”等标签，不做心理或医学诊断，不把一次任务当成治疗。若出现自伤、伤人、虐待或明显安全风险，必须将 needsProfessionalReview 设为 true，并建议联系班主任或学校专业人员；不要用普通亲子任务替代专业支持。只返回 JSON，不要 Markdown。"
+    },
+    {
+      role: "user",
+      content: "返回格式必须为：" + JSON.stringify({
+        analysisSummary: "对家长描述的中性理解",
+        observations: ["可观察事实或需要补充的场景"],
+        supportGoal: "本次希望支持的具体能力",
+        boundaryNote: "边界和风险提示",
+        needsProfessionalReview: false,
+        task: {
+          title: "任务标题",
+          type: "阅读|习惯养成|学科应用|情绪社交|家务实践|运动健身|观察探究",
+          duration: 20,
+          difficulty: "简单|普通|进阶",
+          materials: "材料",
+          goal: "任务目标",
+          steps: "每行一个步骤",
+          dialogueTips: "对话提示",
+          submitHint: "提交要求",
+          fallbackPlan: "替代方案"
+        },
+        followUp: "完成后观察什么"
+      }) + "\n\n孩子档案：" + JSON.stringify(profile) +
+      "\n家长提交的关注：" + JSON.stringify({
+        category: input.category,
+        observedBehavior: input.observedBehavior,
+        context: input.context,
+        frequency: input.frequency,
+        impact: input.impact,
+        parentExpectation: input.parentExpectation,
+        familyConstraints: input.familyConstraints,
+        duration: input.duration
+      })
+    }
+  ];
+  try {
+    const content = await requestInteractionChat(messages, { maxTokens: 1600, temperature: 0.2 });
+    return {
+      plan: normalizeConcernPlan(pickJsonObject(content), fallback, input),
+      status: "ai"
+    };
+  } catch (error) {
+    console.warn("家长成长关注 AI 方案生成失败，将使用本地规则兜底：", error.message);
+    return { plan: fallback, status: "fallback" };
+  }
+}
+
+function dailySchoolUpdateFallback(transcript, children) {
+  const text = String(transcript || "").trim();
+  const candidates = (children || []).filter(function (child) {
+    return child && child.name;
+  }).sort(function (a, b) {
+    return String(b.name).length - String(a.name).length;
+  });
+  const matched = candidates.find(function (child) {
+    return text.includes(String(child.name));
+  }) || null;
+  const studentName = matched ? String(matched.name) : "学生";
+  const normalized = text.replace(/^今天[，,、\s]*/, "").trim();
+  const summary = normalized
+    ? (matched && !normalized.includes(studentName) ? studentName + "今天在学校" + normalized : normalized)
+    : studentName + "今天在学校有一条新的校园记录。";
+  return {
+    studentName: studentName,
+    summary: summary.slice(0, 260),
+    analysis: "先记录事实与过程，后续可继续观察孩子的参与方式、同伴互动和情绪变化。",
+    parentMessage: studentName + "今天在学校的表现：" + summary.slice(0, 220),
+    tags: ["校园观察"],
+    aiStatus: "fallback"
+  };
+}
+
+function normalizeDailySchoolUpdate(raw, fallback) {
+  if (!raw || typeof raw !== "object") return fallback;
+  const studentName = String(raw.studentName || raw.student_name || fallback.studentName || "学生").trim();
+  const summary = String(raw.summary || raw.eventSummary || fallback.summary || "").trim();
+  if (!summary) return fallback;
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags.map(function (tag) { return String(tag || "").trim(); }).filter(Boolean).slice(0, 4)
+    : fallback.tags;
+  return {
+    studentName: studentName.slice(0, 80),
+    summary: summary.slice(0, 260),
+    analysis: String(raw.analysis || fallback.analysis || "").trim().slice(0, 600),
+    parentMessage: String(raw.parentMessage || raw.parent_message || fallback.parentMessage || summary).trim().slice(0, 600),
+    tags: tags.length ? tags : fallback.tags,
+    aiStatus: "ai"
+  };
+}
+
+async function generateDailySchoolUpdate(transcript, children) {
+  const fallback = dailySchoolUpdateFallback(transcript, children);
+  if (!getInteractionApiKey()) return fallback;
+  const candidateNames = (children || []).map(function (child) {
+    return String(child.name || "").trim();
+  }).filter(Boolean).slice(0, 200);
+  const messages = [
+    {
+      role: "system",
+      content: "你是家校共育系统的教师记录助手。请把老师口述的校园观察整理成客观、温和、适合家长阅读的中文内容。只返回 JSON，不要 Markdown，不要虚构事实，不给孩子贴标签，不做成绩排名。"
+    },
+    {
+      role: "user",
+      content: "请根据下面的教师口述生成 JSON，格式必须是：" +
+        "{\"studentName\":\"学生姓名\",\"summary\":\"面向家长的一句话事实摘要\"," +
+        "\"analysis\":\"基于事实的简短教育观察，不超过120字\"," +
+        "\"parentMessage\":\"发送给家长的温和通知，不超过220字\"," +
+        "\"tags\":[\"标签\"]}。" +
+        "如果口述中出现的姓名与候选名单一致，优先使用候选名单中的姓名；无法确认时使用“学生”。" +
+        "\n候选学生名单：" + JSON.stringify(candidateNames) +
+        "\n教师口述：" + String(transcript).slice(0, 2000)
+    }
+  ];
+  try {
+    const content = await requestInteractionChat(messages, { maxTokens: 900, temperature: 0.2 });
+    return normalizeDailySchoolUpdate(pickJsonObject(content), fallback);
+  } catch (error) {
+    console.warn("教师校园记录 AI 整理失败，将使用本地规则兜底：", error.message);
+    return fallback;
+  }
+}
+
+async function teacherParentInfo(childId) {
+  const rows = await db.prepare(
+    "SELECT u.display_name, b.relation FROM bindings b JOIN users u ON u.id = b.user_id " +
+    "WHERE b.child_id = ? AND u.role = 'parent' ORDER BY b.id"
+  ).all(childId);
+  return rows.map(function (row) {
+    return (row.display_name || "家长") + (row.relation ? "（" + row.relation + "）" : "");
+  });
+}
+
+function buildTeacherSubmissionDocument(row) {
+  const content = String(row.content || "").trim();
+  if (!content || row.status !== "submitted") return null;
+  return {
+    docKey: "submission:" + row.id,
+    docType: "submission",
+    refId: String(row.id),
+    title: "提交：" + row.child_name + " · " + row.task_title,
+    content: [
+      "学生" + row.child_name + "提交了任务《" + row.task_title + "》。",
+      "提交时间：" + formatEventTime(row.created_at) + "；任务周：" + row.week_start + "；任务类型：" + (row.task_type || "未填写") + "。",
+      "提交文本：" + content.slice(0, 4000),
+      Number(row.feedback_count || 0) > 0 ? "状态：已点评。最近点评：" + (row.feedback_comment || "已完成点评") : "状态：尚未点评。",
+      "陪伴人：" + (row.caregiver || "未填写") + "；兴趣：" + (row.interests || "未填写") + "。"
+    ].join("\n"),
+    metadata: {
+      submissionId: row.id,
+      childId: row.child_id,
+      taskId: row.task_id,
+      weekStart: row.week_start,
+      hasText: true,
+      subType: row.sub_type || "text"
+    }
+  };
+}
+
+async function getTeacherSubmissionRow(submissionId) {
+  return await db.prepare(
+    "SELECT s.*, c.name AS child_name, c.grade, c.caregiver, c.interests, " +
+    "t.title AS task_title, t.task_type, t.week_start, t.child_id AS task_child_id, " +
+    "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count, " +
+    "(SELECT f.comment FROM feedback f WHERE f.submission_id = s.id ORDER BY f.id DESC LIMIT 1) AS feedback_comment " +
+    "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+    "WHERE s.id = ? AND " + realStudentWhere("c")
+  ).get(submissionId, ...demoParams(2));
+}
+
+async function getTeacherSubmissionDetail(submissionId) {
+  return await db.prepare(
+    "SELECT s.id, s.task_id, s.child_id, s.content, s.sub_type, s.attachments, s.created_at, s.status, " +
+    "c.name AS child_name, c.grade, " +
+    "t.title AS task_title, t.task_type, t.week_start, t.goal AS task_goal, t.steps AS task_steps, " +
+    "t.dialogue_tips AS task_dialogue_tips, t.submit_hint AS task_submit_hint, t.duration AS task_duration, " +
+    "t.materials AS task_materials, t.fallback_plan AS task_fallback_plan, t.created_at AS task_created_at, " +
+    "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count " +
+    "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+    "WHERE s.id = ? AND " + realStudentWhere("c")
+  ).get(submissionId, ...demoParams(2));
+}
+
+function fallbackSubmissionFeedback(row) {
+  const content = String(row.content || "").trim();
+  const taskType = String(row.task_type || "").trim();
+  const tags = [];
+  if (content.length >= 30) tags.push("表达力");
+  if (/一起|共同|合作|分工|陪伴/.test(content)) tags.push("合作");
+  if (/观察|发现|记录|看到|变化/.test(content) || taskType === "观察探究") tags.push("观察力");
+  if (/坚持|每天|连续|一周/.test(content)) tags.push("坚持");
+  if (!tags.length) tags.push("参与");
+  const firstSentence = content.split(/[。！？.!?]/)[0].trim();
+  const evidence = firstSentence ? "从提交中能看到“" + firstSentence.slice(0, 34) + "”。" : "已经完成了本次任务提交。";
+  return {
+    comment: "这次任务完成得很认真。" + evidence + "建议继续记录过程中的具体发现，让下一次分享更有内容。",
+    tags: tags.slice(0, 3).join(",")
+  };
+}
+
+async function generateSubmissionFeedback(row) {
+  const fallback = fallbackSubmissionFeedback(row);
+  if (!getInteractionApiKey()) {
+    return { comment: fallback.comment, tags: fallback.tags, provider: "本地建议", aiGenerated: false };
+  }
+  const messages = [
+    {
+      role: "system",
+      content: "你是家校共育系统的教师点评助手。请根据任务要求和学生提交，生成一段温和、具体、可执行的中文过程性评价。只肯定真实可见的行动，不夸大、不比较学生、不做心理或医学判断，不评价家长是否关心孩子。评价控制在50到100字，给出不超过3个能力标签。只返回JSON：{\"comment\":\"评价内容\",\"tags\":[\"标签1\",\"标签2\"]}。"
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        task: {
+          title: row.task_title || "",
+          type: row.task_type || "",
+          goal: row.task_goal || "",
+          steps: row.task_steps || "",
+          submitHint: row.task_submit_hint || ""
+        },
+        submission: {
+          content: String(row.content || "").slice(0, 3000),
+          type: row.sub_type || "text"
+        }
+      })
+    }
+  ];
+  try {
+    const raw = await requestInteractionChat(messages, { temperature: 0.35, maxTokens: 500 });
+    const parsed = pickJsonObject(raw);
+    const comment = parsed && String(parsed.comment || "").trim();
+    if (!comment) throw new Error("AI未返回有效评价");
+    const tags = Array.isArray(parsed.tags) ? parsed.tags.join(",") : cleanTags(parsed.tags || "");
+    return {
+      comment: comment.slice(0, 300),
+      tags: tags || fallback.tags,
+      provider: getInteractionProvider(),
+      aiGenerated: true
+    };
+  } catch (error) {
+    return {
+      comment: fallback.comment,
+      tags: fallback.tags,
+      provider: "本地建议",
+      aiGenerated: false,
+      warning: "AI暂时不可用，已生成一份本地评价草稿。"
+    };
+  }
+}
+
+async function upsertTeacherSubmissionVector(submissionId) {
+  const row = await getTeacherSubmissionRow(submissionId);
+  const doc = row ? buildTeacherSubmissionDocument(row) : null;
+  if (!doc) return { indexed: false, embedded: false };
+
+  const contentHash = crypto.createHash("sha256").update(doc.content).digest("hex");
+  const old = await db.prepare(
+    "SELECT embedding, embedding_model, embedding_provider, content_hash " +
+    "FROM ai_vector_documents WHERE namespace = 'teacher' AND doc_key = ?"
+  ).get(doc.docKey);
+  const unchanged = old && old.content_hash === contentHash;
+  const existingEmbedding = old && old.embedding ? old.embedding : "[]";
+  await db.prepare(
+    "INSERT INTO ai_vector_documents " +
+    "(namespace, doc_key, doc_type, ref_id, title, content, metadata, embedding, embedding_model, embedding_provider, content_hash, updated_at) " +
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) " +
+    "ON CONFLICT(doc_key) DO UPDATE SET doc_type=excluded.doc_type, ref_id=excluded.ref_id, title=excluded.title, " +
+    "content=excluded.content, metadata=excluded.metadata, embedding=excluded.embedding, embedding_model=excluded.embedding_model, " +
+    "embedding_provider=excluded.embedding_provider, content_hash=excluded.content_hash, updated_at=excluded.updated_at"
+  ).run(
+    "teacher", doc.docKey, doc.docType, doc.refId, doc.title, doc.content, JSON.stringify(doc.metadata),
+    unchanged ? existingEmbedding : "[]",
+    unchanged ? (old.embedding_model || "") : "",
+    unchanged ? (old.embedding_provider || "") : "",
+    contentHash
+  );
+
+  if (unchanged && existingEmbedding !== "[]") {
+    return { indexed: true, embedded: true };
+  }
+  if (!getZhipuApiKey()) {
+    return { indexed: true, embedded: false };
+  }
+  try {
+    const vector = (await requestZhipuEmbeddings([doc.content]))[0] || [];
+    if (!vector.length) return { indexed: true, embedded: false };
+    await db.prepare(
+      "UPDATE ai_vector_documents SET embedding=?, embedding_model=?, embedding_provider='zhipu', " +
+      "updated_at=datetime('now','localtime') WHERE namespace='teacher' AND doc_key=?"
+    ).run(JSON.stringify(vector), getZhipuEmbeddingModel(), doc.docKey);
+    return { indexed: true, embedded: true };
+  } catch (e) {
+    console.warn("单条提交文本向量化失败，将由下次索引重试：", e.message);
+    return { indexed: true, embedded: false, error: e.message };
+  }
+}
+
+function buildParentTaskRequestDocument(row) {
+  if (!row) return null;
+  const statusText = row.status === "approved" ? "已同意实施"
+    : row.status === "rejected" ? "已拒绝" : "待教师审核";
+  return {
+    docKey: "parent_task_request:" + row.id,
+    docType: "parent_task_request",
+    refId: String(row.id),
+    title: "家长自主定制任务：" + (row.child_name || "学生") + " · " + (row.title || "本周想做的事"),
+    content: [
+      "家长提交了本周自主定制任务提议。",
+      "学生：" + (row.child_name || "未填写") + "；年级：" + (row.grade || "未填写") + "；家长：" + (row.parent_name || "家长") + "。",
+      "提议标题：" + (row.title || "未填写") + "；预计时长：" + (row.duration || 20) + "分钟。",
+      "家长想和孩子一起做：" + String(row.description || "").slice(0, 3000),
+      "家长期待目标：" + (row.goal || "未填写") + "。",
+      "关注方向：" + (row.concern_category || "未填写") + "；观察到的行为：" + (row.observed_behavior || row.description || "未填写") + "。",
+      row.context ? "发生场景：" + row.context + "。" : "发生场景：未填写。",
+      row.frequency ? "出现频率：" + row.frequency + "。" : "出现频率：未填写。",
+      row.impact ? "对家庭的影响：" + row.impact + "。" : "对家庭的影响：未填写。",
+      row.family_constraints ? "家庭限制：" + row.family_constraints + "。" : "家庭限制：未填写。",
+      "当前审核状态：" + statusText + "。",
+      "AI 方案状态：" + (row.ai_status || "pending") + "。",
+      row.teacher_comment ? "教师评价：" + row.teacher_comment : "教师评价：暂无。",
+      row.task_id ? "已生成正式个人任务，任务ID：" + row.task_id + "。" : "尚未生成正式任务。"
+    ].join("\n"),
+    metadata: {
+      requestId: row.id,
+      childId: row.child_id,
+      userId: row.user_id,
+      status: row.status,
+      taskId: row.task_id || null,
+      createdAt: row.created_at
+    }
+  };
+}
+
+async function getParentTaskRequestRow(requestId) {
+  return await db.prepare(
+    "SELECT r.*, c.name AS child_name, c.grade, u.display_name AS parent_name " +
+    "FROM parent_task_requests r JOIN children c ON c.id = r.child_id " +
+    "JOIN users u ON u.id = r.user_id " +
+    "WHERE r.id = ? AND " + realStudentWhere("c")
+  ).get(requestId, ...demoParams(2));
+}
+
+async function upsertParentTaskRequestVector(requestId) {
+  const row = await getParentTaskRequestRow(requestId);
+  const doc = buildParentTaskRequestDocument(row);
+  if (!doc) return { indexed: false, embedded: false };
+
+  const contentHash = crypto.createHash("sha256").update(doc.content).digest("hex");
+  const old = await db.prepare(
+    "SELECT embedding, embedding_model, embedding_provider, content_hash " +
+    "FROM ai_vector_documents WHERE namespace = 'teacher' AND doc_key = ?"
+  ).get(doc.docKey);
+  const unchanged = old && old.content_hash === contentHash;
+  const existingEmbedding = old && old.embedding ? old.embedding : "[]";
+  await db.prepare(
+    "INSERT INTO ai_vector_documents " +
+    "(namespace, doc_key, doc_type, ref_id, title, content, metadata, embedding, embedding_model, embedding_provider, content_hash, updated_at) " +
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) " +
+    "ON CONFLICT(doc_key) DO UPDATE SET doc_type=excluded.doc_type, ref_id=excluded.ref_id, title=excluded.title, " +
+    "content=excluded.content, metadata=excluded.metadata, embedding=excluded.embedding, embedding_model=excluded.embedding_model, " +
+    "embedding_provider=excluded.embedding_provider, content_hash=excluded.content_hash, updated_at=excluded.updated_at"
+  ).run(
+    "teacher", doc.docKey, doc.docType, doc.refId, doc.title, doc.content, JSON.stringify(doc.metadata),
+    unchanged ? existingEmbedding : "[]",
+    unchanged ? (old.embedding_model || "") : "",
+    unchanged ? (old.embedding_provider || "") : "",
+    contentHash
+  );
+
+  if (unchanged && existingEmbedding !== "[]") return { indexed: true, embedded: true };
+  if (!getZhipuApiKey()) return { indexed: true, embedded: false };
+  try {
+    const vector = (await requestZhipuEmbeddings([doc.content]))[0] || [];
+    if (!vector.length) return { indexed: true, embedded: false };
+    await db.prepare(
+      "UPDATE ai_vector_documents SET embedding=?, embedding_model=?, embedding_provider='zhipu', " +
+      "updated_at=datetime('now','localtime') WHERE namespace='teacher' AND doc_key=?"
+    ).run(JSON.stringify(vector), getZhipuEmbeddingModel(), doc.docKey);
+    return { indexed: true, embedded: true };
+  } catch (e) {
+    console.warn("家长定制任务向量化失败，将由下次索引重试：", e.message);
+    return { indexed: true, embedded: false, error: e.message };
+  }
+}
+
+const BEHAVIOR_TYPE_NAMES = {
+  parent_logged_in: "家长登录系统",
+  task_card_viewed: "查看任务卡片",
+  task_detail_viewed: "查看任务详情",
+  feedback_card_viewed: "查看反馈卡片",
+  timeline_viewed: "回看成长档案",
+  submission_drafted: "起草提交",
+  submission_submitted: "完成提交",
+  parent_task_request_submitted: "提交自主定制任务",
+  teacher_contact_started: "发起沟通",
+  page_dwell: "页面停留",
+  questionnaire_viewed: "查看问卷"
+};
+
+function formatEventTime(value) {
+  if (!value) return "未知时间";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.getFullYear() + "-" +
+      String(value.getMonth() + 1).padStart(2, "0") + "-" +
+      String(value.getDate()).padStart(2, "0") + " " +
+      String(value.getHours()).padStart(2, "0") + ":" +
+      String(value.getMinutes()).padStart(2, "0") + ":" +
+      String(value.getSeconds()).padStart(2, "0");
+  }
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return text.replace("T", " ").slice(0, 19);
+  return text.slice(0, 19) || "未知时间";
+}
+
+async function buildTeacherKnowledgeDocuments() {
+  const weekStart = mondayOf(new Date());
+  const children = await getTeacherVisibleChildren();
+  const tasks = await db.prepare(
+    "SELECT t.*, c.name AS child_name FROM tasks t LEFT JOIN children c ON c.id = t.child_id ORDER BY t.id DESC LIMIT " + MAX_REPORT_ROWS
+  ).all();
+  const parentTaskRequests = await db.prepare(
+    "SELECT r.*, c.name AS child_name, c.grade, u.display_name AS parent_name " +
+    "FROM parent_task_requests r JOIN children c ON c.id = r.child_id " +
+    "JOIN users u ON u.id = r.user_id " +
+    "WHERE " + realStudentWhere("c") + " ORDER BY r.id DESC LIMIT " + MAX_REPORT_ROWS
+  ).all(...demoParams(2));
+  const submissions = await db.prepare(
+    "SELECT s.*, c.name AS child_name, c.grade, c.caregiver, c.interests, " +
+    "t.title AS task_title, t.task_type, t.week_start, t.child_id AS task_child_id, " +
+    "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count, " +
+    "(SELECT f.comment FROM feedback f WHERE f.submission_id = s.id ORDER BY f.id DESC LIMIT 1) AS feedback_comment " +
+    "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+    "WHERE s.status = 'submitted' AND " + realStudentWhere("c") + " ORDER BY s.id DESC LIMIT " + MAX_REPORT_ROWS
+  ).all(...demoParams(2));
+
+  const currentSubmissions = submissions.filter(function (row) {
+    return row.week_start === weekStart;
+  });
+  const currentChildIds = new Set(currentSubmissions.map(function (row) { return row.child_id; }));
+  const pendingFeedback = currentSubmissions.filter(function (row) {
+    return Number(row.feedback_count || 0) === 0;
+  }).length;
+  const hourBuckets = { "上午": 0, "下午": 0, "晚间": 0, "深夜/清晨": 0 };
+  const weekdayBuckets = { "工作日": 0, "周末": 0 };
+  currentSubmissions.forEach(function (row) {
+    const date = new Date(String(row.created_at || "").replace(" ", "T"));
+    if (Number.isNaN(date.getTime())) return;
+    const hour = date.getHours();
+    const bucket = hour >= 5 && hour < 12 ? "上午"
+      : hour >= 12 && hour < 18 ? "下午"
+      : hour >= 18 && hour < 22 ? "晚间" : "深夜/清晨";
+    hourBuckets[bucket]++;
+    weekdayBuckets[date.getDay() === 0 || date.getDay() === 6 ? "周末" : "工作日"]++;
+  });
+  const topBucket = Object.entries(hourBuckets).sort(function (a, b) { return b[1] - a[1]; })[0];
+  const topWeekday = Object.entries(weekdayBuckets).sort(function (a, b) { return b[1] - a[1]; })[0];
+  const customTaskCount = tasks.filter(function (task) { return task.child_id != null; }).length;
+  const currentTaskCount = tasks.filter(function (task) { return task.week_start === weekStart; }).length;
+  const pendingParentTaskCount = parentTaskRequests.filter(function (row) { return row.status === "pending"; }).length;
+
+  const docs = [{
+    docKey: "summary:teacher",
+    docType: "summary",
+    refId: "teacher",
+    title: "班级总体情况",
+    content: [
+      "班级总体情况。",
+      "已发布任务总数：" + tasks.length + " 项，其中定制任务 " + customTaskCount + " 项。",
+      "家长自主定制任务提议总数：" + parentTaskRequests.length + " 条，其中待审核 " + pendingParentTaskCount + " 条。",
+      "本周发布任务：" + currentTaskCount + " 项。",
+      "本周已有 " + currentChildIds.size + " 位学生与家长完成任务，共提交 " + currentSubmissions.length + " 份。",
+      "本周待点评提交 " + pendingFeedback + " 份。",
+      "本周提交时段最多为" + (topBucket ? topBucket[0] : "暂无") + "，工作日/周末较多的是" + (topWeekday ? topWeekday[0] : "暂无") + "。",
+      "各时段提交数量：" + Object.entries(hourBuckets).map(function (e) { return e[0] + e[1] + "份"; }).join("、") + "。",
+      "工作日与周末提交数量：" + Object.entries(weekdayBuckets).map(function (e) { return e[0] + e[1] + "份"; }).join("、") + "。",
+      "这些数据只代表系统内的提交、查看和反馈记录，不等同于家长真实关注程度。"
+    ].join("\n"),
+    metadata: { weekStart: weekStart }
+  }];
+
+  // 班级家长行为埋点总览（近30天 events 表），供 AI 对话回答参与节奏、活跃情况类问题
+  const behaviorSince = new Date();
+  behaviorSince.setDate(behaviorSince.getDate() - 30);
+  const behaviorSinceText = behaviorSince.getFullYear() + "-" +
+    String(behaviorSince.getMonth() + 1).padStart(2, "0") + "-" +
+    String(behaviorSince.getDate()).padStart(2, "0") + " 00:00:00";
+  const behaviorRows = await db.prepare(
+    "SELECT e.event_type, e.child_id, e.created_at, c.name AS child_name, " +
+    "u.display_name AS parent_name, " +
+    "(SELECT b.relation FROM bindings b WHERE b.user_id = e.user_id AND b.child_id = e.child_id ORDER BY b.id LIMIT 1) AS parent_relation " +
+    "FROM events e JOIN children c ON c.id = e.child_id LEFT JOIN users u ON u.id = e.user_id " +
+    "WHERE e.created_at >= ? AND " + realStudentWhere("c") + " ORDER BY e.created_at DESC, e.id DESC"
+  ).all(behaviorSinceText, ...demoParams(2));
+  const behaviorCount = {};
+  const behaviorByChild = {};
+  behaviorRows.forEach(function (row) {
+    behaviorCount[row.event_type] = (behaviorCount[row.event_type] || 0) + 1;
+    if (!behaviorByChild[row.child_id]) {
+      behaviorByChild[row.child_id] = { childName: row.child_name, counts: {}, days: new Set(), events: 0 };
+    }
+    const b = behaviorByChild[row.child_id];
+    b.events++;
+    b.counts[row.event_type] = (b.counts[row.event_type] || 0) + 1;
+    const day = String(row.created_at || "").slice(0, 10);
+    if (day) b.days.add(day);
+  });
+  const behaviorTypeText = Object.keys(behaviorCount).map(function (key) {
+    return (BEHAVIOR_TYPE_NAMES[key] || key) + " " + behaviorCount[key] + "次";
+  }).join("、") || "暂无";
+  const behaviorDetailText = behaviorRows.slice(0, 200).map(function (row, index) {
+    const parentLabel = row.parent_name ? "家长" + row.parent_name : "未知家长";
+    const relation = row.parent_relation ? "（" + row.parent_relation + "）" : "";
+    return (index + 1) + ". " + formatEventTime(row.created_at) + "｜" +
+      parentLabel + relation + "｜学生" + (row.child_name || "未知学生") + "｜" +
+      (BEHAVIOR_TYPE_NAMES[row.event_type] || row.event_type || "未知事件") + "（" + (row.event_type || "unknown") + "）";
+  }).join("\n") || "暂无近30天行为时间戳明细。";
+  let behaviorTouchTotal = 0, behaviorExploreTotal = 0, behaviorFollowTotal = 0;
+  const behaviorViewerOnly = [];
+  const behaviorChildText = Object.keys(behaviorByChild).map(function (id) {
+    const b = behaviorByChild[id];
+    const touch = (b.counts.task_card_viewed || 0) + (b.counts.feedback_card_viewed || 0) + (b.counts.task_detail_viewed || 0);
+    const explore = (b.counts.task_detail_viewed || 0) + (b.counts.timeline_viewed || 0) + (b.counts.feedback_card_viewed || 0);
+    const follow = (b.counts.submission_drafted || 0) + (b.counts.submission_submitted || 0) +
+      (b.counts.teacher_contact_started || 0) + (b.counts.parent_task_request_submitted || 0);
+    behaviorTouchTotal += touch;
+    behaviorExploreTotal += explore;
+    behaviorFollowTotal += follow;
+    if (touch > 0 && follow === 0) behaviorViewerOnly.push(b.childName);
+    return "学生" + b.childName + "：触达" + touch + "次、探索" + explore + "次、执行" + follow + "次、活跃" + b.days.size + "天";
+  }).join("；") || "暂无";
+  const behaviorConvertRate = behaviorTouchTotal > 0
+    ? Math.round(behaviorFollowTotal / behaviorTouchTotal * 100) : 0;
+  docs.push({
+    docKey: "behavior:class",
+    docType: "behavior",
+    refId: "class",
+    title: "班级家长行为参与总览（近30天埋点）",
+    content: [
+      "班级家长行为参与总览（数据来自家长在系统内的行为埋点，近30天）。",
+      "共记录站内行为事件 " + behaviorRows.length + " 次，有行为记录的学生 " + Object.keys(behaviorByChild).length + " 名。",
+      "行为类型分布：" + behaviorTypeText + "。",
+      "参与转化：触达类行为共 " + behaviorTouchTotal + " 次，执行类行为共 " + behaviorFollowTotal + " 次，触达后转化为执行的比例约 " + behaviorConvertRate + "%（仅作参与节奏参考）。",
+      "有行为记录的学生明细：" + behaviorChildText + "。",
+      (behaviorViewerOnly.length
+        ? "有浏览但未进入执行环节的学生：" + behaviorViewerOnly.join("、") + "，可优先安排轻量跟进。"
+        : "所有有行为记录的学生均已进入执行环节或暂无浏览记录。"),
+      "这些埋点仅反映系统内可见活动（查看、浏览、起草、提交、发起沟通等），用于识别参与节奏和沟通时机，不等同于家长真实关注程度。"
+    ].join("\n"),
+    metadata: { weekStart: weekStart }
+  });
+
+  docs.push({
+    docKey: "behavior:timestamps",
+    docType: "behavior",
+    refId: "class",
+    title: "家长站内行为时间戳明细（近30天）",
+    content: [
+      "家长站内行为时间戳明细（近30天）。每条记录包含日期时间、事件类型、家长称呼和对应学生；可用于回答“哪个家长在什么时候登录过/查看过/提交过”。",
+      "事件类型说明：" + behaviorTypeText + "。",
+      "明细列表：",
+      behaviorDetailText,
+      behaviorRows.length > 200 ? "以上仅列出最近 200 条，完整记录仍保存在 events 表。" : "",
+      "注意：家长登录系统记录为 parent_logged_in；这些记录只能说明系统内发生过登录或操作，不能直接推断家长态度。"
+    ].filter(Boolean).join("\n"),
+    metadata: { weekStart: weekStart, windowDays: 30 }
+  });
+
+  for (const child of children) {
+    const answers = parseJsonField(child.q_answers);
+    const parentNames = await teacherParentInfo(child.id);
+    const binding = await db.prepare(
+      "SELECT b.user_id FROM bindings b JOIN users u ON u.id = b.user_id " +
+      "WHERE b.child_id = ? AND u.role = 'parent' AND u.account NOT IN (" + demoAccountPlaceholders() + ") " +
+      "ORDER BY b.id LIMIT 1"
+    ).get(child.id, ...demoParams(1));
+    const engagement = binding ? await getParentEngagement(binding.user_id, child.id) : null;
+    const childSubs = submissions.filter(function (row) { return row.child_id === child.id; });
+    docs.push({
+      docKey: "student:" + child.id,
+      docType: "student",
+      refId: String(child.id),
+      title: "学生档案：" + child.name,
+      content: [
+        "学生档案：学生" + child.name + "，年级" + (child.grade || "未填写") + "。",
+        "性别：" + (child.gender || "未填写") + "；年龄：" + (child.age || "未填写") + "。",
+        "主要陪伴人：" + (child.caregiver || "未填写") + "；兴趣：" + (child.interests || "未填写") + "。",
+        "家长账号称呼：" + (parentNames.length ? parentNames.join("、") : "未绑定家长") + "。",
+        "家庭可用时间：" + (answers.timeAvailable || "未填写") + "；亲子任务偏好：" + (answers.taskPreference || "未填写") + "；家庭备注：" + (child.family_note || answers.familyNote || "无") + "。",
+        "历史正式提交 " + childSubs.length + " 份。",
+        engagement ? "近30天站内行为证据：" + engagement.level + "，" + (engagement.evidence.join("、") || "暂无具体证据") + "。建议：" + engagement.recommendation + "。" : "暂无可用的家长站内行为证据。",
+        engagement ? "近30天行为计数：触达" + (engagement.counts.touchpoints || 0) + "次、探索" + (engagement.counts.exploration || 0) + "次、执行" + (engagement.counts.followThrough || 0) + "次、活跃" + (engagement.counts.activeDays || 0) + "天、事件共" + (engagement.counts.events || 0) + "次。" : "",
+        "关注分析仅用于安排沟通和任务支持，不用于给家庭贴标签。"
+      ].join("\n"),
+      metadata: { childId: child.id, childName: child.name, weekStart: weekStart }
+    });
+  }
+
+  tasks.forEach(function (task) {
+    docs.push({
+      docKey: "task:" + task.id,
+      docType: "task",
+      refId: String(task.id),
+      title: "任务：" + task.title,
+      content: [
+        "任务：" + task.title + "。",
+        "任务类型：" + (task.task_type || "未填写") + "；发布周：" + (task.week_start || "未填写") + "。",
+        "适用对象：" + (task.child_name ? "学生" + task.child_name : "全班") + "。",
+        "目标：" + (task.goal || "未填写") + "；难度：" + (task.difficulty || "普通") + "；时长：" + (task.duration || 20) + "分钟。",
+        "步骤：" + (task.steps || "未填写") + "。",
+        "材料：" + (task.materials || "未填写") + "；低负担替代方案：" + (task.fallback_plan || "未填写") + "。"
+      ].join("\n"),
+      metadata: { taskId: task.id, childId: task.child_id || null, weekStart: task.week_start || "" }
+    });
+  });
+
+  parentTaskRequests.forEach(function (row) {
+    const doc = buildParentTaskRequestDocument(row);
+    if (doc) docs.push(doc);
+  });
+
+  submissions.slice(0, 500).forEach(function (row) {
+    const doc = buildTeacherSubmissionDocument(row);
+    if (doc) docs.push(doc);
+  });
+  return docs;
+}
+
+function lexicalSimilarity(a, b) {
+  const tokenize = function (text) {
+    const value = String(text || "").toLowerCase();
+    const tokens = [];
+    const words = value.match(/[a-z0-9\u4e00-\u9fff]+/g) || [];
+    words.forEach(function (word) {
+      tokens.push(word);
+      if (/[\u4e00-\u9fff]/.test(word)) {
+        for (let i = 0; i < word.length - 1; i++) tokens.push(word.slice(i, i + 2));
+      }
+    });
+    return new Set(tokens);
+  };
+  const left = tokenize(a), right = tokenize(b);
+  if (!left.size || !right.size) return 0;
+  let common = 0;
+  left.forEach(function (token) { if (right.has(token)) common++; });
+  return common / Math.sqrt(left.size * right.size);
+}
+
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || !a.length || a.length !== b.length) return 0;
+  let dot = 0, left = 0, right = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = Number(a[i]) || 0, y = Number(b[i]) || 0;
+    dot += x * y;
+    left += x * x;
+    right += y * y;
+  }
+  return left && right ? dot / Math.sqrt(left * right) : 0;
+}
+
+async function syncTeacherVectorIndex() {
+  const docs = await buildTeacherKnowledgeDocuments();
+  const currentKeys = new Set(docs.map(function (doc) { return doc.docKey; }));
+  const existingRows = await db.prepare(
+    "SELECT * FROM ai_vector_documents WHERE namespace = 'teacher'"
+  ).all();
+  const existing = new Map(existingRows.map(function (row) { return [row.doc_key, row]; }));
+  const apiKey = getZhipuApiKey();
+  const model = getZhipuEmbeddingModel();
+  const toEmbed = [];
+
+  for (const doc of docs) {
+    const contentHash = crypto.createHash("sha256").update(doc.content).digest("hex");
+    const old = existing.get(doc.docKey);
+    const oldEmbedding = old && old.embedding ? old.embedding : "[]";
+    const unchanged = old && old.content_hash === contentHash;
+    await db.prepare(
+      "INSERT INTO ai_vector_documents " +
+      "(namespace, doc_key, doc_type, ref_id, title, content, metadata, embedding, embedding_model, embedding_provider, content_hash, updated_at) " +
+      "VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) " +
+      "ON CONFLICT(doc_key) DO UPDATE SET doc_type=excluded.doc_type, ref_id=excluded.ref_id, title=excluded.title, " +
+      "content=excluded.content, metadata=excluded.metadata, embedding=excluded.embedding, embedding_model=excluded.embedding_model, " +
+      "embedding_provider=excluded.embedding_provider, content_hash=excluded.content_hash, updated_at=excluded.updated_at"
+    ).run(
+      "teacher", doc.docKey, doc.docType, doc.refId, doc.title, doc.content, JSON.stringify(doc.metadata || {}),
+      unchanged ? oldEmbedding : "[]", unchanged ? (old.embedding_model || "") : "", unchanged ? (old.embedding_provider || "") : "",
+      contentHash
+    );
+    if (apiKey && (!unchanged || !oldEmbedding || oldEmbedding === "[]")) toEmbed.push(doc);
+  }
+
+  for (const [key] of existing) {
+    if (!currentKeys.has(key)) {
+      await db.prepare("DELETE FROM ai_vector_documents WHERE namespace = 'teacher' AND doc_key = ?").run(key);
+    }
+  }
+
+  let embeddedCount = 0;
+  if (apiKey) {
+    for (let i = 0; i < toEmbed.length; i += 24) {
+      const batch = toEmbed.slice(i, i + 24);
+      try {
+        const vectors = await requestZhipuEmbeddings(batch.map(function (doc) { return doc.content; }));
+        for (let index = 0; index < batch.length; index++) {
+          const doc = batch[index];
+          const vector = vectors[index] || [];
+          if (!vector.length) continue;
+          await db.prepare(
+            "UPDATE ai_vector_documents SET embedding=?, embedding_model=?, embedding_provider='zhipu', updated_at=datetime('now','localtime') WHERE doc_key=?"
+          ).run(JSON.stringify(vector), model, doc.docKey);
+          embeddedCount++;
+        }
+      } catch (e) {
+        console.warn("向量索引更新失败，将使用关键词检索：", e.message);
+        break;
+      }
+    }
+  }
+  return { documentCount: docs.length, embeddedCount: embeddedCount };
+}
+
+async function searchTeacherKnowledge(question, limit) {
+  const rows = await db.prepare(
+    "SELECT * FROM ai_vector_documents WHERE namespace = 'teacher'"
+  ).all();
+  if (!rows.length) return [];
+  let queryEmbedding = [];
+  if (getZhipuApiKey()) {
+    try { queryEmbedding = (await requestZhipuEmbeddings([question]))[0] || []; } catch (e) {}
+  }
+  return rows.map(function (row) {
+    const embedding = parseJsonField(row.embedding);
+    const vectorScore = queryEmbedding.length ? cosineSimilarity(queryEmbedding, embedding) : 0;
+    const keywordScore = lexicalSimilarity(question, row.title + "\n" + row.content);
+    return {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      metadata: parseJsonField(row.metadata),
+      score: queryEmbedding.length ? vectorScore * 0.8 + keywordScore * 0.2 : keywordScore
+    };
+  }).sort(function (a, b) { return b.score - a.score; }).slice(0, limit || 7);
+}
+
+async function generateZhipuReport(report) {
+  if (!getZhipuApiKey()) return null;
+  const payload = {
+    generatedAt: report.generatedAt,
+    dataScope: report.dataScope,
+    stats: report.stats,
+    dimensions: report.dimensions.map(function (d) {
+      const base = {
+        key: d.key,
+        title: d.title,
+        summary: d.summary,
+        findings: d.findings,
+        actions: d.actions,
+        distribution: d.distribution,
+        weekdayDistribution: d.weekdayDistribution,
+        indicators: d.indicators
+      };
+      if (d.key === "behaviorSignals") {
+        base.rows = (d.rows || []).slice(0, 12).map(function (row, idx) {
+          return {
+            studentAlias: "学生" + (idx + 1),
+            touchpoints: row.touchpoints || 0,
+            exploration: row.exploration || 0,
+            followThrough: row.followThrough || 0,
+            activeDays: row.activeDays || 0,
+            events: row.events || 0
+          };
+        });
+      }
+      return base;
+    })
+  };
+  const content = await requestZhipuChat([
+    {
+      role: "system",
+      content: "你是家校共育系统里的教师数据分析助手。请基于数据输出审慎、温和、可行动的中文报告，不做排名，不贴负面标签，不夸大站内行为证据。所有建议必须尊重自愿参与、隐私保护、过程性评价和不公开比较。只返回 JSON，不要输出 Markdown。"
+    },
+    {
+      role: "user",
+      content: "请生成全局分析。返回 JSON，格式必须为 {\"headline\":\"一句总判断\",\"summary\":\"120字以内总览\",\"dimensions\":[{\"key\":\"profiles|completionTime|textMaterials|behaviorSignals\",\"title\":\"维度标题\",\"summary\":\"一句维度判断\",\"findings\":[\"发现1\"],\"actions\":[\"建议1\"]}],\"priorities\":[{\"title\":\"优先事项\",\"reason\":\"为什么优先\",\"action\":\"教师下一步动作\",\"urgency\":\"高|中|低\"}],\"nextWeekPlan\":{\"taskTheme\":\"下周任务主题\",\"targetGroup\":\"适用对象\",\"designNotes\":[\"设计要点\"],\"fallback\":\"低负担替代方案\"},\"followUpGroups\":[{\"group\":\"分层人群\",\"signal\":\"可观察信号\",\"teacherAction\":\"建议动作\",\"tone\":\"沟通语气\"}],\"risks\":[\"需要谨慎解读的点\"]}。不评价家长是否关心孩子，不输出学生姓名，不把低样本当结论，数据不足时明确说证据不足。behaviorSignals 维度来自家长在系统内的行为埋点（查看、浏览、起草、提交、发起沟通等），只能用于识别参与节奏、活跃时段和沟通时机，绝不能据此断言家长是否关心孩子。\n\n数据：" + JSON.stringify(payload)
+    }
+  ], { maxTokens: 2200 });
+  return pickJsonObject(content);
+}
+
+const runningTeacherAiReports = new Set();
+const TEACHER_AI_REPORT_CACHE_KEY = "teacher:global-report";
+const TEACHER_AI_REPORT_CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const TEACHER_AI_REPORT_ERROR_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const TEACHER_AI_REPORT_STALE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function teacherReportContentHash(report) {
+  const stable = {
+    dataScope: report.dataScope,
+    stats: report.stats,
+    dimensions: (report.dimensions || []).map(function (dim) {
+      return {
+        key: dim.key,
+        summary: dim.summary,
+        findings: dim.findings,
+        actions: dim.actions,
+        indicators: dim.indicators,
+        distribution: dim.distribution,
+        weekdayDistribution: dim.weekdayDistribution,
+        rows: dim.rows,
+        samples: dim.samples,
+        latency: dim.latency
+      };
+    })
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+function parseCacheTime(value) {
+  const text = String(value || "");
+  const time = Date.parse(text.includes("T") ? text : text.replace(" ", "T"));
+  return Number.isNaN(time) ? 0 : time;
+}
+
+async function getTeacherAiReportCache(cacheKey, contentHash) {
+  const row = await db.prepare(
+    "SELECT * FROM ai_report_cache WHERE cache_key = ? AND content_hash = ? AND status = 'ready'"
+  ).get(cacheKey, contentHash);
+  if (!row) return null;
+  return parseTeacherAiReportCacheRow(row);
+}
+
+async function getLatestTeacherAiReportCache(cacheKey) {
+  const row = await db.prepare(
+    "SELECT * FROM ai_report_cache WHERE cache_key = ? AND status = 'ready' ORDER BY updated_at DESC LIMIT 1"
+  ).get(cacheKey);
+  if (!row) return null;
+  return parseTeacherAiReportCacheRow(row, { allowStaleHash: true });
+}
+
+function parseTeacherAiReportCacheRow(row, options) {
+  options = options || {};
+  const payload = parseJsonField(row.payload);
+  const maxAge = row.error && !(payload && payload.ai)
+    ? TEACHER_AI_REPORT_ERROR_CACHE_MAX_AGE_MS
+    : (options.allowStaleHash ? TEACHER_AI_REPORT_STALE_CACHE_MAX_AGE_MS : TEACHER_AI_REPORT_CACHE_MAX_AGE_MS);
+  if (Date.now() - parseCacheTime(row.updated_at) > maxAge) return null;
+  if (!payload || !payload.stats) return null;
+  payload.aiCacheHash = row.content_hash;
+  payload.aiCacheUpdatedAt = row.updated_at;
+  return payload;
+}
+
+async function saveTeacherAiReportCache(cacheKey, contentHash, payload, status, error) {
+  await db.prepare(
+    "INSERT INTO ai_report_cache (cache_key, content_hash, payload, status, error, updated_at) " +
+    "VALUES (?,?,?,?,?,datetime('now','localtime')) " +
+    "ON CONFLICT(cache_key) DO UPDATE SET content_hash=excluded.content_hash, payload=excluded.payload, " +
+    "status=excluded.status, error=excluded.error, updated_at=excluded.updated_at"
+  ).run(cacheKey, contentHash, JSON.stringify(payload || {}), status || "ready", error || "");
+}
+
+async function buildTeacherAiReportPayload(report) {
+  const payload = JSON.parse(JSON.stringify(report));
+  try {
+    await syncTeacherVectorIndex();
+  } catch (e) {
+    payload.aiError = "向量索引更新失败，已使用本地规则分析";
+  }
+  if (getInteractionApiKey()) {
+    try {
+      const ai = getDeepSeekApiKey()
+        ? await generateDeepSeekReport(payload)
+        : await generateZhipuReport(payload);
+      if (ai) {
+        payload.source = getDeepSeekApiKey() ? "DeepSeek AI" : "智谱 AI";
+        payload.ai = ai;
+        payload.aiGeneratedAt = new Date().toISOString();
+        if (Array.isArray(ai.dimensions)) {
+          payload.dimensions = payload.dimensions.map(function (dim) {
+            const enhanced = ai.dimensions.find(function (d) { return d && d.key === dim.key; });
+            if (!enhanced) return dim;
+            return Object.assign({}, dim, {
+              aiSummary: enhanced.summary || dim.summary,
+              findings: Array.isArray(enhanced.findings) && enhanced.findings.length ? enhanced.findings : dim.findings,
+              actions: Array.isArray(enhanced.actions) && enhanced.actions.length ? enhanced.actions : dim.actions
+            });
+          });
+        }
+      }
+    } catch (e) {
+      payload.aiError = e.message || "AI 分析调用失败，已使用本地规则分析";
+    }
+  }
+  return payload;
+}
+
+function triggerTeacherAiReportRefresh(cacheKey, contentHash, report) {
+  const runningKey = cacheKey + ":" + contentHash;
+  if (runningTeacherAiReports.has(runningKey)) return false;
+  runningTeacherAiReports.add(runningKey);
+  setTimeout(async function () {
+    try {
+      const payload = await buildTeacherAiReportPayload(report);
+      await saveTeacherAiReportCache(cacheKey, contentHash, payload, "ready", payload.aiError || "");
+    } catch (e) {
+      const fallback = Object.assign({}, report, { aiError: e.message || "AI 分析生成失败，已使用本地规则分析" });
+      await saveTeacherAiReportCache(cacheKey, contentHash, fallback, "ready", fallback.aiError);
+      console.warn("教师首页 AI 报告后台生成失败：", e.message);
+    } finally {
+      runningTeacherAiReports.delete(runningKey);
+    }
+  }, 0);
+  return true;
+}
+
+function buildTeacherChatMessages(question, history, docs) {
+  const context = docs.map(function (doc, index) {
+    return "[资料" + (index + 1) + "] " + doc.title + "\n" + doc.content;
+  }).join("\n\n");
+  const safeHistory = (Array.isArray(history) ? history : []).slice(-6).map(function (item) {
+    return {
+      role: item && item.role === "assistant" ? "assistant" : "user",
+      content: String(item && item.content || "").slice(0, 800)
+    };
+  });
+  return [
+    {
+      role: "system",
+      content: "你是家校共育系统的教师端 AI 助手。请只根据提供的班级资料回答，可以做明确标注为推测的合理推理。回答用中文，先给结论，再给依据和建议。不能把站内行为直接说成家长是否关心，也不要公开比较学生。若资料不足，直接说明证据不足并告诉老师还需要什么数据。涉及学生时可以使用资料中的学生姓名和家长称呼，但不要输出家长账号、密码或无关隐私。资料中会包含家长近30天站内行为埋点统计与时间戳明细（登录系统、查看、浏览、起草、提交、发起沟通、自主定制任务等），以及家长自主定制任务提议和教师审核结果；这些可用于回答哪个家长在什么时候登录过、参与节奏、任务意愿、任务设计和沟通时机类问题，但绝不能据此断言家长是否关心孩子。"
+    },
+    { role: "system", content: "检索到的班级资料：\n" + context },
+    ...safeHistory,
+    { role: "user", content: question }
+  ];
+}
+
+async function generateTeacherChatAnswer(question, history, docs) {
+  if (!getInteractionApiKey()) return "";
+  return requestInteractionChat(buildTeacherChatMessages(question, history, docs), { maxTokens: 1000, temperature: 0.3 });
+}
+
+async function generateTeacherChatAnswerStream(question, history, docs, onDelta) {
+  if (!getInteractionApiKey()) return "";
+  return requestInteractionChatStream(buildTeacherChatMessages(question, history, docs), { maxTokens: 1000, temperature: 0.3 }, onDelta);
+}
+
+function answerTeacherMetaQuestion(question) {
+  const text = String(question || "").trim();
+  if (!/(你能做什么|你会做什么|你能干嘛|你可以干嘛|能帮.*什么|可以做什么|怎么用|使用帮助|帮助|介绍.*功能|功能.*介绍|你是谁|你好)/.test(text)) return null;
+  return {
+    answer: "我可以帮你把班级数据转成教师可执行的动作。\n\n" +
+      "1. 看进度：汇总本周完成率、已提交、草稿停滞、未开始学生。\n" +
+      "2. 找重点：识别待点评提交、困难线索、草稿卡点和未提交家庭。\n" +
+      "3. 写话术：生成催交通知、个别沟通话术、点评参考。\n" +
+      "4. 做诊断：结合任务量、定制任务数量、提交节奏判断是否需要减负。\n" +
+      "5. 给方案：整理下周任务合并、延期、分层跟进建议。\n\n" +
+      "你可以直接问：哪些学生还没交？本周任务负担重吗？帮我写今晚催交通知。哪些提交优先点评？下周任务怎么减负？",
+    sources: [{ title: "AI 助手能力说明" }]
+  };
+}
+
+function joinNames(rows, limit) {
+  rows = rows || [];
+  limit = limit || 8;
+  if (!rows.length) return "暂无";
+  const names = rows.slice(0, limit).map(function (row) { return row.name || row.child_name || row.childName; }).filter(Boolean);
+  return names.join("、") + (rows.length > limit ? "等" + rows.length + "人" : "");
+}
+
+async function getTeacherWeeklyActionContext() {
+  const weekStart = mondayOf(new Date());
+  const children = await getTeacherVisibleChildren();
+  const tasks = await db.prepare(
+    "SELECT t.*, c.name AS child_name FROM tasks t LEFT JOIN children c ON c.id = t.child_id " +
+    "WHERE t.week_start = ? AND (t.child_id IS NULL OR " + realStudentWhere("c") + ") ORDER BY t.id DESC"
+  ).all(weekStart, ...demoParams(2));
+  const submissions = await db.prepare(
+    "SELECT s.id, s.child_id, s.task_id, s.status, s.content, s.created_at, c.name AS child_name, t.title AS task_title, " +
+    "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count " +
+    "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+    "WHERE t.week_start = ? AND " + realStudentWhere("c") + " ORDER BY s.created_at DESC"
+  ).all(weekStart, ...demoParams(2));
+  const submittedRows = submissions.filter(function (row) { return row.status === "submitted"; });
+  const draftRows = submissions.filter(function (row) { return row.status === "draft"; });
+  const submittedIds = new Set(submittedRows.map(function (row) { return row.child_id; }));
+  const draftIds = new Set(draftRows.filter(function (row) { return !submittedIds.has(row.child_id); }).map(function (row) { return row.child_id; }));
+  const viewedRows = await db.prepare(
+    "SELECT DISTINCT e.child_id, c.name AS child_name FROM events e JOIN children c ON c.id = e.child_id " +
+    "WHERE e.event_type IN ('task_card_viewed','task_detail_viewed') AND e.created_at >= ? AND " + realStudentWhere("c")
+  ).all(weekStart + " 00:00:00", ...demoParams(2));
+  const eventRows = await db.prepare(
+    "SELECT e.child_id, e.event_type, c.name AS child_name FROM events e JOIN children c ON c.id = e.child_id " +
+    "WHERE e.created_at >= ? AND " + realStudentWhere("c")
+  ).all(weekStart + " 00:00:00", ...demoParams(2));
+  const eventsByChild = {};
+  eventRows.forEach(function (row) {
+    if (!eventsByChild[row.child_id]) {
+      eventsByChild[row.child_id] = { childId: row.child_id, childName: row.child_name, counts: {}, total: 0 };
+    }
+    eventsByChild[row.child_id].total++;
+    eventsByChild[row.child_id].counts[row.event_type] = (eventsByChild[row.child_id].counts[row.event_type] || 0) + 1;
+  });
+  const viewedIds = new Set(viewedRows.map(function (row) { return row.child_id; }));
+  const completed = children.filter(function (child) { return submittedIds.has(child.id); });
+  const draftStalled = children.filter(function (child) { return !submittedIds.has(child.id) && draftIds.has(child.id); });
+  const viewedNotStarted = children.filter(function (child) { return !submittedIds.has(child.id) && !draftIds.has(child.id) && viewedIds.has(child.id); });
+  const untouched = children.filter(function (child) { return !submittedIds.has(child.id) && !draftIds.has(child.id) && !viewedIds.has(child.id); });
+  const completionRate = children.length ? Math.round(completed.length / children.length * 100) : 0;
+  return {
+    weekStart: weekStart,
+    totalStudents: children.length,
+    tasks: tasks,
+    personalTasks: tasks.filter(function (task) { return task.child_id != null; }),
+    submissions: submittedRows,
+    pendingFeedback: submittedRows.filter(function (row) { return Number(row.feedback_count || 0) === 0; }),
+    drafts: draftRows,
+    completed: completed,
+    draftStalled: draftStalled,
+    viewedNotStarted: viewedNotStarted,
+    untouched: untouched,
+    eventsByChild: eventsByChild,
+    completionRate: completionRate,
+    reminderWindow: "18:30 - 20:00"
+  };
+}
+
+function rankActiveStudents(ctx) {
+  const submitCount = {};
+  const draftCount = {};
+  ctx.submissions.forEach(function (row) { submitCount[row.child_id] = (submitCount[row.child_id] || 0) + 1; });
+  ctx.drafts.forEach(function (row) { draftCount[row.child_id] = (draftCount[row.child_id] || 0) + 1; });
+  return (ctx.completed.concat(ctx.draftStalled, ctx.viewedNotStarted, ctx.untouched)).map(function (child) {
+    const events = ctx.eventsByChild[child.id] || { counts: {}, total: 0 };
+    const counts = events.counts || {};
+    const views = (counts.task_card_viewed || 0) + (counts.task_detail_viewed || 0) + (counts.feedback_card_viewed || 0);
+    const execution = (counts.submission_submitted || 0) + (counts.submission_drafted || 0) +
+      (counts.teacher_contact_started || 0) + (counts.parent_task_request_submitted || 0);
+    const submitted = submitCount[child.id] || 0;
+    const drafts = draftCount[child.id] || 0;
+    const score = submitted * 60 + drafts * 24 + execution * 12 + views * 4 + events.total;
+    return {
+      id: child.id,
+      name: child.name,
+      score: score,
+      submitted: submitted,
+      drafts: drafts,
+      views: views,
+      execution: execution,
+      events: events.total
+    };
+  }).sort(function (a, b) {
+    return b.score - a.score || b.submitted - a.submitted || b.execution - a.execution || b.views - a.views;
+  });
+}
+
+async function answerTeacherParentLoginQuestion(question) {
+  const text = String(question || "");
+  const wantsLogin = /(家长.*(登录|登陆|上线|进入系统|访问系统)|登录.*家长|登陆.*家长|谁.*(登录|登陆|上线)|什么时候.*(登录|登陆)|登录记录|登陆记录)/.test(text);
+  if (!wantsLogin) return null;
+
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
+  const sinceText = since.getFullYear() + "-" +
+    String(since.getMonth() + 1).padStart(2, "0") + "-" +
+    String(since.getDate()).padStart(2, "0") + " 00:00:00";
+  const rows = await db.prepare(
+    "SELECT e.created_at, c.name AS child_name, u.display_name AS parent_name, " +
+    "(SELECT b.relation FROM bindings b WHERE b.user_id = e.user_id AND b.child_id = e.child_id ORDER BY b.id LIMIT 1) AS parent_relation " +
+    "FROM events e JOIN children c ON c.id = e.child_id LEFT JOIN users u ON u.id = e.user_id " +
+    "WHERE e.event_type = 'parent_logged_in' AND e.created_at >= ? AND " + realStudentWhere("c") + " " +
+    "ORDER BY e.created_at DESC, e.id DESC LIMIT 30"
+  ).all(sinceText, ...demoParams(2));
+
+  if (!rows.length) {
+    return {
+      answer: "结论：近30天还没有可见学生对应的家长登录记录。\n\n" +
+        "说明：系统现在会在家长登录成功后写入 parent_logged_in 事件，并记录时间、家长称呼和对应学生；后续登录会出现在这里。已有的历史登录若发生在本次记录能力上线前，无法自动补回。",
+      sources: [{ title: "家长登录事件记录" }]
+    };
+  }
+
+  const list = rows.map(function (row, index) {
+    const parentLabel = row.parent_name ? row.parent_name : "未知家长";
+    const relation = row.parent_relation ? "（" + row.parent_relation + "）" : "";
+    return (index + 1) + ". " + formatEventTime(row.created_at) + "，家长" +
+      parentLabel + relation + "登录，对应学生：" + (row.child_name || "未知学生");
+  }).join("\n");
+  return {
+    answer: "结论：近30天共找到 " + rows.length + " 条最近的家长登录记录。\n\n" + list +
+      "\n\n依据：以上来自 events 表中的 parent_logged_in 事件，只说明家长账号在该时间登录过系统，不直接代表任务完成或关注程度。",
+    sources: [{ title: "家长登录时间戳明细（近30天）" }]
+  };
+}
+
+async function answerTeacherLocalActionQuestion(question) {
+  const text = String(question || "");
+  const wantsProgress = /(未交|未提交|没交|没做|未做|完成率|进度|哪些学生|谁还)/.test(text);
+  const wantsReminder = /(催交|提醒|通知|话术|文案)/.test(text);
+  const wantsBurden = /(负担|减负|合并|任务量|太多|压力)/.test(text);
+  const wantsExtend = /(延期|延长|顺延|48小时|四十八小时)/.test(text);
+  const wantsActive = /(最积极|最活跃|参与度最高|表现最好|完成最多|谁.*积极|哪个学生.*积极|哪个学生.*活跃|表扬谁|值得表扬)/.test(text);
+  if (!wantsProgress && !wantsReminder && !wantsBurden && !wantsExtend && !wantsActive) return null;
+  const ctx = await getTeacherWeeklyActionContext();
+  const unstartedCount = ctx.viewedNotStarted.length + ctx.untouched.length;
+  const sources = [{ title: "本周任务与学生进度" }];
+
+  if (wantsActive) {
+    const ranked = rankActiveStudents(ctx).filter(function (row) { return row.score > 0; });
+    if (!ranked.length) {
+      return {
+        answer: "本周还没有足够的提交、草稿或查看记录来判断“最积极”的学生。建议先看是否已有家长完成绑定、打开任务或提交草稿。",
+        sources: sources
+      };
+    }
+    const top = ranked[0];
+    const topList = ranked.slice(0, 3).map(function (row, index) {
+      return (index + 1) + ". " + row.name + "：提交 " + row.submitted + " 次，草稿 " + row.drafts +
+        " 次，查看 " + row.views + " 次，执行类行为 " + row.execution + " 次";
+    }).join("\n");
+    return {
+      answer: "结论：本周最积极的学生是 " + top.name + "。\n\n" +
+        "依据：" + top.name + " 本周提交 " + top.submitted + " 次，草稿 " + top.drafts + " 次，查看任务/反馈 " +
+        top.views + " 次，执行类行为 " + top.execution + " 次。综合提交完成、草稿推进和站内参与记录后排名最高。\n\n" +
+        "本周积极度前三：\n" + topList + "\n\n" +
+        "可用表扬话术：" + top.name + "本周能主动推进家校任务，完成和查看记录都比较积极，建议继续保持这种及时行动和过程记录的习惯。",
+      sources: sources
+    };
+  }
+
+  if (wantsExtend) {
+    const priority = ctx.personalTasks.length ? ctx.personalTasks.slice(0, 5).map(function (task) {
+      return "《" + task.title + "》" + (task.child_name ? "（" + task.child_name + "）" : "");
+    }).join("、") : "本周班级统一任务";
+    return {
+      answer: "可以给出延期方案，但当前系统还没有真实的“批量修改截止时间”工具；任务表也没有独立截止时间字段，所以我不能直接替你改数据库。\n\n" +
+        "建议优先延期：" + priority + "。\n\n" +
+        "依据：本周共 " + ctx.tasks.length + " 项任务，其中定制任务 " + ctx.personalTasks.length + " 项；" +
+        "班级 " + ctx.totalStudents + " 人，已提交 " + ctx.completed.length + " 人，完成率 " + ctx.completionRate + "%；" +
+        "草稿停滞 " + ctx.draftStalled.length + " 人，完全未开始/未提交 " + unstartedCount + " 人。\n\n" +
+        "建议动作：1. 定制任务先口头顺延 48 小时；2. 重复或低优先级任务合并为一项；3. 今晚 " + ctx.reminderWindow +
+        " 发提醒；4. 明天课堂先处理草稿停滞学生的共同卡点。",
+      sources: sources
+    };
+  }
+
+  if (wantsReminder) {
+    return {
+      answer: "可直接发送这段通知：\n\n各位家长好，本周家校共育任务还有部分同学未提交。建议今晚 " + ctx.reminderWindow +
+        " 前完成或先保存草稿；如果时间紧，请优先完成最核心的一项，并在提交中简单说明遇到的困难。老师会根据大家的完成情况调整后续任务量。\n\n" +
+        "发送对象建议：未提交 " + unstartedCount + " 人；草稿停滞 " + ctx.draftStalled.length + " 人可单独补一句“已看到你保存了草稿，可以先提交当前完成部分”。",
+      sources: sources
+    };
+  }
+
+  if (wantsBurden) {
+    const level = ctx.tasks.length >= 5 || ctx.personalTasks.length >= 3 || ctx.completionRate < 50 ? "偏重" : "可控";
+    return {
+      answer: "结论：本周任务负担初判为“" + level + "”。\n\n" +
+        "依据：本周任务 " + ctx.tasks.length + " 项，定制任务 " + ctx.personalTasks.length + " 项；完成率 " + ctx.completionRate +
+        "%；草稿停滞 " + ctx.draftStalled.length + " 人，未提交/未开始 " + unstartedCount + " 人。\n\n" +
+        "建议：把定制任务中目标相近的内容合并；保留一项必须提交任务，其余改为选做或口头打卡；对草稿停滞学生先看具体任务要求，再决定是否降低步骤数量。",
+      sources: sources
+    };
+  }
+
+  return {
+    answer: "本周进度：班级 " + ctx.totalStudents + " 人，已提交 " + ctx.completed.length + " 人，完成率 " + ctx.completionRate + "%；" +
+      "草稿停滞 " + ctx.draftStalled.length + " 人，已查看但未开始 " + ctx.viewedNotStarted.length + " 人，完全未动 " + ctx.untouched.length + " 人。\n\n" +
+      "已完成：" + joinNames(ctx.completed) + "。\n" +
+      "草稿停滞：" + joinNames(ctx.draftStalled) + "。\n" +
+      "已查看未开始：" + joinNames(ctx.viewedNotStarted) + "。\n" +
+      "完全未动：" + joinNames(ctx.untouched) + "。",
+    sources: sources
+  };
+}
+
+async function answerTeacherMetricQuestion(question) {
+  const text = String(question || "");
+  if (!/(未点评|待点评|优先.*点评|点评.*优先|还有.*点评)/.test(text)) return null;
+  const weekStart = mondayOf(new Date());
+  const rows = await db.prepare(
+    "SELECT s.id, s.created_at, s.content, c.name AS child_name, t.title AS task_title, " +
+    "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count " +
+    "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+    "WHERE s.status = 'submitted' AND t.week_start = ? AND " + realStudentWhere("c") + " ORDER BY s.created_at ASC"
+  ).all(weekStart, ...demoParams(2));
+  const pending = rows.filter(function (row) { return Number(row.feedback_count || 0) === 0; });
+  if (!pending.length) {
+    return {
+      answer: "结论：本周暂无未点评提交。\n\n依据：系统内本周正式提交共 " + rows.length +
+        " 份，均已有教师点评记录。接下来可以优先查看提交中出现困难、时间压力或需要后续支持的内容，而不是补点评。",
+      sources: [{ title: "本周提交与点评记录" }]
+    };
+  }
+  const list = pending.slice(0, 5).map(function (row, index) {
+    return (index + 1) + ". " + row.child_name + "：《" + row.task_title + "》，提交于 " +
+      formatEventTime(row.created_at) + "，内容摘要：" + String(row.content || "").slice(0, 48);
+  }).join("\n");
+  return {
+    answer: "结论：本周还有 " + pending.length + " 份提交未点评，建议按提交时间先后和内容中是否有困难线索优先处理。\n\n" + list,
+    sources: pending.slice(0, 5).map(function (row) {
+      return { title: "提交：" + row.child_name + " · " + row.task_title };
+    })
+  };
+}
+
+/* ============ 种子数据（演示用，幂等） ============ */
+async function seed() {
+  const hasAdmin = await db.prepare("SELECT id FROM users WHERE account = 'admin'").get();
+  if (!hasAdmin) {
+    await db.prepare(
+      "INSERT INTO users (account, password_hash, display_name, role) VALUES (?, ?, ?, 'admin')"
+    ).run("admin", hashPassword("018admin"), "系统管理员");
+  }
+
+  const hasDemo = await db.prepare("SELECT id FROM users WHERE account = 'demo'").get();
+  var demoUserId, teacherId, childId;
+
+  if (!hasDemo) {
+    demoUserId = await db.prepare(
+      "INSERT INTO users (account, password_hash, display_name, role) VALUES (?, ?, ?, 'parent')"
+    ).run("demo", hashPassword("123456"), "李女士").lastInsertRowid;
+
+    teacherId = await db.prepare(
+      "INSERT INTO users (account, password_hash, display_name, role) VALUES (?, ?, ?, 'teacher')"
+    ).run("018", hashPassword("018018"), "老师").lastInsertRowid;
+
+    childId = await db.prepare("INSERT INTO children (name, grade) VALUES (?, ?)").run("小明", "三年级").lastInsertRowid;
+    await db.prepare("INSERT INTO bindings (user_id, child_id, relation) VALUES (?, ?, '妈妈')").run(demoUserId, childId);
+
+    // 上周任务 + 已完成的提交 + 老师反馈（用于演示成长时间线）
+    const lastTaskId = await db.prepare(
+      "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by) VALUES (?,?,?,?,?,?,?,?,?)"
+    ).run(
+      "家庭观察：一起种一颗豆子",
+      "培养观察能力与责任感",
+      "1. 一起泡豆子\n2. 每天观察记录\n3. 周末一起画出变化",
+      "「你觉得它明天会有什么变化？为什么？」",
+      "拍照或文字记录观察发现",
+      15, "观察探究", lastMondayOf(new Date()), teacherId
+    ).lastInsertRowid;
+
+    const subId = await db.prepare(
+      "INSERT INTO submissions (task_id, child_id, content, sub_type) VALUES (?,?,?,?)"
+    ).run(lastTaskId, childId, "豆子发芽了！小明每天早上都先去看它，还画了三张观察图。", "text").lastInsertRowid;
+
+    await db.prepare(
+      "INSERT INTO feedback (submission_id, teacher_id, comment, tags, read_at) VALUES (?,?,?,?,datetime('now','localtime'))"
+    ).run(subId, teacherId, "坚持观察一整周，非常棒！小明的三张图记录得很细致。", "观察力,坚持");
+  } else {
+    demoUserId = hasDemo.id;
+    var tRow = await db.prepare("SELECT id FROM users WHERE account = '018'").get();
+    teacherId = tRow ? tRow.id : null;
+  }
+
+  // ===== 以下为扩展演示数据，幂等执行，已有数据库也会补全 =====
+
+  var extraStudents = [
+    { name: "小红", grade: "三年级", gender: "女", age: 8, caregiver: "妈妈", interests: "阅读,画画", familyNote: "", timeAvailable: "充足", taskPreference: "高参与度" },
+    { name: "小刚", grade: "三年级", gender: "男", age: 9, caregiver: "奶奶", interests: "运动,足球", familyNote: "父母在外地工作，奶奶负责日常照顾", timeAvailable: "有限", taskPreference: "低负担" },
+    { name: "小丽", grade: "三年级", gender: "女", age: 8, caregiver: "爸爸", interests: "音乐,唱歌", familyNote: "", timeAvailable: "适中", taskPreference: "短时长" },
+    { name: "小强", grade: "三年级", gender: "男", age: 9, caregiver: "妈妈、爸爸", interests: "科学,自然", familyNote: "", timeAvailable: "充足", taskPreference: "长时长" }
+  ];
+
+  // 补充小明的档案信息（原种子数据只创建了 name+grade）
+  var ming = await db.prepare("SELECT id FROM children WHERE name = '小明'").get();
+  if (ming) {
+    var mingHas = await db.prepare("SELECT caregiver FROM children WHERE id = ?").get(ming.id);
+    if (mingHas && !mingHas.caregiver) {
+      await db.prepare("UPDATE children SET gender='男', age=8, caregiver='妈妈', interests='阅读,观察' WHERE id=?").run(ming.id);
+      var qExist = await db.prepare("SELECT id FROM questionnaires WHERE child_id = ?").get(ming.id);
+      if (!qExist) {
+        await db.prepare("INSERT INTO questionnaires (user_id, child_id, answers) VALUES (?,?,?)")
+          .run(demoUserId, ming.id, JSON.stringify({ timeAvailable: "充足", taskPreference: "高参与度", familyNote: "", interests: "阅读,观察" }));
+      }
+    }
+  }
+
+  var extraChildIds = {};
+  for (const es of extraStudents) {
+    var exist = await db.prepare("SELECT id FROM children WHERE name = ?").get(es.name);
+    if (exist) { extraChildIds[es.name] = exist.id; continue; }
+    var cid = await db.prepare(
+      "INSERT INTO children (name, grade, gender, age, caregiver, interests, family_note) VALUES (?,?,?,?,?,?,?)"
+    ).run(es.name, es.grade, es.gender, es.age, es.caregiver, es.interests, es.familyNote).lastInsertRowid;
+    // 创建对应的问卷记录
+    await db.prepare("INSERT INTO questionnaires (user_id, child_id, answers) VALUES (?,?,?)")
+      .run(demoUserId, cid, JSON.stringify({ timeAvailable: es.timeAvailable, taskPreference: es.taskPreference, familyNote: es.familyNote, interests: es.interests }));
+    extraChildIds[es.name] = cid;
+  }
+
+  // 旧版本会把本周演示任务当成已发布任务，导致新家长注册后直接看到
+  // “亲子共读：共读一本好书”。清理这条仅由旧种子数据创建的任务，
+  // 让本周任务只来自教师真实发布。
+  var thisWeek = mondayOf(new Date());
+  var legacyWeekTask = teacherId ? await db.prepare(
+    "SELECT t.id FROM tasks t WHERE t.week_start = ? AND t.child_id IS NULL AND t.published_by = ? " +
+    "AND t.title = ? AND t.goal = ? AND t.duration = ? AND t.task_type = ? " +
+    "AND EXISTS (SELECT 1 FROM submissions s WHERE s.task_id = t.id AND s.child_id = ? AND " +
+      "s.content = ? AND s.sub_type = 'text')"
+  ).get(
+    thisWeek, teacherId, "亲子共读：共读一本好书", "营造家庭阅读氛围，培养孩子表达与思考能力",
+    20, "阅读", extraChildIds["小红"],
+    "和小红一起读了《猜猜我有多爱你》，她特别喜欢里面比较谁更爱谁的情节，还画了一幅画。"
+  ) : null;
+  if (legacyWeekTask) {
+    await db.prepare(
+      "DELETE FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id = ?)"
+    ).run(legacyWeekTask.id);
+    await db.prepare("DELETE FROM submissions WHERE task_id = ?").run(legacyWeekTask.id);
+    await db.prepare("DELETE FROM events WHERE task_id = ?").run(legacyWeekTask.id);
+    await db.prepare("DELETE FROM parent_task_requests WHERE task_id = ?").run(legacyWeekTask.id);
+    await db.prepare("DELETE FROM tasks WHERE id = ?").run(legacyWeekTask.id);
+  }
+
+  // 给小刚发布一个个性化任务（祖辈带养适配）
+  var personalTaskExist = await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id = ?").get(thisWeek, extraChildIds["小刚"]);
+  if (!personalTaskExist) {
+    await db.prepare(
+      "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id) VALUES (?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      "和奶奶一起散步计数", "适合祖辈带养，通过简单散步增进祖孙互动",
+      "1. 和奶奶一起去小区散步\n2. 一起数路上看到的小动物\n3. 回家后一起回忆\n4. 把看到的画下来",
+      "「你觉得今天散步最有意思的是什么？」", "拍照或写一句话",
+      15, "运动", thisWeek, teacherId, extraChildIds["小刚"]
+    ).lastInsertRowid;
+  }
+
+  // 学生端演示账号：与“小测”学生档案绑定，并准备一条可直接提交的本周任务。
+  var studentUser = await db.prepare("SELECT id FROM users WHERE account = 'xiaoce'").get();
+  if (!studentUser) {
+    studentUser = { id: await db.prepare(
+      "INSERT INTO users (account, password_hash, display_name, role) VALUES (?, ?, ?, 'student')"
+    ).run("xiaoce", hashPassword("000111"), "小测").lastInsertRowid };
+  } else {
+    await db.prepare("UPDATE users SET password_hash = ?, role = 'student', display_name = ? WHERE id = ?")
+      .run(hashPassword("000111"), "小测", studentUser.id);
+  }
+  var studentChild = await db.prepare("SELECT id FROM children WHERE name = '小测' ORDER BY id LIMIT 1").get();
+  if (!studentChild) {
+    studentChild = { id: await db.prepare(
+      "INSERT INTO children (name, grade, gender, age, caregiver, interests) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("小测", "三年级", "", 9, "", "阅读,观察").lastInsertRowid };
+  }
+  await db.prepare("UPDATE children SET user_id = ? WHERE id = ? AND (user_id IS NULL OR user_id = ?)")
+    .run(studentUser.id, studentChild.id, studentUser.id);
+  await db.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id, relation) VALUES (?, ?, '本人')")
+    .run(studentUser.id, studentChild.id);
+  var studentTask = await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id = ? ORDER BY id DESC LIMIT 1")
+    .get(thisWeek, studentChild.id);
+  if (!studentTask) {
+    await db.prepare(
+      "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id, difficulty, materials, fallback_plan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      "小测的观察记录", "完成一次简短观察，并说出自己的发现",
+      "1. 选择一个身边的小物品或植物\n2. 观察 5 分钟，记下两处变化或特点\n3. 用自己的话写下观察结果",
+      "你发现了什么？哪一点最有意思？", "提交 2-3 句话的观察记录，也可以补充一张照片",
+      10, "观察探究", thisWeek, teacherId, studentChild.id, "简单", "纸笔可选", "时间有限时只写下一条最重要的发现"
+    );
+  }
+}
+const databaseReady = initializeDatabase(db).then(seed);
+
+/* ============ API 路由 ============ */
+async function handleApi(req, res, pathname, query) {
+  /* ---- 注册 ---- */
+  if (req.method === "POST" && pathname === "/api/auth/register") {
+    return sendJson(res, 410, { message: "家长账号由管理员统一创建", errorCode: "PUBLIC_REGISTRATION_DISABLED" });
+  }
+
+  /* ---- 登录 ---- */
+  if (req.method === "POST" && pathname === "/api/auth/login") {
+    const body = await readBody(req);
+    const account = String(body.account || "").trim();
+    const password = String(body.password || "");
+    const user = await db.prepare("SELECT * FROM users WHERE account = ?").get(account);
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      return sendJson(res, 401, { message: "账号或密码错误" });
+    }
+    const token = await createSession(user.id);
+    await logParentLoginEvents(user);
+    return sendJson(res, 200, {
+      token,
+      user: { account: user.account, displayName: user.display_name, role: user.role }
+    });
+  }
+
+  /* ---- 以下接口均需登录 ---- */
+  const user = await getAuthUser(req);
+  if (!user) return sendJson(res, 401, { message: "请先登录" });
+
+  if (req.method === "POST" && pathname === "/api/auth/logout") {
+    const token = req.headers["authorization"].slice(7);
+    await db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 管理员全局概览 ---- */
+  if (req.method === "GET" && pathname === "/api/admin/overview") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const teachers = await db.prepare(
+      "SELECT id, account, display_name, created_at FROM users WHERE role = 'teacher' ORDER BY id DESC"
+    ).all();
+    const students = await db.prepare(
+      "SELECT c.id, c.name, c.grade, c.created_at, " +
+      "(SELECT COUNT(*) FROM bindings b WHERE b.child_id = c.id) AS parent_count " +
+      "FROM children c ORDER BY c.id DESC"
+    ).all();
+    const parentCount = await db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'parent'").get();
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      stats: {
+        teacherCount: teachers.length,
+        studentCount: students.length,
+        parentCount: Number(parentCount && parentCount.n || 0)
+      },
+      teachers: teachers,
+      students: students.map(function (row) {
+        return Object.assign({}, row, { parent_count: Number(row.parent_count || 0) });
+      })
+    });
+  }
+
+  /* ---- 管理员账号目录：教师与学生的注册、编辑 ---- */
+  if (pathname === "/api/admin/accounts" || /^\/api\/admin\/accounts\/\d+$/.test(pathname)) {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+
+    if (req.method === "GET" && pathname === "/api/admin/accounts") {
+      const teachers = await db.prepare(
+        "SELECT id, account, display_name, phone, email, subject, employee_no, created_at " +
+        "FROM users WHERE role = 'teacher' ORDER BY id DESC"
+      ).all();
+      const parents = await db.prepare(
+        "SELECT u.id, u.account, u.display_name, u.phone, u.email, u.created_at, " +
+        "(SELECT COUNT(*) FROM bindings b WHERE b.user_id = u.id) AS child_count " +
+        "FROM users u WHERE u.role = 'parent' ORDER BY u.id DESC"
+      ).all();
+      const students = await db.prepare(
+        "SELECT u.id, u.account, u.display_name, u.phone, u.email, u.created_at, " +
+        "c.id AS child_id, c.name, c.grade, c.gender, c.age, c.caregiver, c.interests, c.family_note, " +
+        "(SELECT COUNT(*) FROM bindings b JOIN users p ON p.id = b.user_id " +
+          "WHERE b.child_id = c.id AND p.role = 'parent') AS parent_count " +
+        ",(SELECT p.account FROM bindings b JOIN users p ON p.id = b.user_id " +
+          "WHERE b.child_id = c.id AND p.role = 'parent' ORDER BY b.id LIMIT 1) AS parent_account, " +
+        "(SELECT b.relation FROM bindings b JOIN users p ON p.id = b.user_id " +
+          "WHERE b.child_id = c.id AND p.role = 'parent' ORDER BY b.id LIMIT 1) AS parent_relation " +
+        "FROM users u LEFT JOIN children c ON c.user_id = u.id " +
+        "WHERE u.role = 'student' ORDER BY u.id DESC"
+      ).all();
+      return sendJson(res, 200, {
+        generatedAt: new Date().toISOString(),
+        teachers: teachers,
+        parents: parents.map(function (row) {
+          return Object.assign({}, row, { child_count: Number(row.child_count || 0) });
+        }),
+        students: students.map(function (row) {
+          return Object.assign({}, row, { parent_count: Number(row.parent_count || 0) });
+        })
+      });
+    }
+
+    const accountId = Number(pathname.split("/").pop());
+    if (req.method === "POST" && pathname === "/api/admin/accounts") {
+      const body = await readBody(req);
+      const role = String(body.role || "").trim();
+      const account = String(body.account || "").trim();
+      const password = String(body.password || "");
+      const displayName = String(body.displayName || body.name || "").trim();
+      if (role !== "teacher" && role !== "student" && role !== "parent") return sendJson(res, 400, { message: "请选择教师、学生或家长账号" });
+      if (account.length < 3) return sendJson(res, 400, { message: "账号至少 3 个字符" });
+      if (password.length < 6) return sendJson(res, 400, { message: "密码至少 6 位" });
+      if (!displayName) return sendJson(res, 400, { message: role === "student" ? "请填写学生姓名" : role === "parent" ? "请填写家长姓名" : "请填写教师姓名" });
+      if (role === "student" && !String(body.grade || "").trim()) return sendJson(res, 400, { message: "请填写学生年级" });
+      try {
+        const created = await db.transaction(async function (tx) {
+          if (await tx.prepare("SELECT id FROM users WHERE account = ?").get(account)) {
+            throw new ApiError(409, "该账号已被注册", "ACCOUNT_EXISTS");
+          }
+          const userId = await tx.prepare(
+            "INSERT INTO users (account, password_hash, display_name, role, phone, email, subject, employee_no) VALUES (?,?,?,?,?,?,?,?)"
+          ).run(
+            account, hashPassword(password), displayName, role,
+            String(body.phone || "").trim(), String(body.email || "").trim(),
+            role === "teacher" ? String(body.subject || "").trim() : "",
+            role === "teacher" ? String(body.employeeNo || "").trim() : ""
+          ).lastInsertRowid;
+          let childId = null;
+          if (role === "student") {
+            childId = await tx.prepare(
+              "INSERT INTO children (name, grade, gender, age, caregiver, interests, family_note, user_id) VALUES (?,?,?,?,?,?,?,?)"
+            ).run(
+              displayName, String(body.grade || "").trim(), String(body.gender || "").trim(),
+              body.age === "" || body.age == null ? null : Number(body.age), String(body.caregiver || "").trim(),
+              String(body.interests || "").trim(), String(body.familyNote || "").trim(), userId
+            ).lastInsertRowid;
+            // 学生本人绑定到自己档案，保证学生端首页能取到孩子与任务
+            await tx.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id, relation) VALUES (?, ?, '本人')")
+              .run(userId, childId);
+            const parentAccount = String(body.parentAccount || "").trim();
+            if (parentAccount) {
+              const parent = await tx.prepare("SELECT id FROM users WHERE account = ? AND role = 'parent'").get(parentAccount);
+              if (!parent) throw new ApiError(400, "未找到对应的家长账号", "PARENT_NOT_FOUND");
+              await tx.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id, relation) VALUES (?, ?, ?)").run(parent.id, childId, String(body.relation || "家长").trim() || "家长");
+            }
+          }
+          return { userId: userId, childId: childId };
+        });
+        return sendJson(res, 201, { ok: true, id: Number(created.userId), childId: created.childId == null ? null : Number(created.childId) });
+      } catch (error) {
+        if (error && (error.code === "SQLITE_CONSTRAINT_UNIQUE" || error.code === "23505")) {
+          return sendJson(res, 409, { message: "该账号已被注册", errorCode: "ACCOUNT_EXISTS" });
+        }
+        throw error;
+      }
+    }
+
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      const existing = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('teacher','student','parent')").get(accountId);
+      if (!existing) return sendJson(res, 404, { message: "账号不存在" });
+      const account = String(body.account == null ? existing.account : body.account).trim();
+      const displayName = String(body.displayName == null ? existing.display_name : body.displayName).trim();
+      const password = String(body.password || "");
+      if (account.length < 3) return sendJson(res, 400, { message: "账号至少 3 个字符" });
+      if (!displayName) return sendJson(res, 400, { message: "请填写姓名" });
+      if (password && password.length < 6) return sendJson(res, 400, { message: "新密码至少 6 位" });
+      try {
+        await db.transaction(async function (tx) {
+          const duplicate = await tx.prepare("SELECT id FROM users WHERE account = ? AND id <> ?").get(account, accountId);
+          if (duplicate) throw new ApiError(409, "该账号已被注册", "ACCOUNT_EXISTS");
+          const passwordSql = password ? ", password_hash = ?" : "";
+          const params = [account, displayName, String(body.phone == null ? existing.phone || "" : body.phone).trim(), String(body.email == null ? existing.email || "" : body.email).trim()];
+          if (existing.role === "teacher") {
+            params.push(String(body.subject == null ? existing.subject || "" : body.subject).trim(), String(body.employeeNo == null ? existing.employee_no || "" : body.employeeNo).trim());
+          }
+          if (password) params.push(hashPassword(password));
+          params.push(accountId);
+          await tx.prepare(
+            existing.role === "teacher"
+              ? "UPDATE users SET account = ?, display_name = ?, phone = ?, email = ?, subject = ?, employee_no = ?" + passwordSql + " WHERE id = ?"
+              : "UPDATE users SET account = ?, display_name = ?, phone = ?, email = ?" + passwordSql + " WHERE id = ?"
+          ).run(...params);
+          if (existing.role === "student") {
+            const child = await tx.prepare("SELECT id FROM children WHERE user_id = ?").get(accountId);
+            const childParams = [
+              displayName,
+              body.grade == null ? String(child && child.grade || "") : String(body.grade).trim(),
+              body.gender == null ? String(child && child.gender || "") : String(body.gender).trim(),
+              body.age == null ? (child ? (child.age == null ? null : child.age) : null) : (body.age === "" ? null : Number(body.age)),
+              body.caregiver == null ? String(child && child.caregiver || "") : String(body.caregiver).trim(),
+              body.interests == null ? String(child && child.interests || "") : String(body.interests).trim(),
+              body.familyNote == null ? String(child && child.family_note || "") : String(body.familyNote).trim()
+            ];
+            if (child) {
+              await tx.prepare("UPDATE children SET name = ?, grade = ?, gender = ?, age = ?, caregiver = ?, interests = ?, family_note = ? WHERE id = ?").run(...childParams, child.id);
+            } else {
+              await tx.prepare("INSERT INTO children (name, grade, gender, age, caregiver, interests, family_note, user_id) VALUES (?,?,?,?,?,?,?,?)").run(...childParams, accountId);
+            }
+            const parentAccount = String(body.parentAccount || "").trim();
+            if (parentAccount) {
+              const updatedChild = child || await tx.prepare("SELECT id FROM children WHERE user_id = ?").get(accountId);
+              const parent = await tx.prepare("SELECT id FROM users WHERE account = ? AND role = 'parent'").get(parentAccount);
+              if (!parent) throw new ApiError(400, "未找到对应的家长账号", "PARENT_NOT_FOUND");
+              await tx.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id, relation) VALUES (?, ?, ?)").run(parent.id, updatedChild.id, String(body.relation || "家长").trim() || "家长");
+            }
+          }
+        });
+        return sendJson(res, 200, { ok: true, id: accountId });
+      } catch (error) {
+        if (error && (error.code === "SQLITE_CONSTRAINT_UNIQUE" || error.code === "23505")) {
+          return sendJson(res, 409, { message: "该账号已被注册", errorCode: "ACCOUNT_EXISTS" });
+        }
+        throw error;
+      }
+    }
+  }
+
+  /* ---- 管理员班级管理：创建班级并绑定教师/学生/家长 ---- */
+  if (pathname === "/api/admin/classes") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+
+    if (req.method === "GET") {
+      const classRows = await db.prepare(
+        "SELECT id, name, grade, head_teacher_id, created_at FROM classes ORDER BY id DESC"
+      ).all();
+      const memberRows = await db.prepare(
+        "SELECT cm.class_id, cm.user_id, cm.role, cm.relation, u.account, u.display_name, " +
+        "c.id AS child_id, c.name AS child_name, c.grade AS child_grade " +
+        "FROM class_members cm JOIN users u ON u.id = cm.user_id " +
+        "LEFT JOIN children c ON c.user_id = cm.user_id ORDER BY cm.id"
+      ).all();
+      const byClass = {};
+      memberRows.forEach(function (row) {
+        const classId = Number(row.class_id);
+        if (!byClass[classId]) byClass[classId] = { teachers: [], students: [], parents: [] };
+        const item = {
+          id: Number(row.user_id),
+          account: row.account,
+          name: row.display_name || "",
+          relation: row.relation || "",
+          childId: row.child_id == null ? null : Number(row.child_id),
+          childName: row.child_name || "",
+          grade: row.child_grade || ""
+        };
+        if (row.role === "teacher") byClass[classId].teachers.push(item);
+        else if (row.role === "parent") byClass[classId].parents.push(item);
+        else byClass[classId].students.push(item);
+      });
+      const classes = classRows.map(function (row) {
+        const classId = Number(row.id);
+        const bucket = byClass[classId] || { teachers: [], students: [], parents: [] };
+        const head = bucket.teachers.filter(function (t) { return t.id === Number(row.head_teacher_id); })[0];
+        return {
+          id: classId,
+          name: row.name,
+          grade: row.grade || "",
+          headTeacherId: row.head_teacher_id == null ? null : Number(row.head_teacher_id),
+          headTeacherName: head ? head.name : "",
+          createdAt: row.created_at,
+          teachers: bucket.teachers,
+          students: bucket.students,
+          parents: bucket.parents,
+          teacherCount: bucket.teachers.length,
+          studentCount: bucket.students.length,
+          parentCount: bucket.parents.length
+        };
+      });
+
+      const teachers = await db.prepare(
+        "SELECT id, account, display_name, subject FROM users WHERE role = 'teacher' ORDER BY id"
+      ).all();
+      const students = await db.prepare(
+        "SELECT u.id, u.account, u.display_name, u.phone, c.id AS child_id, c.grade " +
+        "FROM users u LEFT JOIN children c ON c.user_id = u.id WHERE u.role = 'student' ORDER BY u.id"
+      ).all();
+      const parents = await db.prepare(
+        "SELECT id, account, display_name FROM users WHERE role = 'parent' ORDER BY id"
+      ).all();
+      const bindingRows = await db.prepare(
+        "SELECT b.user_id, c.name AS child_name, c.grade FROM bindings b " +
+        "JOIN children c ON c.id = b.child_id ORDER BY b.id"
+      ).all();
+      const boundByParent = {};
+      bindingRows.forEach(function (row) {
+        const key = Number(row.user_id);
+        if (!boundByParent[key]) boundByParent[key] = [];
+        boundByParent[key].push({ name: row.child_name || "", grade: row.grade || "" });
+      });
+
+      return sendJson(res, 200, {
+        generatedAt: new Date().toISOString(),
+        classes: classes,
+        accounts: {
+          teachers: teachers.map(function (t) {
+            return { id: Number(t.id), account: t.account, name: t.display_name || "", subject: t.subject || "" };
+          }),
+          students: students.map(function (s) {
+            return {
+              id: Number(s.id), account: s.account, name: s.display_name || "",
+              childId: s.child_id == null ? null : Number(s.child_id), grade: s.grade || ""
+            };
+          }),
+          parents: parents.map(function (p) {
+            const kids = boundByParent[Number(p.id)] || [];
+            return {
+              id: Number(p.id), account: p.account, name: p.display_name || "",
+              children: kids,
+              childLabel: kids.map(function (k) { return k.name + (k.grade ? "（" + k.grade + "）" : ""); }).join("、")
+            };
+          })
+        }
+      });
+    }
+
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      const name = String(body.name || "").trim();
+      const grade = String(body.grade || "").trim();
+      const headTeacherId = body.headTeacherId ? Number(body.headTeacherId) : null;
+      const teacherIds = normalizeIdList(body.teacherIds);
+      const studentIds = normalizeIdList(body.studentIds);
+      const parentIds = normalizeIdList(body.parentIds);
+      if (!name) return sendJson(res, 400, { message: "请填写班级名称" });
+      if (!headTeacherId) return sendJson(res, 400, { message: "请选择负责教师" });
+      const headTeacher = await db.prepare("SELECT id, role FROM users WHERE id = ?").get(headTeacherId);
+      if (!headTeacher || headTeacher.role !== "teacher") return sendJson(res, 400, { message: "负责教师账号不存在" });
+      if (teacherIds.indexOf(headTeacherId) < 0) teacherIds.push(headTeacherId);
+
+      const created = await db.transaction(async function (tx) {
+        const classId = await tx.prepare(
+          "INSERT INTO classes (name, grade, head_teacher_id, created_by) VALUES (?,?,?,?)"
+        ).run(name, grade, headTeacherId, user.id).lastInsertRowid;
+
+        const addMembers = async function (ids, role) {
+          for (const raw of ids) {
+            const uid = Number(raw);
+            if (!Number.isFinite(uid)) continue;
+            const target = await tx.prepare("SELECT id, role FROM users WHERE id = ?").get(uid);
+            if (!target || target.role !== role) continue;
+            await tx.prepare(
+              "INSERT OR IGNORE INTO class_members (class_id, user_id, role) VALUES (?,?,?)"
+            ).run(classId, uid, role);
+          }
+        };
+
+        await addMembers(teacherIds, "teacher");
+        await addMembers(studentIds, "student");
+        await addMembers(parentIds, "parent");
+
+        // 自动把所选学生已绑定的家长纳入班级，保证班级任务能触达家长
+        for (const raw of studentIds) {
+          const studentUid = Number(raw);
+          if (!Number.isFinite(studentUid)) continue;
+          const child = await tx.prepare("SELECT id FROM children WHERE user_id = ?").get(studentUid);
+          if (!child) continue;
+          const rows = await tx.prepare("SELECT DISTINCT user_id FROM bindings WHERE child_id = ?").all(child.id);
+          for (const row of rows) {
+            const parentUid = Number(row.user_id);
+            if (!Number.isFinite(parentUid)) continue;
+            await tx.prepare(
+              "INSERT OR IGNORE INTO class_members (class_id, user_id, role) VALUES (?,?,'parent')"
+            ).run(classId, parentUid);
+          }
+        }
+        return classId;
+      });
+      return sendJson(res, 201, { ok: true, id: Number(created) });
+    }
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/tasks") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const requestedLimit = Math.max(1, Math.min(200, Number(query.get("limit") || 100)));
+    const children = await db.prepare(
+      "SELECT id, name, grade FROM children ORDER BY id"
+    ).all();
+    const tasks = await db.prepare(
+      "SELECT t.id, t.title, t.task_type, t.week_start, t.created_at, t.duration, t.child_id, " +
+      "c.name AS child_name, u.display_name AS publisher_name " +
+      "FROM tasks t LEFT JOIN children c ON c.id = t.child_id " +
+      "LEFT JOIN users u ON u.id = t.published_by " +
+      "ORDER BY t.id DESC LIMIT " + requestedLimit
+    ).all();
+    const submissions = await db.prepare(
+      "SELECT s.id, s.task_id, s.child_id, s.status, s.content, s.sub_type, s.created_at, c.name AS child_name " +
+      "FROM submissions s JOIN children c ON c.id = s.child_id " +
+      "WHERE s.task_id IN (SELECT id FROM tasks ORDER BY id DESC LIMIT " + requestedLimit + ") " +
+      "ORDER BY s.id DESC"
+    ).all();
+    const childById = {};
+    children.forEach(function (child) { childById[Number(child.id)] = child; });
+    const submissionsByTask = {};
+    submissions.forEach(function (submission) {
+      const taskId = Number(submission.task_id);
+      const childId = Number(submission.child_id);
+      if (!submissionsByTask[taskId]) submissionsByTask[taskId] = {};
+      const current = submissionsByTask[taskId][childId];
+      if (!current || (submission.status === "submitted" && current.status !== "submitted")) {
+        submissionsByTask[taskId][childId] = submission;
+      }
+    });
+    const taskRows = tasks.map(function (task) {
+      const targetChildren = task.child_id
+        ? (childById[Number(task.child_id)] ? [childById[Number(task.child_id)]] : [])
+        : children;
+      const byChild = submissionsByTask[Number(task.id)] || {};
+      const details = targetChildren.map(function (child) {
+        const submission = byChild[Number(child.id)];
+        const status = submission && submission.status === "submitted"
+          ? "completed" : submission && submission.status === "draft" ? "draft" : "not_started";
+        return {
+          studentId: child.id,
+          studentName: child.name,
+          grade: child.grade,
+          status: status,
+          submissionId: submission ? submission.id : null,
+          content: submission && submission.status === "submitted" ? submission.content : "",
+          submittedAt: submission && submission.status === "submitted" ? submission.created_at : null,
+          subType: submission && submission.status === "submitted" ? submission.sub_type : ""
+        };
+      });
+      const completed = details.filter(function (row) { return row.status === "completed"; }).length;
+      const drafts = details.filter(function (row) { return row.status === "draft"; }).length;
+      return {
+        id: task.id,
+        title: task.title,
+        type: task.task_type,
+        weekStart: task.week_start,
+        createdAt: task.created_at,
+        duration: task.duration,
+        scope: task.child_id ? "个性化任务" : "全班任务",
+        studentName: task.child_name || "全班学生",
+        publisherName: task.publisher_name || "教师",
+        targetCount: details.length,
+        completedCount: completed,
+        draftCount: drafts,
+        completionRate: details.length ? Math.round(completed / details.length * 100) : 0,
+        details: details
+      };
+    });
+    return sendJson(res, 200, { tasks: taskRows, studentCount: children.length });
+  }
+
+  /* ---- 管理员成长时间线看板 ---- */
+  if (req.method === "GET" && pathname === "/api/admin/growth-timeline") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const parsedLimit = Number(query.get("limit") || 300);
+    const requestedLimit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(500, parsedLimit)) : 300;
+    const requestedChildId = query.get("childId") ? Number(query.get("childId")) : null;
+    const children = await db.prepare(
+      "SELECT id, name, grade FROM children ORDER BY name, id"
+    ).all();
+    const childClause = requestedChildId ? " AND s.child_id = ?" : "";
+    const updateChildClause = requestedChildId ? " AND d.child_id = ?" : "";
+    const submissionParams = requestedChildId ? [requestedChildId] : [];
+    const updateParams = requestedChildId ? [requestedChildId] : [];
+    const submissions = await db.prepare(
+      "SELECT s.id, s.child_id, s.content, s.sub_type, s.created_at, t.title, t.task_type, " +
+      "c.name AS student_name, c.grade, f.id AS feedback_id, f.comment AS feedback_comment, " +
+      "f.tags AS feedback_tags, f.created_at AS feedback_at, u.display_name AS teacher_name " +
+      "FROM submissions s JOIN tasks t ON t.id = s.task_id " +
+      "JOIN children c ON c.id = s.child_id " +
+      "LEFT JOIN feedback f ON f.submission_id = s.id " +
+      "LEFT JOIN users u ON u.id = f.teacher_id " +
+      "WHERE s.status = 'submitted'" + childClause + " ORDER BY s.created_at DESC, s.id DESC LIMIT " + requestedLimit
+    ).all(...submissionParams);
+    const observations = await db.prepare(
+      "SELECT d.id, d.child_id, d.student_name, d.summary, d.analysis, d.tags, d.ai_status, " +
+      "d.recipient_count, d.created_at, c.name AS child_name, c.grade, u.display_name AS teacher_name " +
+      "FROM teacher_daily_updates d LEFT JOIN children c ON c.id = d.child_id " +
+      "LEFT JOIN users u ON u.id = d.teacher_id WHERE 1 = 1" + updateChildClause +
+      " ORDER BY d.created_at DESC, d.id DESC LIMIT " + requestedLimit
+    ).all(...updateParams);
+    const items = submissions.map(function (row) {
+      return {
+        id: "submission-" + row.id,
+        sourceId: row.id,
+        kind: "submission",
+        kindLabel: "孩子提交",
+        childId: row.child_id,
+        studentName: row.student_name || "学生",
+        grade: row.grade || "",
+        title: row.title || "成长实践记录",
+        taskType: row.task_type || "成长实践",
+        content: row.content || "",
+        analysis: "",
+        tags: "",
+        teacherName: row.teacher_name || "",
+        createdAt: row.created_at,
+        feedback: row.feedback_id ? {
+          comment: row.feedback_comment || "",
+          tags: row.feedback_tags || "",
+          teacherName: row.teacher_name || "老师",
+          createdAt: row.feedback_at
+        } : null
+      };
+    }).concat(observations.map(function (row) {
+      return {
+        id: "observation-" + row.id,
+        sourceId: row.id,
+        kind: "observation",
+        kindLabel: "教师观察",
+        childId: row.child_id || null,
+        studentName: row.child_name || row.student_name || "未匹配学生",
+        grade: row.grade || "",
+        title: row.child_name ? "校园观察 · " + row.child_name : "校园观察记录",
+        taskType: "教师记录",
+        content: row.summary || "",
+        analysis: row.analysis || "",
+        tags: row.tags || "",
+        teacherName: row.teacher_name || "老师",
+        createdAt: row.created_at,
+        feedback: null,
+        aiStatus: row.ai_status || "fallback",
+        recipientCount: Number(row.recipient_count || 0)
+      };
+    })).sort(function (a, b) {
+      const dateA = new Date(String(a.createdAt || "").replace(" ", "T") +
+        (/[zZ]|[+-]\d{2}:?\d{2}$/.test(String(a.createdAt || "")) ? "" : "+08:00")).getTime();
+      const dateB = new Date(String(b.createdAt || "").replace(" ", "T") +
+        (/[zZ]|[+-]\d{2}:?\d{2}$/.test(String(b.createdAt || "")) ? "" : "+08:00")).getTime();
+      return (Number.isNaN(dateB) ? 0 : dateB) - (Number.isNaN(dateA) ? 0 : dateA);
+    }).slice(0, requestedLimit);
+    const activeChildren = new Set(items.filter(function (item) { return item.childId; }).map(function (item) {
+      return String(item.childId);
+    }));
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      children: children,
+      stats: {
+        timelineCount: items.length,
+        activeStudentCount: activeChildren.size,
+        submissionCount: items.filter(function (item) { return item.kind === "submission"; }).length,
+        observationCount: items.filter(function (item) { return item.kind === "observation"; }).length,
+        feedbackCount: items.filter(function (item) { return !!item.feedback; }).length
+      },
+      items: items
+    });
+  }
+
+  /* ---- 基础行为埋点 ---- */
+  if (req.method === "POST" && pathname === "/api/events") {
+    const body = await readBody(req);
+    const eventType = String(body.eventType || body.event_type || "").trim();
+    const childId = body.childId ? Number(body.childId) : null;
+    const taskId = body.taskId ? Number(body.taskId) : null;
+    if (!eventType) return sendJson(res, 400, { message: "缺少事件类型" });
+    if (childId && !(await canAccessChild(user, childId))) return sendJson(res, 403, { message: "无权记录该孩子事件" });
+    await logEvent(user, eventType, childId, taskId, body.meta || {});
+    return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 绑定孩子 ---- */
+  if (req.method === "POST" && pathname === "/api/children") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可绑定孩子" });
+    const body = await readBody(req);
+    const name = String(body.name || "").trim();
+    const grade = String(body.grade || "").trim();
+    if (!name) return sendJson(res, 400, { message: "请填写孩子姓名/昵称" });
+    const childId = await db.transaction(async function (tx) {
+      const id = await tx.prepare("INSERT INTO children (name, grade) VALUES (?,?)").run(name, grade).lastInsertRowid;
+      await tx.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id) VALUES (?,?)").run(user.id, id);
+      return id;
+    });
+    const child = await db.prepare("SELECT * FROM children WHERE id = ?").get(childId);
+    return sendJson(res, 200, { child });
+  }
+
+  /* ---- 学生端首页：当前任务与提交入口 ---- */
+  if (req.method === "GET" && pathname === "/api/student/home") {
+    if (user.role !== "student") return sendJson(res, 403, { message: "仅学生账号可访问学生首页" });
+    const child = await db.prepare(
+      "SELECT c.* FROM children c JOIN bindings b ON b.child_id = c.id WHERE b.user_id = ? ORDER BY b.id LIMIT 1"
+    ).get(user.id);
+    const result = { child: child || null, task: null, taskStatus: "none", submission: null, feedback: null };
+    if (!child) return sendJson(res, 200, result);
+    let task = await db.prepare("SELECT * FROM tasks WHERE week_start = ? AND child_id = ? ORDER BY id DESC LIMIT 1")
+      .get(mondayOf(new Date()), child.id);
+    if (!task) {
+      // 班级任务：优先取孩子所在班级的任务，其次回退到无班级归属的全局任务
+      task = await findClassTaskForChild(mondayOf(new Date()), child.id);
+    }
+    if (task) {
+      const submission = await db.prepare(
+        "SELECT * FROM submissions WHERE task_id = ? AND child_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(task.id, child.id);
+      let taskStatus = "ongoing";
+      if (submission) {
+        taskStatus = submission.status === "draft" ? "draft" : "submitted";
+        if (submission.status !== "draft") {
+          const feedback = await db.prepare("SELECT * FROM feedback WHERE submission_id = ? ORDER BY id DESC LIMIT 1")
+            .get(submission.id);
+          if (feedback) result.feedback = feedback;
+        }
+      }
+      result.task = task;
+      result.taskStatus = taskStatus;
+      result.submission = submission || null;
+    }
+    await logEvent(user, "student_task_page_viewed", child.id, result.task && result.task.id, { source: "student_home" });
+    return sendJson(res, 200, result);
+  }
+
+  /* ---- 首页聚合数据 ---- */
+  if (req.method === "GET" && pathname === "/api/home") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可访问家庭首页" });
+    const children = await db.prepare(
+      "SELECT DISTINCT c.* FROM children c " +
+      "WHERE EXISTS (SELECT 1 FROM bindings b WHERE b.child_id = c.id AND b.user_id = ?) " +
+      "OR EXISTS (SELECT 1 FROM questionnaires q WHERE q.child_id = c.id AND q.user_id = ?) " +
+      "ORDER BY c.id"
+    ).all(user.id, user.id);
+    const requestedChildId = query.get("childId") ? Number(query.get("childId")) : null;
+    let child = requestedChildId ? children.find((c) => c.id === requestedChildId) : null;
+    const selectedChildInvalid = !!(requestedChildId && !child);
+    if (!child) child = children[0] || null;
+
+    const result = { children, child, task: null, taskStatus: "none", submission: null,
+                     feedback: null, unreadCount: 0, timeline: { taskCount: 0, workCount: 0 }, parentTaskRequest: null,
+                     needQuestionnaire: false, engagement: null, engagementEnabled: true,
+                     selectedChildInvalid: selectedChildInvalid };
+    if (!child) {
+      // 首次登录的家长（无孩子且未填问卷）→ 前端跳转问卷页
+      const qFilled = await db.prepare("SELECT id FROM questionnaires WHERE user_id = ?").get(user.id);
+      result.needQuestionnaire = user.role === "parent" && !qFilled;
+      return sendJson(res, 200, result);
+    }
+    result.engagementEnabled = await getEngagementPreference(user.id, child.id);
+    result.engagement = result.engagementEnabled ? await getParentEngagement(user.id, child.id) : null;
+
+    // 本周任务：优先个人任务，其次班级任务
+    let task = await db.prepare("SELECT * FROM tasks WHERE week_start = ? AND child_id = ? ORDER BY id DESC LIMIT 1")
+      .get(mondayOf(new Date()), child.id);
+    if (!task) {
+      // 班级任务：优先取孩子所在班级的任务，其次回退到无班级归属的全局任务
+      task = await findClassTaskForChild(mondayOf(new Date()), child.id);
+    }
+    if (task) {
+      const sub = await db.prepare(
+        "SELECT * FROM submissions WHERE task_id = ? AND child_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(task.id, child.id);
+      let status = "ongoing";
+      if (sub) {
+        status = sub.status === "draft" ? "draft" : "submitted";
+        if (sub.status !== "draft") {
+          const fb = await db.prepare("SELECT * FROM feedback WHERE submission_id = ? ORDER BY id DESC LIMIT 1").get(sub.id);
+          if (fb) status = "done";
+        }
+      }
+      result.task = task;
+      result.taskStatus = status;
+      result.submission = sub || null;
+    }
+
+    // 最新反馈 + 未读数
+    result.feedback = await db.prepare(
+      "SELECT f.*, u.display_name AS teacher_name, t.title AS task_title FROM feedback f " +
+      "JOIN submissions s ON s.id = f.submission_id " +
+      "LEFT JOIN users u ON u.id = f.teacher_id " +
+      "JOIN tasks t ON t.id = s.task_id " +
+      "WHERE s.child_id = ? ORDER BY f.id DESC LIMIT 1"
+    ).get(child.id) || null;
+    result.unreadCount = await db.prepare(
+      "SELECT COUNT(*) AS n FROM feedback f JOIN submissions s ON s.id = f.submission_id " +
+      "WHERE s.child_id = ? AND f.read_at IS NULL"
+    ).get(child.id).n;
+
+    // 时间线统计
+    result.timeline.taskCount = await db.prepare(
+      "SELECT COUNT(DISTINCT task_id) AS n FROM submissions WHERE child_id = ? AND status = 'submitted'"
+    ).get(child.id).n;
+    result.timeline.workCount = await db.prepare(
+      "SELECT COUNT(*) AS n FROM submissions WHERE child_id = ? AND status = 'submitted'"
+    ).get(child.id).n;
+
+    result.parentTaskRequest = await db.prepare(
+      "SELECT id, title, description, goal, duration, status, teacher_comment, task_id, created_at, reviewed_at " +
+      "FROM parent_task_requests WHERE user_id = ? AND child_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(user.id, child.id) || null;
+
+    return sendJson(res, 200, result);
+  }
+
+  if (req.method === "GET" && pathname === "/api/parent/notifications") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可查看通知" });
+    const requestedLimit = Number(query.get("limit") || 6);
+    const limit = Math.max(1, Math.min(20, Number.isFinite(requestedLimit) ? requestedLimit : 6));
+    const notifications = await db.prepare(
+      "SELECT n.id, n.type, n.title, n.content, n.read_at, n.created_at, " +
+      "u.display_name AS sender_name " +
+      "FROM notifications n LEFT JOIN users u ON u.id = n.sender_user_id " +
+      "WHERE n.recipient_user_id = ? ORDER BY n.id DESC LIMIT " + limit
+    ).all(user.id);
+    const unreadCount = await db.prepare(
+      "SELECT COUNT(*) AS n FROM notifications WHERE recipient_user_id = ? AND read_at IS NULL"
+    ).get(user.id).n;
+    return sendJson(res, 200, { notifications, unreadCount });
+  }
+
+  if (req.method === "GET" && pathname === "/api/parent/task-requests") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可查看成长关注" });
+    const requestedChildId = query.get("childId") ? Number(query.get("childId")) : null;
+    if (requestedChildId && !(await canAccessChild(user, requestedChildId))) {
+      return sendJson(res, 403, { message: "无权访问该孩子信息" });
+    }
+    const requestListStatement = db.prepare(
+      "SELECT r.id, r.child_id, r.title, r.concern_category, r.observed_behavior, r.status, " +
+      "r.teacher_comment, r.task_id, r.created_at, r.reviewed_at, t.title AS task_title " +
+      "FROM parent_task_requests r LEFT JOIN tasks t ON t.id = r.task_id " +
+      "WHERE r.user_id = ? " + (requestedChildId ? "AND r.child_id = ? " : "") +
+      "ORDER BY r.id DESC LIMIT 20"
+    );
+    const rows = await requestListStatement.all.apply(
+      requestListStatement,
+      requestedChildId ? [user.id, requestedChildId] : [user.id]
+    );
+    return sendJson(res, 200, { requests: rows });
+  }
+
+  if (req.method === "POST" && pathname === "/api/parent/notifications/read-all") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可标记通知" });
+    await db.prepare(
+      "UPDATE notifications SET read_at = datetime('now','localtime') WHERE recipient_user_id = ? AND read_at IS NULL"
+    ).run(user.id);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  const notificationReadMatch = pathname.match(/^\/api\/parent\/notifications\/(\d+)\/read$/);
+  if (req.method === "POST" && notificationReadMatch) {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可标记通知" });
+    const notificationId = Number(notificationReadMatch[1]);
+    await db.prepare(
+      "UPDATE notifications SET read_at = datetime('now','localtime') " +
+      "WHERE id = ? AND recipient_user_id = ?"
+    ).run(notificationId, user.id);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && pathname === "/api/parent/task-requests") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可提交自主任务" });
+    const body = await readBody(req);
+    const childId = Number(body.childId);
+    if (!childId || !(await canAccessChild(user, childId))) return sendJson(res, 403, { message: "无权访问该孩子信息" });
+    const category = String(body.category || "").trim().slice(0, 40);
+    const observedBehavior = String(body.observedBehavior || body.description || "").trim();
+    const context = String(body.context || "").trim();
+    const frequency = String(body.frequency || "").trim().slice(0, 40);
+    const impact = String(body.impact || "").trim();
+    const parentExpectation = String(body.parentExpectation || body.goal || "").trim();
+    const familyConstraints = String(body.familyConstraints || "").trim();
+    const description = observedBehavior;
+    const title = String(body.title || "").trim().slice(0, 60) || (category ? category + "方面的成长关注" : "孩子近期的成长关注");
+    const goal = parentExpectation.slice(0, 160);
+    const duration = Math.max(5, Math.min(90, Number(body.duration) || 20));
+    if (description.length < 4) return sendJson(res, 400, { message: "请至少写 4 个字描述你观察到的具体情况" });
+    if (description.length > 1200 || context.length > 1000 || impact.length > 800 ||
+      parentExpectation.length > 800 || familyConstraints.length > 800) {
+      return sendJson(res, 400, { message: "描述内容过长，请适当精简后再提交" });
+    }
+    const child = await db.prepare("SELECT id, name, grade, gender, age, caregiver, interests, family_note FROM children WHERE id = ?").get(childId);
+    const aiResult = await generateParentConcernPlan({
+      category: category || "未分类",
+      observedBehavior: observedBehavior,
+      context: context,
+      frequency: frequency,
+      impact: impact,
+      parentExpectation: parentExpectation,
+      familyConstraints: familyConstraints,
+      duration: duration
+    }, child || {});
+    const id = await db.transaction(async function (tx) {
+      const requestId = await tx.prepare(
+        "INSERT INTO parent_task_requests " +
+        "(user_id, child_id, title, description, goal, duration, concern_category, observed_behavior, context, frequency, impact, parent_expectation, family_constraints, ai_plan, ai_status) " +
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      ).run(
+        user.id, childId, title, description, goal, duration, category, observedBehavior, context, frequency,
+        impact, parentExpectation, familyConstraints, JSON.stringify(aiResult.plan), aiResult.status
+      ).lastInsertRowid;
+      await logEvent(user, "parent_task_request_submitted", childId, null, { requestId: requestId }, tx);
+      return requestId;
+    });
+    let vector = null;
+    try {
+      vector = await upsertParentTaskRequestVector(id);
+    } catch (error) {
+      console.warn("家长定制任务索引失败：", error.message);
+    }
+    const request = await db.prepare(
+      "SELECT id, title, concern_category, observed_behavior, duration, status, teacher_comment, task_id, created_at, reviewed_at, ai_status " +
+      "FROM parent_task_requests WHERE id = ?"
+    ).get(id);
+    return sendJson(res, 200, {
+      ok: true,
+      request: request,
+      aiStatus: aiResult.status,
+      message: aiResult.status === "ai" ? "已提交，AI 已生成方案，等待老师审核" : "已提交，当前使用基础方案，等待老师审核",
+      vectorIndexed: !!(vector && vector.indexed)
+    });
+  }
+
+  /* ---- 首次登录问卷（孩子信息 + 陪伴情况，用于个性化任务） ---- */
+  if (req.method === "POST" && pathname === "/api/questionnaire") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号需要填写问卷" });
+    const body = await readBody(req);
+    const name = String(body.childName || "").trim();
+    const gender = String(body.gender || "");
+    const age = Number(body.age);
+    // 主要陪伴人：支持多选 + 自定义填写
+    let caregivers = Array.isArray(body.caregiver)
+      ? body.caregiver.filter(Boolean).map(String)
+      : (body.caregiver ? [String(body.caregiver)] : []);
+    const caregiverOther = String(body.caregiverOther || "").trim();
+    if (caregiverOther) caregivers.push(caregiverOther);
+    caregivers = [...new Set(caregivers)];
+    const caregiver = caregivers.join("、");
+    const timeAvailable = String(body.timeAvailable || "");
+    const taskPreference = String(body.taskPreference || "").trim();
+    const interests = Array.isArray(body.interests) ? body.interests.filter(Boolean).join(",") : "";
+    const familyNote = String(body.familyNote || "").trim();
+    const grade = String(body.grade || "").trim();
+
+    if (!name) return sendJson(res, 400, { message: "请填写孩子昵称" });
+    if (!["男", "女"].includes(gender)) return sendJson(res, 400, { message: "请选择孩子性别" });
+    if (!age || age < 3 || age > 18) return sendJson(res, 400, { message: "请填写 3-18 之间的年龄" });
+    if (!caregiver) return sendJson(res, 400, { message: "请选择主要陪伴人" });
+    if (!TASK_PREFERENCE_OPTIONS.includes(taskPreference)) return sendJson(res, 400, { message: "请选择希望共同完成的任务类型偏好" });
+
+    // 问卷完成即创建孩子档案并绑定
+    const childId = await db.transaction(async function (tx) {
+      const id = await tx.prepare(
+        "INSERT INTO children (name, grade, gender, age, caregiver, interests, family_note) VALUES (?,?,?,?,?,?,?)"
+      ).run(name, grade, gender, age, caregiver, interests, familyNote).lastInsertRowid;
+      await tx.prepare("INSERT OR IGNORE INTO bindings (user_id, child_id) VALUES (?,?)").run(user.id, id);
+      await tx.prepare(
+        "INSERT INTO questionnaires (user_id, child_id, answers) VALUES (?,?,?)"
+      ).run(user.id, id, JSON.stringify({ timeAvailable, taskPreference, familyNote, interests }));
+      return id;
+    });
+    let vectorIndexed = false;
+    try {
+      const vectorInfo = await syncTeacherVectorIndex();
+      vectorIndexed = !!(vectorInfo && vectorInfo.documentCount);
+    } catch (e) {
+      console.warn("问卷向量索引同步失败：", e.message);
+    }
+    return sendJson(res, 200, { child: await db.prepare("SELECT * FROM children WHERE id = ?").get(childId), vectorIndexed: vectorIndexed });
+  }
+
+  /* ---- 提交作品 ---- */
+  if (req.method === "POST" && pathname === "/api/submissions") {
+    if (user.role !== "parent" && user.role !== "student") return sendJson(res, 403, { message: "仅家长或学生账号可提交作品" });
+    const body = await readBody(req);
+    const taskId = Number(body.taskId), childId = Number(body.childId);
+    const content = String(body.content || "").trim();
+    const subType = ["text", "check", "image", "audio", "video"].includes(body.subType) ? body.subType : "text";
+    const status = body.status === "draft" ? "draft" : "submitted";
+    let attachmentResult;
+    try {
+      attachmentResult = normalizeAttachments(body.attachments);
+    } catch (error) {
+      return sendJson(res, 400, { message: error.message, errorCode: "INVALID_ATTACHMENT" });
+    }
+    if (attachmentResult.error) {
+      return sendJson(res, 400, { message: attachmentResult.error, errorCode: "INVALID_ATTACHMENT" });
+    }
+    const attachments = attachmentResult.value;
+    if (!taskId || !childId) return sendJson(res, 400, { message: "缺少任务或孩子信息" });
+    if (status === "submitted" && !content) return sendJson(res, 400, { message: "请填写提交内容" });
+    if (!(await canAccessChild(user, childId))) return sendJson(res, 403, { message: "尚未绑定该孩子" });
+    const task = await getVisibleTask(taskId, childId);
+    if (!task) return sendJson(res, 403, { message: "该任务不属于当前孩子" });
+
+    // ---- 提交行为增强元数据（素材类型 / 内容长度 / 编辑轮次） ----
+    const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+    const attachmentTypes = [];
+    rawAttachments.forEach(function (a) {
+      const t = String((a && a.type) || "").split("/")[0];
+      if (t && attachmentTypes.indexOf(t) < 0) attachmentTypes.push(t);
+    });
+    const eventType = status === "draft" ? "submission_drafted" : "submission_submitted";
+    let id;
+    try {
+      id = await db.transaction(async function (tx) {
+        const priorDraftCount = (await tx.prepare(
+          "SELECT COUNT(*) AS n FROM events WHERE event_type = 'submission_drafted' AND child_id = ? AND task_id = ?"
+        ).get(childId, taskId)).n;
+        const eventMeta = {
+          subType: subType,
+          contentLength: content.length,
+          attachmentTypes: attachmentTypes,
+          fileCount: rawAttachments.length
+        };
+        if (status === "draft") eventMeta.round = priorDraftCount + 1;
+        else eventMeta.draftsBeforeSubmit = priorDraftCount;
+
+        if (status === "submitted" && await tx.prepare(
+          "SELECT id FROM submissions WHERE task_id = ? AND child_id = ? AND status = 'submitted' LIMIT 1"
+        ).get(taskId, childId)) {
+          throw new ApiError(409, "该任务已提交，请勿重复提交", "SUBMISSION_EXISTS");
+        }
+
+        const draft = await tx.prepare(
+          "SELECT id FROM submissions WHERE task_id = ? AND child_id = ? AND status = 'draft' ORDER BY id DESC LIMIT 1"
+        ).get(taskId, childId);
+        if (draft) {
+          await tx.prepare(
+            "UPDATE submissions SET content = ?, sub_type = ?, status = ?, attachments = ?, created_at = datetime('now','localtime') WHERE id = ?"
+          ).run(content, subType, status, attachments, draft.id);
+          await logEvent(user, eventType, childId, taskId, eventMeta, tx);
+          return draft.id;
+        }
+
+        const submissionId = await tx.prepare(
+          "INSERT INTO submissions (task_id, child_id, content, sub_type, status, attachments) VALUES (?,?,?,?,?,?)"
+        ).run(taskId, childId, content, subType, status, attachments).lastInsertRowid;
+        await logEvent(user, eventType, childId, taskId, eventMeta, tx);
+        return submissionId;
+      });
+    } catch (error) {
+      if (error && (error.code === "SUBMISSION_EXISTS" || error.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+        /uq_submissions_one_submitted|duplicate key/i.test(String(error.message || "")))) {
+        return sendJson(res, 409, { message: "该任务已提交，请勿重复提交", errorCode: "SUBMISSION_EXISTS" });
+      }
+      throw error;
+    }
+    let vector = null;
+    try {
+      vector = status === "submitted" && content ? await upsertTeacherSubmissionVector(id) : null;
+    } catch (error) {
+      console.warn("提交文本索引失败：", error.message);
+    }
+    return sendJson(res, 200, { id, ok: true, status, vectorIndexed: !!(vector && vector.indexed) });
+  }
+
+  /* ---- 成长时间线 ---- */
+  if (req.method === "GET" && pathname === "/api/timeline") {
+    const childId = query.get("childId") ? Number(query.get("childId")) : null;
+    if (!childId) return sendJson(res, 400, { message: "缺少 childId" });
+    if (!(await canAccessChild(user, childId))) return sendJson(res, 403, { message: "无权访问该孩子时间线" });
+    const submissionItems = await db.prepare(
+      "SELECT s.id, s.content, s.sub_type, s.attachments, s.created_at, t.title, t.task_type, t.week_start, " +
+      "f.id AS feedback_id, f.comment AS feedback_comment, f.tags AS feedback_tags, f.created_at AS feedback_at, " +
+      "u.display_name AS teacher_name, 'submission' AS timeline_type " +
+      "FROM submissions s " +
+      "JOIN tasks t ON t.id = s.task_id " +
+      "LEFT JOIN feedback f ON f.submission_id = s.id " +
+      "LEFT JOIN users u ON u.id = f.teacher_id " +
+      "WHERE s.child_id = ? AND s.status = 'submitted'"
+    ).all(childId);
+    const observationItems = await db.prepare(
+      "SELECT d.id, d.child_id, d.student_name, d.summary, d.analysis, d.parent_message, " +
+      "d.tags, d.ai_status, d.recipient_count, d.created_at, u.display_name AS teacher_name, " +
+      "'teacher_observation' AS timeline_type " +
+      "FROM teacher_daily_updates d LEFT JOIN users u ON u.id = d.teacher_id " +
+      "WHERE d.child_id = ?"
+    ).all(childId);
+    const items = submissionItems.concat(observationItems.map(function (item) {
+      return {
+        id: item.id,
+        child_id: item.child_id,
+        content: item.summary,
+        sub_type: "teacher_observation",
+        attachments: "[]",
+        created_at: item.created_at,
+        title: "今日校园观察 · " + (item.student_name || "学生"),
+        task_type: "教师记录",
+        week_start: "",
+        feedback_id: null,
+        feedback_comment: null,
+        feedback_tags: "",
+        feedback_at: null,
+        teacher_name: item.teacher_name || "老师",
+        timeline_type: item.timeline_type,
+        observation_analysis: item.analysis || "",
+        observation_message: item.parent_message || item.summary || "",
+        observation_tags: item.tags || "",
+        observation_ai_status: item.ai_status || "fallback",
+        observation_recipient_count: Number(item.recipient_count || 0)
+      };
+    })).sort(function (a, b) {
+      const dateA = new Date(String(a.created_at || "").replace(" ", "T") + (
+        /[zZ]|[+-]\d{2}:?\d{2}$/.test(String(a.created_at || "")) ? "" : "+08:00"
+      )).getTime();
+      const dateB = new Date(String(b.created_at || "").replace(" ", "T") + (
+        /[zZ]|[+-]\d{2}:?\d{2}$/.test(String(b.created_at || "")) ? "" : "+08:00"
+      )).getTime();
+      return (Number.isNaN(dateB) ? 0 : dateB) - (Number.isNaN(dateA) ? 0 : dateA);
+    });
+    // 标记该孩子的反馈为已读
+    await db.prepare(
+      "UPDATE feedback SET read_at = datetime('now','localtime') WHERE read_at IS NULL AND submission_id IN " +
+      "(SELECT id FROM submissions WHERE child_id = ?)"
+    ).run(childId);
+    await logEvent(user, "timeline_viewed", childId, null, {});
+    return sendJson(res, 200, { items });
+  }
+
+  /* ---- 家长关注记录与透明说明 ---- */
+  if (req.method === "GET" && pathname === "/api/parent/engagement") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可查看自己的关注记录" });
+    const childId = query.get("childId") ? Number(query.get("childId")) : null;
+    if (!childId || !(await canAccessChild(user, childId))) {
+      return sendJson(res, 403, { message: "无权访问该孩子的关注记录" });
+    }
+    const child = await db.prepare("SELECT id, name, grade FROM children WHERE id = ?").get(childId);
+    const engagement = await getParentEngagement(user.id, childId);
+    const enabled = await getEngagementPreference(user.id, childId);
+    await logEvent(user, "engagement_page_viewed", childId, null, {});
+    return sendJson(res, 200, {
+      child: child,
+      engagement: engagement,
+      enabled: enabled,
+      collected: [
+        "系统内通知和任务的查看记录",
+        "成长档案的回看记录",
+        "提交、草稿和沟通等跟进行为"
+      ],
+      notCollected: [
+        "手机里的其他应用行为",
+        "定位、通讯录、麦克风和摄像头",
+        "与孩子事项无关的聊天内容"
+      ]
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/parent/engagement-preference") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可修改关注分析设置" });
+    const body = await readBody(req);
+    const childId = Number(body.childId);
+    if (!childId || !(await canAccessChild(user, childId))) {
+      return sendJson(res, 403, { message: "无权修改该孩子的关注分析设置" });
+    }
+    const enabled = body.enabled === false ? 0 : 1;
+    await db.prepare(
+      "INSERT INTO engagement_preferences (user_id, child_id, enabled, updated_at) VALUES (?,?,?,datetime('now','localtime')) " +
+      "ON CONFLICT(user_id, child_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at"
+    ).run(user.id, childId, enabled);
+    await logEvent(user, enabled ? "engagement_analysis_enabled" : "engagement_analysis_disabled", childId, null, {});
+    return sendJson(res, 200, { ok: true, enabled: !!enabled });
+  }
+
+  if (req.method === "POST" && pathname === "/api/parent/engagement-feedback") {
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可反馈关注分析结果" });
+    const body = await readBody(req);
+    const childId = Number(body.childId);
+    if (!childId || !(await canAccessChild(user, childId))) {
+      return sendJson(res, 403, { message: "无权反馈该孩子的关注分析结果" });
+    }
+    const choice = String(body.choice || "").slice(0, 80);
+    if (!choice) return sendJson(res, 400, { message: "缺少反馈内容" });
+    await logEvent(user, "engagement_judgment_corrected", childId, null, { choice: choice });
+    return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 教师端与管理员只读入口 ---- */
+  if (user.role !== "teacher" && user.role !== "admin") {
+    return sendJson(res, 403, { message: "仅教师或管理员账号可访问" });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/notifications") {
+    const body = await readBody(req);
+    const title = String(body.title || "教师通知").trim().slice(0, 80);
+    const content = String(body.content || "").trim().slice(0, 1200);
+    if (!content) return sendJson(res, 400, { message: "请填写通知内容" });
+    const parents = await db.prepare(
+      "SELECT id FROM users WHERE " + realParentWhere("users") + " ORDER BY id"
+    ).all(...demoParams(1));
+    await db.transaction(async function (tx) {
+      for (const parent of parents) {
+        await tx.prepare(
+          "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+        ).run(parent.id, user.id, "announcement", title, content);
+      }
+    });
+    return sendJson(res, 200, { ok: true, recipientCount: parents.length });
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/daily-updates") {
+    const requestedLimit = Number(query.get("limit") || 20);
+    const limit = Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 20));
+    const updates = await db.prepare(
+      "SELECT id, child_id, student_name, transcript, summary, analysis, parent_message, tags, " +
+      "ai_status, recipient_count, created_at FROM teacher_daily_updates " +
+      "WHERE teacher_id = ? ORDER BY id DESC LIMIT " + limit
+    ).all(user.id);
+    return sendJson(res, 200, { updates: updates });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/daily-updates") {
+    const body = await readBody(req);
+    const transcript = String(body.transcript || "").trim().slice(0, 2000);
+    if (!transcript) return sendJson(res, 400, { message: "请先说一段校园记录，或直接输入文字" });
+
+    const children = await getTeacherVisibleChildren(user);
+    const update = await generateDailySchoolUpdate(transcript, children);
+    const resolvedChild = children.find(function (child) {
+      return child && child.name && (
+        String(child.name).trim() === update.studentName ||
+        transcript.includes(String(child.name).trim())
+      );
+    }) || null;
+    if (resolvedChild) update.studentName = resolvedChild.name;
+
+    let parents = [];
+    if (resolvedChild) {
+      parents = await db.prepare(
+        "SELECT DISTINCT u.id FROM users u JOIN bindings b ON b.user_id = u.id " +
+        "WHERE b.child_id = ? AND " + realParentWhere("u") + " ORDER BY u.id"
+      ).all(resolvedChild.id, ...demoParams(1));
+    } else {
+      parents = await db.prepare(
+        "SELECT id FROM users WHERE " + realParentWhere("users") + " ORDER BY id"
+      ).all(...demoParams(1));
+    }
+
+    const parentMessage = update.parentMessage || update.summary;
+    const title = update.studentName && update.studentName !== "学生"
+      ? "今日校园观察 · " + update.studentName
+      : "今日校园观察";
+    const updateId = await db.transaction(async function (tx) {
+      const id = await tx.prepare(
+        "INSERT INTO teacher_daily_updates " +
+        "(teacher_id, child_id, student_name, transcript, summary, analysis, parent_message, tags, ai_status, recipient_count) " +
+        "VALUES (?,?,?,?,?,?,?,?,?,?)"
+      ).run(
+        user.id,
+        resolvedChild ? resolvedChild.id : null,
+        update.studentName || "学生",
+        transcript,
+        update.summary,
+        update.analysis || "",
+        parentMessage,
+        (update.tags || []).join(","),
+        update.aiStatus || "fallback",
+        parents.length
+      ).lastInsertRowid;
+      for (const parent of parents) {
+        await tx.prepare(
+          "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+        ).run(parent.id, user.id, "teacher_daily_update", title, parentMessage);
+      }
+      return id;
+    });
+
+    return sendJson(res, 200, {
+      ok: true,
+      id: updateId,
+      update: {
+        id: updateId,
+        child_id: resolvedChild ? resolvedChild.id : null,
+        student_name: update.studentName || "学生",
+        transcript: transcript,
+        summary: update.summary,
+        analysis: update.analysis || "",
+        parent_message: parentMessage,
+        tags: (update.tags || []).join(","),
+        ai_status: update.aiStatus || "fallback",
+        recipient_count: parents.length,
+        created_at: new Date().toISOString()
+      },
+      recipientCount: parents.length
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/ai-chat") {
+    const body = await readBody(req);
+    const question = String(body.question || "").trim().slice(0, 1200);
+    if (!question) return sendJson(res, 400, { message: "请输入想了解的问题" });
+    const wantsStream = query.get("stream") === "1";
+    let indexInfo = { documentCount: 0, embeddedCount: 0 };
+
+    async function sendTeacherAnswer(result, provider, extra) {
+      extra = extra || {};
+      if (wantsStream) {
+        sendSseHeaders(res);
+        await streamPlainText(res, result.answer);
+        writeSse(res, "done", Object.assign({
+          sources: result.sources || [],
+          provider: provider,
+          indexedDocuments: indexInfo.documentCount,
+          embeddedDocuments: indexInfo.embeddedCount
+        }, extra));
+        return res.end();
+      }
+      return sendJson(res, 200, Object.assign({
+        answer: result.answer,
+        sources: result.sources || [],
+        provider: provider,
+        indexedDocuments: indexInfo.documentCount,
+        embeddedDocuments: indexInfo.embeddedCount
+      }, extra));
+    }
+
+    const metaAnswer = answerTeacherMetaQuestion(question);
+    if (metaAnswer) return sendTeacherAnswer(metaAnswer, "本地能力说明");
+
+    const loginAnswer = await answerTeacherParentLoginQuestion(question);
+    if (loginAnswer) return sendTeacherAnswer(loginAnswer, "本地登录记录");
+
+    const localActionAnswer = await answerTeacherLocalActionQuestion(question);
+    if (localActionAnswer) return sendTeacherAnswer(localActionAnswer, "本地规则分析");
+
+    try {
+      indexInfo = await syncTeacherVectorIndex();
+    } catch (e) {
+      console.warn("教师 AI 索引同步失败：", e.message);
+    }
+    const metricAnswer = await answerTeacherMetricQuestion(question);
+    if (metricAnswer) return sendTeacherAnswer(metricAnswer, "本地规则 + 向量索引");
+    const matches = await searchTeacherKnowledge(question, 7);
+    let answer = "";
+    let aiError = "";
+    const sources = matches.slice(0, 5).map(function (doc) {
+      return { title: doc.title, type: doc.metadata && doc.metadata.childId ? "student" : "class" };
+    });
+    if (wantsStream) {
+      sendSseHeaders(res);
+      let streamedAnswer = "";
+      try {
+        if (getInteractionApiKey() && matches.length) {
+          answer = await generateTeacherChatAnswerStream(question, body.history, matches, async function (content) {
+            streamedAnswer += content;
+            writeSse(res, "delta", { content: content });
+          });
+        }
+        if (!answer) {
+          if (!matches.length) {
+            answer = "这个问题暂时没有命中具体班级资料。你仍然可以问我：本周谁未提交、任务负担是否偏重、帮我写催交通知、哪些提交优先点评、下周任务怎么减负。";
+          } else {
+            answer = "外部 AI 生成暂时不可用，我先把可用资料整理给你：\n\n" +
+              matches.slice(0, 3).map(function (doc, index) {
+                return (index + 1) + ". " + doc.title + "：" + String(doc.content).split("\n")[0];
+              }).join("\n") + "\n\n你可以继续问更具体的问题，例如“哪些学生未提交”或“帮我写通知”，我会优先用本地数据直接回答。";
+          }
+          await streamPlainText(res, answer);
+        }
+      } catch (e) {
+        aiError = e.message || "AI 调用失败";
+        answer = streamedAnswer;
+        if (!answer) {
+          answer = matches.length
+            ? "外部 AI 生成暂时不可用，我先把可用资料整理给你：\n\n" +
+              matches.slice(0, 3).map(function (doc, index) {
+                return (index + 1) + ". " + doc.title + "：" + String(doc.content).split("\n")[0];
+              }).join("\n") + "\n\n你可以继续问更具体的问题，例如“哪些学生未提交”或“帮我写通知”，我会优先用本地数据直接回答。"
+            : "这个问题暂时没有命中具体班级资料。你仍然可以问我：本周谁未提交、任务负担是否偏重、帮我写催交通知、哪些提交优先点评、下周任务怎么减负。";
+          await streamPlainText(res, answer);
+        } else {
+          writeSse(res, "error", { message: "AI 连接中断，以上为已生成内容。" });
+        }
+      }
+      writeSse(res, "done", {
+        sources: sources,
+        provider: getInteractionApiKey() && !aiError ? getInteractionProvider() + " + 本地向量检索" : "本地检索",
+        indexedDocuments: indexInfo.documentCount,
+        embeddedDocuments: indexInfo.embeddedCount,
+        aiError: aiError || undefined
+      });
+      return res.end();
+    }
+    if (getInteractionApiKey() && matches.length) {
+      try {
+        answer = await generateTeacherChatAnswer(question, body.history, matches);
+      } catch (e) {
+        aiError = e.message || "AI 调用失败";
+      }
+    }
+    if (!answer) {
+      if (!matches.length) {
+        answer = "这个问题暂时没有命中具体班级资料。你仍然可以问我：本周谁未提交、任务负担是否偏重、帮我写催交通知、哪些提交优先点评、下周任务怎么减负。";
+      } else {
+        answer = "外部 AI 生成暂时不可用，我先把可用资料整理给你：\n\n" +
+          matches.slice(0, 3).map(function (doc, index) {
+            return (index + 1) + ". " + doc.title + "：" + String(doc.content).split("\n")[0];
+          }).join("\n") + "\n\n你可以继续问更具体的问题，例如“哪些学生未提交”或“帮我写通知”，我会优先用本地数据直接回答。";
+      }
+    }
+    return sendJson(res, 200, {
+      answer: answer,
+      sources: sources,
+      provider: getInteractionApiKey() && !aiError ? getInteractionProvider() + " + 本地向量检索" : "本地检索",
+      indexedDocuments: indexInfo.documentCount,
+      embeddedDocuments: indexInfo.embeddedCount,
+      aiError: aiError || undefined
+    });
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/overview") {
+    const weekStart = mondayOf(new Date());
+    const classIds = await getTeacherClassIds(user.id);
+    const headClassId = await getTeacherHeadClassId(user.id);
+    let task = null;
+    if (headClassId != null) {
+      task = await db.prepare(
+        "SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(weekStart, headClassId);
+    }
+    if (!task) {
+      task = await db.prepare("SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id IS NULL ORDER BY id DESC LIMIT 1").get(weekStart);
+    }
+    const submissions = await db.prepare(
+      "SELECT s.id, s.content, s.sub_type, s.attachments, s.created_at, c.name AS child_name, c.grade, t.title, " +
+      "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count " +
+      "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+      "WHERE s.status = 'submitted' AND " + studentScopeWhere("c", classIds) + " ORDER BY s.id DESC LIMIT 50"
+    ).all(...demoParams(2));
+    submissions.forEach(function (submission) {
+      submission.feedback_count = Number(submission.feedback_count || 0);
+    });
+    return sendJson(res, 200, { task, weekStart, submissions });
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/parent-task-requests") {
+    const status = String(query.get("status") || "").trim();
+    const classIds = await getTeacherClassIds(user.id);
+    let rows = await db.prepare(
+      "SELECT r.*, c.name AS child_name, c.grade, c.caregiver, c.interests, u.display_name AS parent_name, " +
+      "t.title AS task_title " +
+      "FROM parent_task_requests r JOIN children c ON c.id = r.child_id " +
+      "JOIN users u ON u.id = r.user_id " +
+      "LEFT JOIN tasks t ON t.id = r.task_id " +
+      "WHERE " + studentScopeWhere("c", classIds) + " ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, r.id DESC"
+    ).all(...demoParams(2));
+    if (["pending", "approved", "rejected"].includes(status)) {
+      rows = rows.filter(function (row) { return row.status === status; });
+    }
+    return sendJson(res, 200, { requests: rows });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/parent-task-requests/review") {
+    const body = await readBody(req);
+    const requestId = Number(body.requestId);
+    const decision = String(body.status || body.decision || "").trim();
+    if (!requestId || !["approved", "rejected"].includes(decision)) {
+      return sendJson(res, 400, { message: "请选择同意实施或拒绝" });
+    }
+    const request = await getParentTaskRequestRow(requestId);
+    if (!request) return sendJson(res, 404, { message: "家长定制任务不存在" });
+
+    const comment = String(body.teacherComment || body.comment || "").trim().slice(0, 500);
+    if (decision === "rejected" && !comment) return sendJson(res, 400, { message: "拒绝时请填写评价或原因" });
+    let taskId = request.task_id || null;
+    try {
+      taskId = await db.transaction(async function (tx) {
+        const current = await tx.prepare(
+          "SELECT id, status, task_id FROM parent_task_requests WHERE id = ?"
+        ).get(requestId);
+        if (!current) throw new ApiError(404, "家长定制任务不存在", "REQUEST_NOT_FOUND");
+        if (current.status !== "pending") {
+          throw new ApiError(409, "该家长定制任务已经审核过", "REQUEST_ALREADY_REVIEWED");
+        }
+
+        let createdTaskId = current.task_id || null;
+        if (decision === "approved") {
+          const title = String(body.title || request.title || "家长自主定制任务").trim().slice(0, 80);
+          const goal = String(body.goal || request.goal || "结合家庭意愿开展一次亲子共育活动").trim().slice(0, 180);
+          const steps = String(body.steps || request.description || "").trim().slice(0, 3000);
+          const dialogueTips = String(body.dialogueTips || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？").trim().slice(0, 200);
+          const submitHint = String(body.submitHint || "可提交照片、文字记录或一段亲子对话").trim().slice(0, 200);
+          const duration = Math.max(5, Math.min(90, Number(body.duration) || Number(request.duration) || 20));
+          const type = String(body.type || "家务实践").trim().slice(0, 40);
+          const difficulty = ["简单", "普通", "进阶"].includes(body.difficulty) ? body.difficulty : "普通";
+          const materials = String(body.materials || "按家庭实际准备").trim().slice(0, 160);
+          const fallbackPlan = String(body.fallbackPlan || "时间有限时可缩短步骤，只保留一次共同完成和一次交流").trim().slice(0, 240);
+          createdTaskId = await tx.prepare(
+            "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id, difficulty, materials, fallback_plan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          ).run(
+            title, goal, steps, dialogueTips, submitHint, duration, type, mondayOf(new Date()), user.id,
+            request.child_id, difficulty, materials, fallbackPlan
+          ).lastInsertRowid;
+        }
+
+        const result = await tx.prepare(
+          "UPDATE parent_task_requests SET status=?, teacher_id=?, teacher_comment=?, task_id=?, reviewed_at=datetime('now','localtime') WHERE id=? AND status='pending'"
+        ).run(decision, user.id, comment, createdTaskId, requestId);
+        if (!result.changes) throw new ApiError(409, "该家长定制任务已经审核过", "REQUEST_ALREADY_REVIEWED");
+        return createdTaskId;
+      });
+    } catch (error) {
+      if (error && error.code === "REQUEST_ALREADY_REVIEWED") {
+        return sendJson(res, 409, { message: error.message, errorCode: error.code });
+      }
+      throw error;
+    }
+    const parentRequestOwner = await db.prepare(
+      "SELECT user_id, child_id FROM parent_task_requests WHERE id = ?"
+    ).get(requestId);
+    if (parentRequestOwner) {
+      const notificationTitle = decision === "approved"
+        ? "老师已为孩子准备定制任务"
+        : "老师已回复你的成长关注";
+      const notificationContent = decision === "approved"
+        ? "老师已根据你提交的情况调整了一份定制任务：" + (String(body.title || request.title || "本周成长任务").trim()) + "。"
+        : "老师暂未采用这次关注内容，老师回复：" + (comment || "请查看教师端反馈。");
+      await db.prepare(
+        "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+      ).run(parentRequestOwner.user_id, user.id, "parent_task_request", notificationTitle, notificationContent);
+    }
+    let vector = null;
+    try {
+      vector = await upsertParentTaskRequestVector(requestId);
+    } catch (error) {
+      console.warn("家长定制任务审核索引失败：", error.message);
+    }
+    return sendJson(res, 200, { ok: true, taskId: taskId || null, vectorIndexed: !!(vector && vector.indexed) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/students") {
+    // 学生档案（含问卷信息），同步给教师端做任务定制参考；仅返回教师所属班级的学生
+    const students = (await getTeacherVisibleChildren(user)).map(function (row) {
+      let answers = {};
+      try { answers = JSON.parse(row.q_answers || "{}"); } catch (e) {}
+      return {
+        id: row.id, name: row.name, grade: row.grade, gender: row.gender, age: row.age,
+        caregiver: row.caregiver, interests: row.interests, familyNote: row.family_note,
+        timeAvailable: answers.timeAvailable || "",
+        taskPreference: answers.taskPreference || ""
+      };
+    });
+    return sendJson(res, 200, { students });
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/global-report") {
+    const localOnly = query.get("local") === "1";
+    const classIds = await getTeacherClassIds(user.id);
+    const allChildCount = await db.prepare("SELECT COUNT(*) AS n FROM children").get().n;
+    const weekStart = mondayOf(new Date());
+    const allTasks = await db.prepare(
+      "SELECT id, child_id, title, task_type, week_start, created_at FROM tasks ORDER BY id DESC LIMIT " + MAX_REPORT_ROWS
+    ).all();
+    const weekTasks = allTasks.filter(function (task) { return task.week_start === weekStart; });
+    const children = await getTeacherVisibleChildren(user);
+    const submissions = await db.prepare(
+      "SELECT s.id, s.child_id, s.task_id, s.content, s.sub_type, s.attachments, s.created_at, " +
+      "c.name AS child_name, c.grade, c.caregiver, c.interests, t.title AS task_title, " +
+      "t.task_type, t.week_start, t.created_at AS task_created_at, " +
+      "(SELECT COUNT(*) FROM feedback f WHERE f.submission_id = s.id) AS feedback_count " +
+      "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+      "WHERE s.status = 'submitted' AND " + studentScopeWhere("c", classIds) + " ORDER BY s.created_at DESC LIMIT " + MAX_REPORT_ROWS
+    ).all(...demoParams(2));
+    const weekSubmissions = submissions.filter(function (row) { return row.week_start === weekStart; });
+    const weekSubmittedStudents = new Set(weekSubmissions.map(function (row) { return row.child_id; }));
+    const weekPendingFeedback = weekSubmissions.filter(function (row) {
+      return Number(row.feedback_count || 0) === 0;
+    }).length;
+    const weekDraftRows = await db.prepare(
+      "SELECT s.id, s.child_id, s.task_id, s.created_at, c.name AS child_name, t.title AS task_title " +
+      "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+      "WHERE s.status = 'draft' AND t.week_start = ? AND " + studentScopeWhere("c", classIds) + " ORDER BY s.created_at DESC LIMIT " + MAX_REPORT_ROWS
+    ).all(weekStart, ...demoParams(2));
+
+    function parseAnswers(row) {
+      try { return JSON.parse(row.q_answers || "{}") || {}; } catch (e) { return {}; }
+    }
+    function pct(part, total) {
+      return total > 0 ? Math.round(part / total * 100) : 0;
+    }
+    function hourOf(value) {
+      const text = String(value || "");
+      const m = text.match(/\s(\d{1,2}):/);
+      return m ? Number(m[1]) : null;
+    }
+    function dateOf(value) {
+      const d = new Date(String(value || "").replace(" ", "T"));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    function bucketOf(hour) {
+      if (hour == null) return "未知";
+      if (hour >= 5 && hour < 12) return "上午";
+      if (hour >= 12 && hour < 18) return "下午";
+      if (hour >= 18 && hour < 22) return "晚间";
+      return "深夜/清晨";
+    }
+    function topEntries(map, limit) {
+      return Object.entries(map).sort(function (a, b) { return b[1] - a[1]; }).slice(0, limit || 5)
+        .map(function (e) { return { label: e[0], count: e[1] }; });
+    }
+    function addCount(map, key) {
+      key = String(key || "").trim() || "未填写";
+      map[key] = (map[key] || 0) + 1;
+    }
+    function textHit(content, words) {
+      return words.some(function (w) { return content.indexOf(w) >= 0; });
+    }
+
+    const caregiverDist = {};
+    const interestDist = {};
+    let completeProfiles = 0;
+    const profileRows = children.map(function (child) {
+      const answers = parseAnswers(child);
+      const fields = [child.gender, child.age, child.grade, child.caregiver, child.interests, answers.timeAvailable, answers.taskPreference, child.family_note || answers.familyNote];
+      const filled = fields.filter(function (v) { return v != null && String(v).trim(); }).length;
+      if (filled >= 5) completeProfiles++;
+      if (child.caregiver) {
+        String(child.caregiver).split(/[、,，]/).forEach(function (p) { if (p.trim()) addCount(caregiverDist, p.trim()); });
+      } else {
+        addCount(caregiverDist, "未填写");
+      }
+      if (child.interests) {
+        String(child.interests).split(/[、,，]/).forEach(function (p) { if (p.trim()) addCount(interestDist, p.trim()); });
+      }
+      return {
+        id: child.id,
+        name: child.name,
+        grade: child.grade,
+        caregiver: child.caregiver || "",
+        interests: child.interests || "",
+        timeAvailable: answers.timeAvailable || "",
+        taskPreference: answers.taskPreference || "",
+        completeness: pct(filled, fields.length)
+      };
+    });
+
+    const timeBuckets = { "上午": 0, "下午": 0, "晚间": 0, "深夜/清晨": 0, "未知": 0 };
+    const weekdayBuckets = { "工作日": 0, "周末": 0, "未知": 0 };
+    const childSubmitCount = {};
+    let totalLagHours = 0;
+    let lagCount = 0;
+    submissions.forEach(function (s) {
+      const hour = hourOf(s.created_at);
+      const bucket = bucketOf(hour);
+      timeBuckets[bucket] = (timeBuckets[bucket] || 0) + 1;
+      const created = dateOf(s.created_at);
+      if (created) {
+        const day = created.getDay();
+        weekdayBuckets[day === 0 || day === 6 ? "周末" : "工作日"]++;
+      } else {
+        weekdayBuckets["未知"]++;
+      }
+      const taskCreated = dateOf(s.task_created_at);
+      if (created && taskCreated) {
+        totalLagHours += Math.max(0, (created.getTime() - taskCreated.getTime()) / 36e5);
+        lagCount++;
+      }
+      addCount(childSubmitCount, s.child_name);
+    });
+    const peakTime = topEntries(timeBuckets, 1)[0] || { label: "暂无", count: 0 };
+    const avgLagHours = lagCount > 0 ? Math.round(totalLagHours / lagCount) : 0;
+
+    // 两段式响应延迟：任务发布 → 首次查看详情 → 提交
+    const firstViewRows = await db.prepare(
+      "SELECT child_id, task_id, MIN(created_at) AS t FROM events " +
+      "WHERE event_type = 'task_detail_viewed' GROUP BY child_id, task_id"
+    ).all();
+    const firstViewMap = {};
+    firstViewRows.forEach(function (r) {
+      const d = dateOf(r.t);
+      if (d) firstViewMap[r.child_id + ":" + r.task_id] = d;
+    });
+    let totalViewLagHours = 0, viewLagCount = 0;
+    let totalActionLagHours = 0, actionLagCount = 0;
+    submissions.forEach(function (s) {
+      const taskCreated = dateOf(s.task_created_at);
+      const submitted = dateOf(s.created_at);
+      const firstView = firstViewMap[s.child_id + ":" + s.task_id];
+      if (taskCreated && firstView) {
+        totalViewLagHours += Math.max(0, (firstView.getTime() - taskCreated.getTime()) / 36e5);
+        viewLagCount++;
+      }
+      if (firstView && submitted && submitted.getTime() > firstView.getTime()) {
+        totalActionLagHours += Math.max(0, (submitted.getTime() - firstView.getTime()) / 36e5);
+        actionLagCount++;
+      }
+    });
+    const avgViewLagHours = viewLagCount > 0 ? Math.round(totalViewLagHours / viewLagCount) : 0;
+    const avgActionLagHours = actionLagCount > 0 ? Math.round(totalActionLagHours / actionLagCount) : 0;
+    const latencyNote =
+      (viewLagCount > 0 ? "发布后平均约 " + avgViewLagHours + " 小时首次查看；" : "暂无首次查看记录；") +
+      (actionLagCount > 0 ? "首次查看后平均约 " + avgActionLagHours + " 小时完成提交。" : "暂无查看后提交记录。");
+
+    const textStats = {
+      total: submissions.length,
+      totalChars: 0,
+      positive: 0,
+      difficulty: 0,
+      collaboration: 0,
+      observation: 0,
+      samples: []
+    };
+    const positiveWords = ["喜欢", "开心", "棒", "坚持", "主动", "进步", "认真", "投入", "特别"];
+    const difficultyWords = ["难", "不会", "没时间", "忙", "抗拒", "拖拉", "累", "不愿", "忘"];
+    const collaborationWords = ["一起", "妈妈", "爸爸", "奶奶", "爷爷", "外婆", "外公", "家长", "陪"];
+    const observationWords = ["发现", "观察", "讨论", "为什么", "记录", "画", "读", "计算", "分享"];
+    submissions.forEach(function (s) {
+      const content = String(s.content || "").trim();
+      textStats.totalChars += content.length;
+      if (textHit(content, positiveWords)) textStats.positive++;
+      if (textHit(content, difficultyWords)) textStats.difficulty++;
+      if (textHit(content, collaborationWords)) textStats.collaboration++;
+      if (textHit(content, observationWords)) textStats.observation++;
+      if (content && textStats.samples.length < 3) {
+        textStats.samples.push({
+          childName: s.child_name,
+          taskTitle: s.task_title,
+          snippet: content.length > 56 ? content.slice(0, 56) + "..." : content
+        });
+      }
+    });
+    const avgTextLength = textStats.total > 0 ? Math.round(textStats.totalChars / textStats.total) : 0;
+
+    /* ---- 行为埋点维度：家长站内行为信号（近30天 events 表） ---- */
+    const behaviorSince = new Date();
+    behaviorSince.setDate(behaviorSince.getDate() - 30);
+    const behaviorSinceText = behaviorSince.getFullYear() + "-" +
+      String(behaviorSince.getMonth() + 1).padStart(2, "0") + "-" +
+      String(behaviorSince.getDate()).padStart(2, "0") + " 00:00:00";
+    const behaviorRows = await db.prepare(
+      "SELECT e.event_type, e.child_id, e.created_at, c.name AS child_name " +
+      "FROM events e JOIN children c ON c.id = e.child_id " +
+      "WHERE e.created_at >= ? AND " + realStudentWhere("c") + " ORDER BY e.id DESC LIMIT " + MAX_BEHAVIOR_ROWS
+    ).all(behaviorSinceText, ...demoParams(2));
+
+    const behaviorEventCount = {};
+    const behaviorByChild = {};
+    behaviorRows.forEach(function (row) {
+      addCount(behaviorEventCount, row.event_type);
+      if (!behaviorByChild[row.child_id]) {
+        behaviorByChild[row.child_id] = {
+          childId: row.child_id, childName: row.child_name,
+          counts: {}, days: new Set(), events: 0
+        };
+      }
+      const child = behaviorByChild[row.child_id];
+      child.events++;
+      child.counts[row.event_type] = (child.counts[row.event_type] || 0) + 1;
+      const day = String(row.created_at || "").slice(0, 10);
+      if (day) child.days.add(day);
+    });
+    function behaviorCat(child, kind) {
+      const c = child.counts || {};
+      if (kind === "touchpoints") {
+        return (c.task_card_viewed || 0) + (c.feedback_card_viewed || 0) + (c.task_detail_viewed || 0);
+      }
+      if (kind === "exploration") {
+        return (c.task_detail_viewed || 0) + (c.timeline_viewed || 0) + (c.feedback_card_viewed || 0);
+      }
+        return (c.submission_drafted || 0) + (c.submission_submitted || 0) +
+          (c.teacher_contact_started || 0) + (c.parent_task_request_submitted || 0);
+    }
+    const behaviorChildRows = Object.keys(behaviorByChild).map(function (id) {
+      const child = behaviorByChild[id];
+      return {
+        childId: child.childId,
+        childName: child.childName,
+        touchpoints: behaviorCat(child, "touchpoints"),
+        exploration: behaviorCat(child, "exploration"),
+        followThrough: behaviorCat(child, "followThrough"),
+        activeDays: child.days.size,
+        events: child.events
+      };
+    }).sort(function (a, b) { return b.events - a.events; });
+
+    const behaviorActiveStudents = behaviorChildRows.length;
+    const totalBehaviorEvents = behaviorRows.length;
+    const behaviorTypeRows = Object.keys(behaviorEventCount).map(function (key) {
+      return {
+        label: BEHAVIOR_TYPE_NAMES[key] || key,
+        count: behaviorEventCount[key],
+        percent: pct(behaviorEventCount[key], totalBehaviorEvents)
+      };
+    }).sort(function (a, b) { return b.count - a.count; });
+    const behaviorTopTypes = behaviorTypeRows.slice(0, 4);
+    function behaviorSum(field) {
+      return behaviorChildRows.reduce(function (sum, row) { return sum + (row[field] || 0); }, 0);
+    }
+    const behaviorTouchTotal = behaviorSum("touchpoints");
+    const behaviorExploreTotal = behaviorSum("exploration");
+    const behaviorFollowTotal = behaviorSum("followThrough");
+    const behaviorActiveDaysTotal = behaviorSum("activeDays");
+    const behaviorAvgActiveDays = behaviorActiveStudents > 0
+      ? Math.round(behaviorActiveDaysTotal / behaviorActiveStudents) : 0;
+
+    const behaviorByChildId = {};
+    behaviorChildRows.forEach(function (row) { behaviorByChildId[row.childId] = row; });
+    const weekSubmissionByChild = {};
+    weekSubmissions.forEach(function (row) {
+      if (!weekSubmissionByChild[row.child_id]) {
+        weekSubmissionByChild[row.child_id] = {
+          id: row.child_id,
+          name: row.child_name,
+          taskCount: 0,
+          pendingFeedback: 0,
+          tasks: []
+        };
+      }
+      weekSubmissionByChild[row.child_id].taskCount++;
+      if (Number(row.feedback_count || 0) === 0) weekSubmissionByChild[row.child_id].pendingFeedback++;
+      if (row.task_title) weekSubmissionByChild[row.child_id].tasks.push(row.task_title);
+    });
+    const draftByChild = {};
+    weekDraftRows.forEach(function (row) {
+      if (weekSubmittedStudents.has(row.child_id)) return;
+      if (!draftByChild[row.child_id]) {
+        draftByChild[row.child_id] = {
+          id: row.child_id,
+          name: row.child_name,
+          taskTitle: row.task_title || "本周任务",
+          draftCount: 0
+        };
+      }
+      draftByChild[row.child_id].draftCount++;
+    });
+    const draftIds = new Set(Object.keys(draftByChild).map(function (id) { return Number(id); }));
+    const viewedNotStarted = [];
+    const untouched = [];
+    children.forEach(function (child) {
+      if (weekSubmittedStudents.has(child.id) || draftIds.has(child.id)) return;
+      const behavior = behaviorByChildId[child.id];
+      if (behavior && behavior.touchpoints > 0) {
+        viewedNotStarted.push({ id: child.id, name: child.name, touchpoints: behavior.touchpoints });
+      } else {
+        untouched.push({ id: child.id, name: child.name });
+      }
+    });
+    function reminderWindowForPeak(label) {
+      if (label === "晚间") return "18:30 - 20:30";
+      if (label === "下午") return "16:30 - 18:00";
+      if (label === "上午") return "07:30 - 09:00";
+      if (label === "周末") return "周六 09:00 - 11:00";
+      return "18:30 - 20:00";
+    }
+    const completionRate = pct(weekSubmittedStudents.size, children.length);
+    const personalizedWeekTasks = weekTasks.filter(function (task) { return task.child_id != null; }).length;
+    let riskLevel = "green";
+    let riskTitle = "任务进度正常";
+    if (children.length > 0 && (completionRate < 30 || (weekTasks.length >= 5 && completionRate < 50))) {
+      riskLevel = "red";
+      riskTitle = "任务进度严重滞后";
+    } else if (children.length > 0 && (completionRate < 70 || weekPendingFeedback > 0 || personalizedWeekTasks >= 3)) {
+      riskLevel = "yellow";
+      riskTitle = "任务推进需要干预";
+    }
+    const studentProgress = {
+      riskLevel: riskLevel,
+      riskTitle: riskTitle,
+      completionRate: completionRate,
+      totalStudents: children.length,
+      weekTaskCount: weekTasks.length,
+      personalizedWeekTaskCount: personalizedWeekTasks,
+      submittedCount: weekSubmittedStudents.size,
+      pendingFeedback: weekPendingFeedback,
+      suggestedReminderWindow: reminderWindowForPeak(peakTime.label),
+      completed: Object.keys(weekSubmissionByChild).map(function (id) { return weekSubmissionByChild[id]; }),
+      draftStalled: Object.keys(draftByChild).map(function (id) { return draftByChild[id]; }),
+      viewedNotStarted: viewedNotStarted,
+      untouched: untouched,
+      noAnswerCount: viewedNotStarted.length + untouched.length
+    };
+
+    const profileCompleteness = pct(completeProfiles, children.length);
+    const topCaregivers = topEntries(caregiverDist, 4);
+    const topInterests = topEntries(interestDist, 5);
+    const activeStudents = Object.keys(childSubmitCount).length;
+
+    const report = {
+      generatedAt: new Date().toISOString(),
+      source: "本地规则分析",
+      aiEnabled: !!(getZhipuApiKey() || process.env.DEEPSEEK_API_KEY),
+      dataScope: {
+        studentSource: "非 demo 家长绑定或问卷产生的真实学生",
+        realStudents: children.length,
+        filteredDemoStudents: Math.max(0, allChildCount - children.length),
+        storageConfigured: db.isPostgres || !!process.env.DATA_DIR,
+        storageMode: db.isPostgres ? "neon" : (process.env.DATA_DIR ? "persistent-disk" : "sqlite")
+      },
+      stats: {
+        totalStudents: children.length,
+        profileCompleteness: profileCompleteness,
+        totalSubmissions: submissions.length,
+        activeStudents: activeStudents,
+        peakCompletionTime: peakTime.label,
+        avgTextLength: avgTextLength,
+        totalTaskCount: allTasks.length,
+        customTaskCount: allTasks.filter(function (task) { return task.child_id != null; }).length,
+        weekTaskCount: weekTasks.length,
+        weekSubmittedStudents: weekSubmittedStudents.size,
+        weekPendingFeedback: weekPendingFeedback,
+        weekStart: weekStart
+      },
+      studentProgress: studentProgress,
+      dimensions: [
+        {
+          key: "profiles",
+          title: "学生档案",
+          summary: "已建档 " + children.length + " 名学生，完整档案约 " + profileCompleteness + "%。",
+          findings: [
+            profileCompleteness < 70 ? "档案完整度偏低，影响个性化任务匹配的准确性。" : "档案字段较完整，可支撑分层任务推荐。",
+            topCaregivers.length ? "主要陪伴人：" + topCaregivers.map(function (e) { return e.label + " " + e.count + "人"; }).join("、") + "。" : "陪伴人信息不足。",
+            topInterests.length ? "兴趣高频项：" + topInterests.map(function (e) { return e.label; }).join("、") + "。" : "兴趣信息不足。"
+          ],
+          actions: [
+            "优先补齐陪伴人、可用时间、兴趣标签三个字段。",
+            "用高频兴趣设计班级任务，用陪伴人差异拆分替代方案。"
+          ],
+          rows: profileRows.slice(0, 6)
+        },
+        {
+          key: "completionTime",
+          title: "家长完成任务时间",
+          summary: "当前提交高峰集中在" + peakTime.label + "，平均从任务发布到提交约 " + avgLagHours + " 小时。" + latencyNote,
+          findings: [
+            "晚间/周末提交占比可用于判断提醒推送时段。",
+            activeStudents + " 名学生已有正式提交，仍需结合未提交名单做二次触达。",
+            avgLagHours > 72 ? "平均提交滞后超过 3 天，建议将提醒前置。" : "提交节奏仍在可跟进范围内。",
+            viewLagCount > 0 ? "从发布到首次查看平均约 " + avgViewLagHours + " 小时（反映触达速度），从查看详情到提交平均约 " + avgActionLagHours + " 小时（反映执行效率）。" : "暂无首次查看记录，可先引导家长打开任务详情页。"
+          ],
+          actions: [
+            "将提醒时间设置在提交高峰前 2-4 小时。",
+            "对长期不在高峰时段提交的家庭，提供更短任务或周末替代方案。"
+          ],
+          latency: {
+            avgViewLagHours: avgViewLagHours,
+            avgActionLagHours: avgActionLagHours,
+            avgSubmitLagHours: avgLagHours,
+            viewLagCount: viewLagCount,
+            actionLagCount: actionLagCount
+          },
+          distribution: Object.keys(timeBuckets).map(function (key) {
+            return { label: key, count: timeBuckets[key], percent: pct(timeBuckets[key], submissions.length) };
+          }),
+          weekdayDistribution: Object.keys(weekdayBuckets).map(function (key) {
+            return { label: key, count: weekdayBuckets[key], percent: pct(weekdayBuckets[key], submissions.length) };
+          })
+        },
+        {
+          key: "textMaterials",
+          title: "家长上传的文字素材分析",
+          summary: "共分析 " + submissions.length + " 份文字提交，平均每份约 " + avgTextLength + " 字。",
+          findings: [
+            "积极表达出现 " + textStats.positive + " 次，亲子协作线索出现 " + textStats.collaboration + " 次。",
+            "困难/阻力线索出现 " + textStats.difficulty + " 次，可作为后续关怀名单参考。",
+            "观察、记录、讨论类学习过程线索出现 " + textStats.observation + " 次。"
+          ],
+          actions: [
+            textStats.difficulty > 0 ? "优先查看包含困难线索的提交，给出更具体的减负建议。" : "继续鼓励家长记录过程性细节，而不只提交结果。",
+            "点评时提取家长原文中的动作和情绪词，反馈会更有针对性。"
+          ],
+          indicators: {
+            positive: textStats.positive,
+            difficulty: textStats.difficulty,
+            collaboration: textStats.collaboration,
+            observation: textStats.observation
+          },
+          samples: textStats.samples
+        },
+        {
+          key: "behaviorSignals",
+          title: "家长行为参与信号（埋点）",
+          summary: "近30天共记录 " + totalBehaviorEvents + " 次站内行为事件，" + behaviorActiveStudents +
+            " 名学生有行为记录" + (behaviorActiveStudents > 0 ? "，平均活跃 " + behaviorAvgActiveDays + " 天" : "") + "。",
+          findings: [
+            behaviorActiveStudents > 0
+              ? "有行为记录的学生 " + behaviorActiveStudents + " 名，触达类行为（查看卡片/详情/反馈）" + behaviorTouchTotal +
+                " 次，执行类行为（起草/提交/发起沟通）" + behaviorFollowTotal + " 次。"
+              : "近30天暂无家长站内行为记录，埋点已启用但尚无活动，先保持轻量提醒即可。",
+            behaviorTopTypes.length
+              ? "高频行为：" + behaviorTopTypes.map(function (e) { return e.label + " " + e.count + "次"; }).join("、") + "。"
+              : "暂无行为事件可统计。",
+            behaviorFollowTotal > 0
+              ? "已有家庭进入执行环节（起草、提交、发起沟通），可在此基础上安排个性化跟进。"
+              : "执行类行为较少，重点先降低参与门槛。",
+            "站内行为仅反映系统内可见活动，不等同于家长真实关注程度。"
+          ],
+          actions: [
+            behaviorTouchTotal === 0
+              ? "对近30天无任何行为的家庭，保持轻量提醒即可，避免打扰。"
+              : "结合提交时段维度，在活跃时段前 2-4 小时推送提醒。",
+            behaviorFollowTotal > 0
+              ? "对进入执行环节的家庭，点评时多给具体肯定，形成正向循环。"
+              : "为尚未进入执行环节的家庭提供更短任务或周末替代方案。"
+          ],
+          indicators: {
+            events: totalBehaviorEvents,
+            activeStudents: behaviorActiveStudents,
+            avgActiveDays: behaviorAvgActiveDays,
+            touchpoints: behaviorTouchTotal,
+            exploration: behaviorExploreTotal,
+            followThrough: behaviorFollowTotal
+          },
+          distribution: behaviorTypeRows,
+          rows: behaviorChildRows
+        }
+      ]
+    };
+
+    if (localOnly) return sendJson(res, 200, report);
+
+    if (!report.aiEnabled) return sendJson(res, 200, report);
+    const contentHash = teacherReportContentHash(report);
+    const cachedReport = await getTeacherAiReportCache(TEACHER_AI_REPORT_CACHE_KEY, contentHash);
+    if (cachedReport) {
+      cachedReport.aiCached = true;
+      cachedReport.aiPending = false;
+      cachedReport.aiLoadingText = "AI 洞察已更新";
+      return sendJson(res, 200, cachedReport);
+    }
+
+    const started = triggerTeacherAiReportRefresh(TEACHER_AI_REPORT_CACHE_KEY, contentHash, report);
+    const staleReport = await getLatestTeacherAiReportCache(TEACHER_AI_REPORT_CACHE_KEY);
+    if (staleReport && staleReport.ai) {
+      staleReport.aiCached = true;
+      staleReport.aiStale = true;
+      staleReport.aiPending = true;
+      staleReport.aiStatus = started ? "refreshing" : "running";
+      staleReport.aiLoadingText = "正在更新为最新班级数据";
+      staleReport.aiError = "当前先展示上一次 AI 分析，新报告正在后台更新";
+      return sendJson(res, 200, staleReport);
+    }
+
+    report.aiPending = true;
+    report.aiStatus = started ? "generating" : "running";
+    report.aiLoadingText = "正在生成第一份 AI 洞察";
+    report.aiError = "AI 分析正在后台生成，当前先展示本地规则分析结果";
+    return sendJson(res, 200, report);
+  }
+
+  /* ---- 班级规则概览 ---- */
+  if (req.method === "GET" && pathname === "/api/teacher/ai-overview") {
+    const weekStart = mondayOf(new Date());
+    const classIds = await getTeacherClassIds(user.id);
+    const headClassId = await getTeacherHeadClassId(user.id);
+    const allChildren = await getTeacherVisibleChildren(user);
+    const totalStudents = allChildren.length;
+
+    let classTask = null;
+    if (headClassId != null) {
+      classTask = await db.prepare(
+        "SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id = ? ORDER BY id DESC LIMIT 1"
+      ).get(weekStart, headClassId);
+    }
+    if (!classTask) {
+      classTask = await db.prepare(
+        "SELECT * FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id IS NULL ORDER BY id DESC LIMIT 1"
+      ).get(weekStart);
+    }
+    const personalTasks = await db.prepare(
+      "SELECT t.* FROM tasks t JOIN children c ON c.id = t.child_id " +
+      "WHERE t.week_start = ? AND t.child_id IS NOT NULL AND " + studentScopeWhere("c", classIds) + " ORDER BY t.id DESC"
+    ).all(weekStart, ...demoParams(2));
+
+    const allSubs = await db.prepare(
+      "SELECT s.id, s.child_id, c.name AS child_name, c.grade, c.caregiver, t.title AS task_title " +
+      "FROM submissions s JOIN children c ON c.id = s.child_id JOIN tasks t ON t.id = s.task_id " +
+      "WHERE t.week_start = ? AND s.status = 'submitted' AND " + studentScopeWhere("c", classIds) + " ORDER BY s.id DESC"
+    ).all(weekStart, ...demoParams(2));
+
+    const submittedIds = new Set(allSubs.map(s => s.child_id));
+    const submittedCount = submittedIds.size;
+    const completionRate = totalStudents > 0 ? Math.round(submittedCount / totalStudents * 100) : 0;
+
+    // 反馈统计
+    let feedbackedCount = 0;
+    for (const s of allSubs) {
+      const n = (await db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE submission_id = ?").get(s.id)).n;
+      if (n > 0) feedbackedCount++;
+    }
+    const pendingFeedback = allSubs.length - feedbackedCount;
+    const feedbackRate = allSubs.length > 0 ? Math.round(feedbackedCount / allSubs.length * 100) : 0;
+
+    const unsubmittedStudents = allChildren.filter(c => !submittedIds.has(c.id));
+
+    // 陪伴人分布
+    const caregiverDist = {};
+    allChildren.forEach(function (c) {
+      if (c.caregiver) {
+        c.caregiver.split("、").forEach(function (p) {
+          p = p.trim();
+          if (p) caregiverDist[p] = (caregiverDist[p] || 0) + 1;
+        });
+      }
+    });
+
+    // 兴趣分布
+    const interestDist = {};
+    allChildren.forEach(function (c) {
+      if (c.interests) {
+        c.interests.split(",").forEach(function (i) {
+          i = i.trim();
+          if (i) interestDist[i] = (interestDist[i] || 0) + 1;
+        });
+      }
+    });
+
+    // 规则洞察生成
+    const insights = [];
+    if (!classTask && personalTasks.length === 0) {
+      insights.push("本周尚未发布任务，点击学生档案可为其定制个性化成长任务");
+    } else {
+      if (completionRate < 50) {
+        insights.push("本周任务完成率 " + completionRate + "%，偏低，建议周三发送提醒");
+      } else if (completionRate >= 80) {
+        insights.push("本周任务完成率 " + completionRate + "%，班级参与度高，继续保持");
+      } else {
+        insights.push("本周任务完成率 " + completionRate + "%，表现平稳");
+      }
+      if (pendingFeedback > 0) {
+        insights.push("还有 " + pendingFeedback + " 份提交待点评，建议及时反馈以保持家长积极性");
+      } else if (allSubs.length > 0) {
+        insights.push("所有提交均已点评，反馈及时");
+      }
+      const grandparentCare = allChildren.filter(function (c) {
+        if (!c.caregiver) return false;
+        return ["奶奶", "爷爷", "外婆", "外公", "祖辈"].some(function (g) {
+          return c.caregiver.includes(g);
+        });
+      });
+      if (grandparentCare.length > 0) {
+        const gpDone = grandparentCare.filter(function (c) { return submittedIds.has(c.id); }).length;
+        insights.push("祖辈带养家庭 " + grandparentCare.length + " 户，其中 " + gpDone + " 户已提交，建议关注其参与难度并提供简化方案");
+      }
+      if (personalTasks.length > 0) {
+        const pSet = new Set(personalTasks.map(t => t.child_id));
+        insights.push("已为 " + pSet.size + " 名学生发布了个性化任务，精准化推进中");
+      }
+    }
+    const topInterests = Object.entries(interestDist)
+      .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 3).map(function (e) { return e[0]; });
+    if (topInterests.length > 0) {
+      insights.push("班级兴趣热点：" + topInterests.join("、") + "，可据此设计下周任务方向");
+    }
+
+    const engagementRows = [];
+    for (const child of allChildren) {
+      const binding = await db.prepare(
+        "SELECT b.user_id FROM bindings b JOIN users u ON u.id = b.user_id " +
+        "WHERE b.child_id = ? AND u.role = 'parent' AND u.account NOT IN (" + demoAccountPlaceholders() + ") " +
+        "ORDER BY b.id LIMIT 1"
+      ).get(child.id, ...demoParams(1));
+      const enabled = binding ? await getEngagementPreference(binding.user_id, child.id) : false;
+      const engagement = binding && enabled ? await getParentEngagement(binding.user_id, child.id) : {
+        windowDays: 30, score: 0, level: "证据不足", status: "insufficient",
+        confidence: "低", evidence: [], recommendation: "暂不下结论，先提供一次清晰摘要",
+        counts: { touchpoints: 0, exploration: 0, followThrough: 0, activeDays: 0, events: 0 }
+      };
+      engagementRows.push({
+        childId: child.id,
+        childName: child.name,
+        caregiver: child.caregiver || "",
+        enabled: enabled,
+        engagement: engagement
+      });
+    }
+    const engagementSummary = {
+      high: engagementRows.filter(function (r) { return r.engagement.status === "high"; }).length,
+      medium: engagementRows.filter(function (r) { return r.engagement.status === "medium"; }).length,
+      low: engagementRows.filter(function (r) { return r.engagement.status === "low"; }).length,
+      insufficient: engagementRows.filter(function (r) { return r.engagement.status === "insufficient"; }).length
+    };
+
+    return sendJson(res, 200, {
+      stats: {
+        totalStudents: totalStudents, submittedCount: submittedCount, completionRate: completionRate,
+        totalSubmissions: allSubs.length, feedbackedCount: feedbackedCount,
+        pendingFeedback: pendingFeedback, feedbackRate: feedbackRate,
+        personalTaskCount: personalTasks.length
+      },
+      task: classTask,
+      personalTasks: personalTasks.map(function (t) {
+        const ch = allChildren.find(function (c) { return c.id === t.child_id; });
+        return { id: t.id, title: t.title, child_id: t.child_id, child_name: ch ? ch.name : "" };
+      }),
+      insights: insights,
+      unsubmittedStudents: unsubmittedStudents.map(function (c) {
+        return { id: c.id, name: c.name, grade: c.grade, caregiver: c.caregiver };
+      }),
+      caregiverDistribution: caregiverDist,
+      interestDistribution: interestDist,
+      engagementSummary: engagementSummary,
+      engagementRows: engagementRows
+    });
+  }
+
+  /* ---- 个性化任务建议：一个规则模板 + 一个学生级 AI 建议 ---- */
+  if (req.method === "GET" && pathname === "/api/teacher/student-suggestions") {
+    const childId = query.get("childId") ? Number(query.get("childId")) : null;
+    if (!childId) return sendJson(res, 400, { message: "缺少 childId" });
+    const classIds = await getTeacherClassIds(user.id);
+
+    const student = await db.prepare(
+      "SELECT c.*, q.answers AS q_answers FROM children c " +
+      latestQuestionnaireJoin() +
+      "WHERE c.id = ? AND " + studentScopeWhere("c", classIds)
+    ).get(childId, ...demoParams(2));
+    if (!student) return sendJson(res, 404, { message: "学生不存在" });
+
+    let answers = {};
+    try { answers = JSON.parse(student.q_answers || "{}"); } catch (e) {}
+    const timeAvailable = answers.timeAvailable || "";
+    const taskPreference = answers.taskPreference || "";
+
+    // 历史提交：只把正式提交计入完成记录，并把少量过程文本提供给 AI。
+    const history = await db.prepare(
+      "SELECT s.status, s.content, s.created_at, t.title AS task_title, t.task_type " +
+      "FROM submissions s JOIN tasks t ON t.id = s.task_id " +
+      "WHERE s.child_id = ? AND s.status = 'submitted' ORDER BY s.id DESC LIMIT 100"
+    ).all(childId);
+    const completedTypes = [...new Set(history.map(h => h.task_type))];
+    const totalCompleted = history.length;
+
+    // 近 30 天行为只用于识别参与节奏，不用于判断家长态度。
+    const behaviorSince = new Date();
+    behaviorSince.setDate(behaviorSince.getDate() - 30);
+    const behaviorSinceText = behaviorSince.getFullYear() + "-" +
+      String(behaviorSince.getMonth() + 1).padStart(2, "0") + "-" +
+      String(behaviorSince.getDate()).padStart(2, "0") + " 00:00:00";
+    const behaviorRows = await db.prepare(
+      "SELECT event_type, created_at FROM events WHERE child_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT " + MAX_BEHAVIOR_ROWS
+    ).all(childId, behaviorSinceText);
+    const behavior = { events: behaviorRows.length, activeDays: 0, counts: {} };
+    const activeDays = new Set();
+    behaviorRows.forEach(function (row) {
+      const type = row.event_type || "unknown";
+      behavior.counts[type] = (behavior.counts[type] || 0) + 1;
+      activeDays.add(String(row.created_at || "").slice(0, 10));
+    });
+    behavior.activeDays = activeDays.size;
+
+    // 兴趣 → 任务类型
+    const interestMap = {
+      "阅读": "阅读", "绘本": "阅读", "书": "阅读", "故事": "阅读",
+      "运动": "运动健身", "足球": "运动健身", "跳绳": "运动健身", "跑步": "运动健身", "游泳": "运动健身", "篮球": "运动健身", "羽毛球": "运动健身",
+      "画画": "观察探究", "绘画": "观察探究", "手工": "学科应用", "折纸": "学科应用", "艺术": "观察探究",
+      "做饭": "家务实践", "家务": "家务实践", "整理": "家务实践", "烹饪": "家务实践",
+      "朋友": "情绪社交", "社交": "情绪社交", "聊天": "情绪社交",
+      "科学": "观察探究", "实验": "观察探究", "自然": "观察探究", "植物": "观察探究", "动物": "观察探究",
+      "数学": "学科应用", "英语": "学科应用", "语文": "学科应用", "写字": "学科应用",
+      "音乐": "情绪社交", "唱歌": "情绪社交", "乐器": "情绪社交"
+    };
+
+    // 任务模板库
+    const taskTemplates = {
+      "阅读": [
+        { title: "亲子共读：绘本角色扮演", goal: "通过角色扮演深化阅读理解，培养表达能力", steps: "1. 选择一本孩子喜欢的绘本\n2. 分配角色，家长和孩子各演一个\n3. 一起读故事，到对话部分就表演出来\n4. 结束后聊聊最喜欢哪个角色", dialogueTips: "「你觉得这个故事里，如果你是主角会怎么做？」", submitHint: "拍照或录一段表演视频" },
+        { title: "家庭阅读角：共读20分钟", goal: "营造家庭阅读氛围，培养日常阅读习惯", steps: "1. 和孩子一起选一个家里的角落布置阅读角\n2. 各自选一本想读的书\n3. 一起安静阅读20分钟\n4. 分享各自读到的有趣内容", dialogueTips: "「你读到的这段，最让你惊讶的是什么？」", submitHint: "拍一张阅读角照片，写一句感受" }
+      ],
+      "运动健身": [
+        { title: "亲子运动挑战：一起跳绳", goal: "通过运动增进亲子默契，锻炼身体协调性", steps: "1. 准备一根跳绳\n2. 家长先示范，孩子计数\n3. 换孩子跳，家长计数鼓励\n4. 尝试一起跳10个", dialogueTips: "「你觉得一起跳绳和一个人跳有什么不同？」", submitHint: "拍一段跳绳视频或写感受" },
+        { title: "家庭趣味运动会", goal: "在运动中体验合作与竞争的平衡", steps: "1. 设计3个小项目（如夹球跑、投准、接力）\n2. 家长和孩子轮流比赛\n3. 互相计时和加油\n4. 一起复盘哪个最有趣", dialogueTips: "「你觉得赢的感觉和输的感觉有什么不同？」", submitHint: "拍照片或写一段运动感受" }
+      ],
+      "观察探究": [
+        { title: "家庭观察实验：种一颗豆子", goal: "培养观察记录能力与生命责任感", steps: "1. 一起泡豆子\n2. 每天观察并记录变化\n3. 周末一起画出成长图\n4. 讨论植物生长的条件", dialogueTips: "「你觉得它明天会有什么变化？为什么？」", submitHint: "拍照或文字记录观察发现" },
+        { title: "自然探索：小区里的秘密", goal: "培养观察力与科学探究兴趣", steps: "1. 带孩子去小区或附近散步\n2. 寻找3种不同的植物或昆虫\n3. 拍照并讨论它们的特点\n4. 回家一起查资料了解", dialogueTips: "「你觉得这个小虫子为什么生活在这里？」", submitHint: "拍照记录并写一句发现" }
+      ],
+      "情绪社交": [
+        { title: "情绪卡片：画出今天的心情", goal: "帮助孩子认识和表达情绪", steps: "1. 准备纸和彩笔\n2. 各自画出今天的心情\n3. 互相分享画的内容\n4. 讨论为什么会有这种感受", dialogueTips: "「今天最开心的事是什么？最难过的呢？」", submitHint: "拍照心情卡片或写感受" },
+        { title: "角色互换：今天我来当大人", goal: "培养换位思考能力和同理心", steps: "1. 设定一个生活场景（如做决定）\n2. 孩子扮演大人角色\n3. 家长扮演孩子\n4. 结束后讨论感受", dialogueTips: "「当大人的感觉怎么样？和想象中一样吗？」", submitHint: "录一段对话或写感受" }
+      ],
+      "家务实践": [
+        { title: "今天我当家：一起做一顿饭", goal: "培养生活技能和家庭责任感", steps: "1. 一起决定做什么菜\n2. 分工准备食材\n3. 一起完成烹饪\n4. 一起收拾厨房", dialogueTips: "「你觉得做饭最难的是哪一步？」", submitHint: "拍照或写感受" },
+        { title: "整理小能手：给房间大变身", goal: "培养整理收纳习惯和审美", steps: "1. 选一个区域（书桌/衣柜）\n2. 一起分类物品\n3. 决定保留和丢弃\n4. 重新布置", dialogueTips: "「你觉得整理后和整理前有什么不同？」", submitHint: "拍整理前后的对比照" }
+      ],
+      "学科应用": [
+        { title: "生活中的数学：超市小账本", goal: "将数学知识应用到真实生活场景", steps: "1. 去超市前一起列购物清单\n2. 给孩子一个预算\n3. 孩子负责计算价格\n4. 结账时核对", dialogueTips: "「你觉得为什么同样的东西不同牌子价格不同？」", submitHint: "拍购物小票或写计算过程" },
+        { title: "创意写作：给物品写自传", goal: "培养观察力、想象力和写作能力", steps: "1. 选一件家里的物品\n2. 以物品的视角写一段自传\n3. 家长也写一篇\n4. 互相朗读", dialogueTips: "「如果你是这件物品，你最想说什么？」", submitHint: "写一段文字或拍照" }
+      ],
+      "习惯养成": [
+        { title: "21天习惯养成打卡", goal: "通过持续打卡培养好习惯", steps: "1. 和孩子一起选一个想养成的小习惯\n2. 制作打卡表格\n3. 每天完成后打卡\n4. 周末一起回顾", dialogueTips: "「坚持了这几天，你感觉自己有什么变化？」", submitHint: "拍打卡表或写感受" },
+        { title: "早睡早起挑战周", goal: "培养健康作息习惯", steps: "1. 和孩子约定每天睡觉和起床时间\n2. 制作作息表\n3. 每天记录是否达标\n4. 周末统计达成率", dialogueTips: "「你觉得早睡后第二天感觉怎么样？」", submitHint: "拍作息表或写感受" }
+      ]
+    };
+
+    const interests = (student.interests || "").split(",").filter(Boolean).map(s => s.trim());
+    const suggestedTypes = [];
+    const usedTypes = new Set();
+
+    // 基于兴趣匹配
+    interests.forEach(function (interest) {
+      Object.keys(interestMap).forEach(function (key) {
+        if (interest.includes(key) || key.includes(interest)) {
+          var type = interestMap[key];
+          if (!usedTypes.has(type)) { suggestedTypes.push(type); usedTypes.add(type); }
+        }
+      });
+    });
+    // 补充未做过的类型
+    var allTypes = ["阅读", "运动健身", "观察探究", "情绪社交", "家务实践", "学科应用", "习惯养成"];
+    allTypes.forEach(function (type) {
+      if (!usedTypes.has(type) && !completedTypes.includes(type)) {
+        suggestedTypes.push(type); usedTypes.add(type);
+      }
+    });
+    // 至少保留一个模板类型；第二张卡由 AI 单独生成。
+    allTypes.forEach(function (type) {
+      if (suggestedTypes.length < 1 && !usedTypes.has(type)) {
+        suggestedTypes.push(type); usedTypes.add(type);
+      }
+    });
+
+    // 陪伴人 & 时长调整
+    var isGrandparent = student.caregiver && ["奶奶", "爷爷", "外婆", "外公", "祖辈"].some(function (g) {
+      return student.caregiver.includes(g);
+    });
+    var baseDuration = studentSuggestionDuration(answers, student);
+
+    var suggestions = suggestedTypes.slice(0, 1).map(function (type) {
+      var templates = taskTemplates[type] || taskTemplates["阅读"];
+      var tpl = templates[0];
+      var reasons = [];
+      var matchedInterests = interests.filter(function (i) {
+        return Object.keys(interestMap).some(function (key) {
+          return (i.includes(key) || key.includes(i)) && interestMap[key] === type;
+        });
+      });
+      if (matchedInterests.length > 0) reasons.push("基于孩子对「" + matchedInterests.join("、") + "」的兴趣");
+      if (student.caregiver) {
+        if (isGrandparent) reasons.push("考虑到祖辈带养，选用步骤简单、材料易得的方案");
+        else reasons.push("配合「" + student.caregiver + "」的陪伴方式");
+      }
+      if (timeAvailable) reasons.push("适配家庭可用时间（" + timeAvailable + "）");
+      if (taskPreference) reasons.push("尊重家长期望的亲子任务特征（" + taskPreference + "）");
+      if (completedTypes.includes(type)) reasons.push("孩子已参与过此类任务，建议尝试进阶版本");
+      else reasons.push("丰富孩子尚未体验的任务类型");
+
+      return {
+        title: tpl.title, type: type,
+        duration: isGrandparent ? Math.min(baseDuration, 15) : baseDuration,
+        goal: tpl.goal, steps: tpl.steps, dialogueTips: tpl.dialogueTips,
+        submitHint: tpl.submitHint, rationale: reasons.join("；"),
+        source: "template", aiGenerated: false, aiStatus: "规则模板"
+      };
+    });
+
+    const templateSuggestion = suggestions[0] || null;
+    const aiFallback = studentSuggestionFallback(student, answers, history, behavior);
+    const aiSuggestion = await generateStudentAiSuggestion(student, answers, history, behavior, aiFallback);
+    suggestions = templateSuggestion ? [templateSuggestion, aiSuggestion] : [aiSuggestion];
+
+    return sendJson(res, 200, {
+      student: {
+        id: student.id, name: student.name, grade: student.grade,
+        gender: student.gender, age: student.age, caregiver: student.caregiver,
+        interests: student.interests, familyNote: student.family_note || "",
+        timeAvailable: timeAvailable,
+        taskPreference: taskPreference
+      },
+      suggestions: suggestions,
+      aiMeta: { generated: !!aiSuggestion.aiGenerated, status: aiSuggestion.aiStatus },
+      history: { totalCompleted: totalCompleted, completedTypes: completedTypes }
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/tasks") {
+    const body = await readBody(req);
+    const title = String(body.title || "").trim();
+    if (!title) return sendJson(res, 400, { message: "请填写任务标题" });
+    const weekStart = mondayOf(new Date());
+    const childId = body.childId ? Number(body.childId) : null;
+    const difficulty = ["简单", "普通", "进阶"].includes(body.difficulty) ? body.difficulty : "普通";
+    const materials = String(body.materials || "").trim();
+    const fallbackPlan = String(body.fallbackPlan || body.fallback_plan || "").trim();
+
+    if (childId) {
+      if (!(await canAccessChild(user, childId))) return sendJson(res, 404, { message: "学生不存在" });
+      // 个人任务：直接新建
+      await db.prepare(
+        "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id, difficulty, materials, fallback_plan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      ).run(
+        title, String(body.goal || ""), String(body.steps || ""),
+        String(body.dialogueTips || ""), String(body.submitHint || ""),
+        Number(body.duration) || 20, String(body.type || "阅读"), weekStart, user.id, childId,
+        difficulty, materials, fallbackPlan
+      );
+    } else {
+      // 班级任务：按教师所属班级存放（本周已有则更新）；未分班教师沿用无班级的全局任务
+      const headClassId = await getTeacherHeadClassId(user.id);
+      const existing = headClassId != null
+        ? await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id = ? ORDER BY id DESC LIMIT 1").get(weekStart, headClassId)
+        : await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id IS NULL AND class_id IS NULL ORDER BY id DESC LIMIT 1").get(weekStart);
+      const params = [
+        title, String(body.goal || ""), String(body.steps || ""),
+        String(body.dialogueTips || ""), String(body.submitHint || ""),
+        Number(body.duration) || 20, String(body.type || "阅读"), weekStart, user.id,
+        difficulty, materials, fallbackPlan, headClassId
+      ];
+      if (existing) {
+        await db.prepare(
+          "UPDATE tasks SET title=?, goal=?, steps=?, dialogue_tips=?, submit_hint=?, duration=?, task_type=?, published_by=?, difficulty=?, materials=?, fallback_plan=?, class_id=? WHERE id=?"
+        ).run(params[0], params[1], params[2], params[3], params[4], params[5], params[6], params[8], params[9], params[10], params[11], params[12], existing.id);
+      } else {
+        await db.prepare(
+          "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, difficulty, materials, fallback_plan, class_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        ).run(...params);
+      }
+    }
+    return sendJson(res, 200, { ok: true });
+  }
+
+  const submissionDetailMatch = pathname.match(/^\/api\/teacher\/submissions\/(\d+)$/);
+  if (req.method === "GET" && submissionDetailMatch) {
+    const submissionId = Number(submissionDetailMatch[1]);
+    const row = await getTeacherSubmissionDetail(submissionId);
+    if (!row || row.status !== "submitted") return sendJson(res, 404, { message: "提交不存在或尚未正式提交" });
+    const feedbacks = await db.prepare(
+      "SELECT f.id, f.comment, f.tags, f.created_at, u.display_name AS teacher_name " +
+      "FROM feedback f LEFT JOIN users u ON u.id = f.teacher_id " +
+      "WHERE f.submission_id = ? ORDER BY f.id DESC"
+    ).all(submissionId);
+    return sendJson(res, 200, {
+      submission: {
+        id: row.id,
+        childId: row.child_id,
+        childName: row.child_name,
+        grade: row.grade,
+        content: row.content,
+        subType: row.sub_type,
+        attachments: row.attachments,
+        createdAt: row.created_at
+      },
+      task: {
+        id: row.task_id,
+        title: row.task_title,
+        type: row.task_type,
+        weekStart: row.week_start,
+        goal: row.task_goal,
+        steps: row.task_steps,
+        dialogueTips: row.task_dialogue_tips,
+        submitHint: row.task_submit_hint,
+        duration: row.task_duration,
+        materials: row.task_materials,
+        fallbackPlan: row.task_fallback_plan,
+        createdAt: row.task_created_at
+      },
+      feedbacks: feedbacks,
+      feedbackCount: Number(row.feedback_count || 0)
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/submissions/ai-feedback") {
+    const body = await readBody(req);
+    const submissionId = Number(body.submissionId);
+    if (!submissionId) return sendJson(res, 400, { message: "缺少 submissionId" });
+    const row = await getTeacherSubmissionDetail(submissionId);
+    if (!row || row.status !== "submitted") return sendJson(res, 404, { message: "提交不存在或尚未正式提交" });
+    const feedback = await generateSubmissionFeedback(row);
+    return sendJson(res, 200, { ok: true, feedback: feedback });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/feedback") {
+    const body = await readBody(req);
+    const submissionId = Number(body.submissionId);
+    const comment = String(body.comment || "").trim();
+    if (!submissionId || !comment) return sendJson(res, 400, { message: "请填写点评内容" });
+    const submission = await db.prepare("SELECT id FROM submissions WHERE id = ? AND status = 'submitted'").get(submissionId);
+    if (!submission) return sendJson(res, 404, { message: "提交不存在或尚未正式提交" });
+    await db.prepare(
+      "INSERT INTO feedback (submission_id, teacher_id, comment, tags) VALUES (?,?,?,?)"
+    ).run(submissionId, user.id, comment, cleanTags(body.tags));
+    await upsertTeacherSubmissionVector(submissionId);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  return sendJson(res, 404, { message: "接口不存在" });
+}
+
+/* ============ 静态文件 ============ */
+const serveStatic = createStaticServer(ROOT);
+
+/* ============ 启动 ============ */
+const server = http.createServer(async (req, res) => {
+  const context = createRequestContext(req);
+  res.requestId = context.requestId;
+  res.setHeader("X-Request-Id", res.requestId);
+  /* CORS：Vercel 前端跨域调用后端接口需要（前端/后端分离部署） */
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  const url = new URL(req.url, "http://localhost");
+  const pathname = decodeURIComponent(url.pathname);
+  try {
+    await databaseReady;
+    if (pathname.startsWith("/api/")) {
+      await handleApi(req, res, pathname, url.searchParams);
+    } else {
+      serveStatic(req, res, pathname);
+    }
+  } catch (e) {
+    console.error("请求处理失败", res.requestId, e);
+    if (res.headersSent) return res.end();
+    const payload = errorPayload(e, res.requestId);
+    sendJson(res, Number(e && e.status) || 500, payload);
+  }
+});
+
+function startServer(port) {
+  const listenPort = port == null ? PORT : port;
+  return server.listen(listenPort, () => {
+    const address = server.address();
+    const actualPort = address && typeof address === "object" ? address.port : listenPort;
+    console.log("家校共育系统已启动: http://localhost:" + actualPort);
+    console.log(db.isPostgres ? "数据库：Neon PostgreSQL" : "数据库：本地 SQLite");
+  });
+}
+
+if (require.main === module) startServer();
+
+module.exports = { server, db, databaseReady, handleApi, startServer };

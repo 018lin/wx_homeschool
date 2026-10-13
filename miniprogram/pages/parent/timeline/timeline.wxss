@@ -1,0 +1,134 @@
+.tl-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.tl-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.tl-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+/* 时间线 */
+.tl-item {
+  position: relative;
+  padding-left: 40rpx;
+  margin-bottom: 24rpx;
+}
+
+.tl-item::before {
+  content: "";
+  position: absolute;
+  left: 10rpx;
+  top: 24rpx;
+  bottom: -24rpx;
+  width: 2rpx;
+  background: #dde5ef;
+}
+
+.tl-item:last-child::before {
+  display: none;
+}
+
+.tl-item__dot {
+  position: absolute;
+  left: 0;
+  top: 24rpx;
+  width: 22rpx;
+  height: 22rpx;
+  border-radius: 50%;
+  background: #0057b8;
+  border: 4rpx solid #fff;
+  box-shadow: 0 0 0 2rpx #0057b8;
+}
+
+.tl-item__dot.obs {
+  background: #0f766e;
+  box-shadow: 0 0 0 2rpx #0f766e;
+}
+
+.tl-item__body {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx;
+  box-shadow: 0 2rpx 12rpx rgba(15, 40, 80, 0.05);
+}
+
+.tl-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.tl-item__date {
+  font-size: 22rpx;
+  color: #8795a7;
+}
+
+.tl-item__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.tl-item__content {
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.75;
+  margin-top: 12rpx;
+  white-space: pre-wrap;
+}
+
+.tl-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+}
+
+.tl-imgs__pic {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 12rpx;
+  margin: 0 12rpx 12rpx 0;
+}
+
+.tl-fb {
+  margin-top: 16rpx;
+  background: #e9f8f0;
+  border-radius: 12rpx;
+  padding: 20rpx;
+}
+
+.tl-fb__label {
+  font-size: 24rpx;
+  color: #0f766e;
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.tl-fb__text {
+  font-size: 27rpx;
+  color: #1f2937;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.tl-item__time {
+  font-size: 22rpx;
+  color: #8795a7;
+  margin-top: 16rpx;
+  text-align: right;
+}
+.tl-media { margin-top: 16rpx; }
+.tl-audio { margin-bottom: 12rpx; padding: 18rpx; border-radius: 12rpx; color: #0057b8; background: #edf5ff; font-size: 24rpx; }
+.tl-video { width: 100%; height: 320rpx; margin-bottom: 12rpx; border-radius: 12rpx; background: #111827; }

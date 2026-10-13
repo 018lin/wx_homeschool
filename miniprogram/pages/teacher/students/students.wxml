@@ -1,0 +1,59 @@
+<view class="page page-with-nav">
+  <view class="ts-head">
+    <view class="ts-head__title">学生档案</view>
+    <view class="ts-head__sub">共 {{all.length}} 名学生，点击查看个性化任务建议</view>
+  </view>
+
+  <view class="search-box">
+    <input
+      class="search-box__input"
+      placeholder="搜索姓名 / 年级 / 陪伴人"
+      placeholder-class="ph"
+      value="{{keyword}}"
+      bindinput="onSearch"
+    />
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">👧</view>
+      <view class="empty__text">暂无学生档案</view>
+      <view class="empty__hint">家长填写问卷后会自动生成</view>
+    </view>
+  </view>
+
+  <view class="card" wx:for="{{items}}" wx:key="id" data-id="{{item.id}}" bindtap="goSuggestion">
+    <view class="between mb-12">
+      <view class="align-center">
+        <text class="ts-name">{{item.name}}</text>
+        <text class="badge badge-primary ml" wx:if="{{item.grade}}">{{item.grade}}</text>
+        <text class="badge badge-gray ml" wx:if="{{item.gender}}">{{item.gender}}</text>
+        <text class="badge badge-gray ml" wx:if="{{item.age}}">{{item.age}} 岁</text>
+      </view>
+      <text class="text-sm text-primary">{{isAdmin ? '只读' : '查看建议 ›'}}</text>
+    </view>
+
+    <view class="ts-row" wx:if="{{item.caregiver}}">
+      <text class="ts-row__label">陪伴人</text>
+      <text class="ts-row__value">{{item.caregiver}}</text>
+    </view>
+    <view class="ts-row" wx:if="{{item.timeAvailable}}">
+      <text class="ts-row__label">可陪伴</text>
+      <text class="ts-row__value">{{item.timeAvailable}}</text>
+    </view>
+    <view class="ts-row" wx:if="{{item.taskPreference}}">
+      <text class="ts-row__label">偏好</text>
+      <text class="ts-row__value">{{item.taskPreference}}</text>
+    </view>
+
+    <view class="mt-12" wx:if="{{item.interestsArr.length}}">
+      <text class="tag" wx:for="{{item.interestsArr}}" wx:for-item="it" wx:key="*this">{{it}}</text>
+    </view>
+
+    <view class="ts-note" wx:if="{{item.familyNote}}">{{item.familyNote}}</view>
+  </view>
+</view>
+
+<nav-bar role="{{isAdmin ? 'admin' : 'teacher'}}" active="students" />

@@ -1,0 +1,412 @@
+const fs = require("fs");
+const path = require("path");
+const { DatabaseSync } = require("node:sqlite");
+const { Pool, types } = require("pg");
+
+// Keep Asia/Shanghai TIMESTAMP columns as local strings so clients do not apply an extra UTC shift.
+types.setTypeParser(1114, function (value) {
+  return value;
+});
+
+const SERIAL_TABLES = new Set([
+  "users",
+  "children",
+  "bindings",
+  "tasks",
+  "submissions",
+  "feedback",
+  "questionnaires",
+  "events",
+  "parent_task_requests",
+  "notifications",
+  "teacher_daily_updates",
+  "ai_vector_documents",
+  // 班级相关：Postgres 下需要 RETURNING id 才能拿到自增 id
+  "classes",
+  "class_members"
+]);
+
+const SCHEMA_VERSION = 6;
+
+function replaceQuestionMarks(sql) {
+  let index = 0;
+  return String(sql).replace(/\?/g, function () {
+    index += 1;
+    return "$" + index;
+  });
+}
+
+function normalizePostgresSql(sql) {
+  const source = String(sql);
+  const ignored = /INSERT\s+OR\s+IGNORE\s+INTO/i.test(source);
+  let text = source
+    .replace(/datetime\('now','localtime'\)/gi, "(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')")
+    .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO");
+  if (ignored && !/ON\s+CONFLICT/i.test(text)) text += " ON CONFLICT DO NOTHING";
+  return replaceQuestionMarks(text);
+}
+
+function projectRowPromise(promise) {
+  return new Proxy(promise, {
+    get: function (target, property) {
+      if (property === "then" || property === "catch" || property === "finally") {
+        return target[property].bind(target);
+      }
+      if (property in target) return target[property];
+      return target.then(function (row) {
+        return row == null ? undefined : row[property];
+      });
+    }
+  });
+}
+
+function tableFromInsert(sql) {
+  const match = String(sql).match(/^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+([a-z_]+)/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+class Statement {
+  constructor(database, sql) {
+    this.database = database;
+    this.sql = sql;
+  }
+
+  get(...params) {
+    const promise = this.database.query(this.sql, params).then(function (result) {
+      return result.rows[0];
+    });
+    return projectRowPromise(promise);
+  }
+
+  async all(...params) {
+    const result = await this.database.query(this.sql, params);
+    return result.rows;
+  }
+
+  run(...params) {
+    const promise = this.database.query(this.sql, params).then(function (result) {
+      return {
+        changes: result.rowCount || 0,
+        lastInsertRowid: result.rows[0] ? result.rows[0].id : undefined
+      };
+    });
+    promise.lastInsertRowid = promise.then(function (result) {
+      return result && result.lastInsertRowid;
+    });
+    return promise;
+  }
+}
+
+class TransactionAdapter {
+  constructor(parent, client) {
+    this.isPostgres = parent.isPostgres;
+    this.raw = parent.isPostgres ? null : client;
+    this.client = parent.isPostgres ? client : null;
+  }
+
+  prepare(sql) {
+    return new Statement(this, sql);
+  }
+
+  async query(sql, params) {
+    if (!this.isPostgres) {
+      const statement = this.raw.prepare(sql);
+      const trimmed = String(sql).trim().toUpperCase();
+      if (trimmed.startsWith("SELECT") || trimmed.startsWith("PRAGMA") || trimmed.startsWith("WITH")) {
+        return { rows: statement.all(...params), rowCount: 0 };
+      }
+      const result = statement.run(...params);
+      return {
+        rows: result.lastInsertRowid == null ? [] : [{ id: result.lastInsertRowid }],
+        rowCount: result.changes || 0
+      };
+    }
+    let text = normalizePostgresSql(sql);
+    const table = tableFromInsert(sql);
+    if (table && SERIAL_TABLES.has(table) && !/\bRETURNING\b/i.test(text)) text += " RETURNING id";
+    return this.client.query(text, params);
+  }
+
+  async exec(sql) {
+    if (!this.isPostgres) {
+      this.raw.exec(sql);
+      return;
+    }
+    await this.client.query(sql);
+  }
+}
+
+class DatabaseAdapter {
+  constructor(options) {
+    options = options || {};
+    this.isPostgres = !!process.env.DATABASE_URL;
+    if (this.isPostgres) {
+      this.pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: Number(process.env.DB_POOL_MAX) || 5,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        ssl: /sslmode=require|neon\.tech/i.test(process.env.DATABASE_URL)
+          ? { rejectUnauthorized: false }
+          : undefined
+      });
+    } else {
+      const root = options.root || __dirname;
+      const configuredDataDir = process.env.DATA_DIR || path.join(root, "data");
+      const dataDir = path.isAbsolute(configuredDataDir)
+        ? configuredDataDir
+        : path.resolve(root, configuredDataDir);
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      this.raw = new DatabaseSync(path.join(dataDir, "app.db"));
+    }
+  }
+
+  prepare(sql) {
+    return new Statement(this, sql);
+  }
+
+  async query(sql, params) {
+    if (!this.isPostgres) {
+      const statement = this.raw.prepare(sql);
+      const trimmed = String(sql).trim().toUpperCase();
+      if (trimmed.startsWith("SELECT") || trimmed.startsWith("PRAGMA") || trimmed.startsWith("WITH")) {
+        return { rows: statement.all(...params), rowCount: 0 };
+      }
+      const result = statement.run(...params);
+      return {
+        rows: result.lastInsertRowid == null ? [] : [{ id: result.lastInsertRowid }],
+        rowCount: result.changes || 0
+      };
+    }
+    let text = normalizePostgresSql(sql);
+    const table = tableFromInsert(sql);
+    if (table && SERIAL_TABLES.has(table) && !/\bRETURNING\b/i.test(text)) text += " RETURNING id";
+    return this.pool.query(text, params);
+  }
+
+  async exec(sql) {
+    if (!this.isPostgres) {
+      this.raw.exec(sql);
+      return;
+    }
+    await this.pool.query(sql);
+  }
+
+  async transaction(callback) {
+    if (!this.isPostgres) {
+      this.raw.exec("BEGIN IMMEDIATE");
+      const tx = new TransactionAdapter(this, this.raw);
+      try {
+        const result = await callback(tx);
+        this.raw.exec("COMMIT");
+        return result;
+      } catch (error) {
+        try { this.raw.exec("ROLLBACK"); } catch (rollbackError) {}
+        throw error;
+      }
+    }
+
+    const client = await this.pool.connect();
+    const tx = new TransactionAdapter(this, client);
+    try {
+      await client.query("BEGIN");
+      const result = await callback(tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (rollbackError) {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async close() {
+    if (this.isPostgres) await this.pool.end();
+    else this.raw.close();
+  }
+}
+
+function postgresSchema() {
+  return [
+    "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id BIGINT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS children (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), gender TEXT NOT NULL DEFAULT '', age INTEGER, caregiver TEXT NOT NULL DEFAULT '', interests TEXT NOT NULL DEFAULT '', family_note TEXT NOT NULL DEFAULT '', user_id BIGINT UNIQUE)",
+    "CREATE TABLE IF NOT EXISTS bindings (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, relation TEXT NOT NULL DEFAULT '家长', UNIQUE(user_id, child_id))",
+    "CREATE TABLE IF NOT EXISTS tasks (id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', dialogue_tips TEXT NOT NULL DEFAULT '', submit_hint TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, task_type TEXT NOT NULL DEFAULT '阅读', week_start TEXT NOT NULL, published_by BIGINT, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), child_id BIGINT, difficulty TEXT NOT NULL DEFAULT '普通', materials TEXT NOT NULL DEFAULT '', fallback_plan TEXT NOT NULL DEFAULT '', class_id BIGINT)",
+    "CREATE TABLE IF NOT EXISTS classes (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', head_teacher_id BIGINT, created_by BIGINT, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS class_members (id BIGSERIAL PRIMARY KEY, class_id BIGINT NOT NULL, user_id BIGINT NOT NULL, role TEXT NOT NULL DEFAULT 'student', relation TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), UNIQUE(class_id, user_id))",
+    // 已存在的 Postgres 库里 tasks 表早已建好，上面的 CREATE TABLE IF NOT EXISTS 不会补列，
+    // 必须先补列再建索引，否则 idx_tasks_class_week 会因 column "class_id" does not exist 导致服务启动崩溃
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS class_id BIGINT",
+    "CREATE TABLE IF NOT EXISTS submissions (id BIGSERIAL PRIMARY KEY, task_id BIGINT NOT NULL, child_id BIGINT NOT NULL, content TEXT NOT NULL, sub_type TEXT NOT NULL DEFAULT 'text', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), status TEXT NOT NULL DEFAULT 'submitted', attachments TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS feedback (id BIGSERIAL PRIMARY KEY, submission_id BIGINT NOT NULL, teacher_id BIGINT, comment TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS questionnaires (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, child_id BIGINT, answers TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS events (id BIGSERIAL PRIMARY KEY, user_id BIGINT, child_id BIGINT, task_id BIGINT, event_type TEXT NOT NULL, meta TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS parent_task_requests (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, status TEXT NOT NULL DEFAULT 'pending', teacher_id BIGINT, teacher_comment TEXT NOT NULL DEFAULT '', task_id BIGINT, concern_category TEXT NOT NULL DEFAULT '', observed_behavior TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '', frequency TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '', parent_expectation TEXT NOT NULL DEFAULT '', family_constraints TEXT NOT NULL DEFAULT '', ai_plan TEXT NOT NULL DEFAULT '{}', ai_status TEXT NOT NULL DEFAULT 'pending', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), reviewed_at TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS notifications (id BIGSERIAL PRIMARY KEY, recipient_user_id BIGINT NOT NULL, sender_user_id BIGINT, type TEXT NOT NULL DEFAULT 'announcement', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id BIGSERIAL PRIMARY KEY, teacher_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS engagement_preferences (user_id BIGINT NOT NULL, child_id BIGINT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'), UNIQUE(user_id, child_id))",
+    "CREATE TABLE IF NOT EXISTS ai_report_cache (cache_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'ready', error TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE TABLE IF NOT EXISTS ai_vector_documents (id BIGSERIAL PRIMARY KEY, namespace TEXT NOT NULL DEFAULT 'teacher', doc_key TEXT UNIQUE NOT NULL, doc_type TEXT NOT NULL, ref_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', embedding TEXT NOT NULL DEFAULT '[]', embedding_model TEXT NOT NULL DEFAULT '', embedding_provider TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "CREATE INDEX IF NOT EXISTS idx_bindings_user_child ON bindings(user_id, child_id)",
+    "CREATE INDEX IF NOT EXISTS idx_submissions_child_task ON submissions(child_id, task_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_week_child ON tasks(week_start, child_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_class_week ON tasks(class_id, week_start)",
+    "CREATE INDEX IF NOT EXISTS idx_class_members_class_role ON class_members(class_id, role)",
+    "CREATE INDEX IF NOT EXISTS idx_class_members_user ON class_members(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_events_type_child_task ON events(event_type, child_id, task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_parent_task_requests_child_status ON parent_task_requests(child_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications(recipient_user_id, read_at, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
+  ].join(";\n") + ";";
+}
+
+function sqliteSchema() {
+  return [
+    "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'parent', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', employee_no TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS children (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), gender TEXT NOT NULL DEFAULT '', age INTEGER, caregiver TEXT NOT NULL DEFAULT '', interests TEXT NOT NULL DEFAULT '', family_note TEXT NOT NULL DEFAULT '', user_id INTEGER UNIQUE)",
+    "CREATE TABLE IF NOT EXISTS bindings (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, relation TEXT NOT NULL DEFAULT '家长', UNIQUE(user_id, child_id))",
+    "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', dialogue_tips TEXT NOT NULL DEFAULT '', submit_hint TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, task_type TEXT NOT NULL DEFAULT '阅读', week_start TEXT NOT NULL, published_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), child_id INTEGER, difficulty TEXT NOT NULL DEFAULT '普通', materials TEXT NOT NULL DEFAULT '', fallback_plan TEXT NOT NULL DEFAULT '', class_id INTEGER)",
+    "CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', head_teacher_id INTEGER, created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS class_members (id INTEGER PRIMARY KEY AUTOINCREMENT, class_id INTEGER NOT NULL, user_id INTEGER NOT NULL, role TEXT NOT NULL DEFAULT 'student', relation TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), UNIQUE(class_id, user_id))",
+    "CREATE TABLE IF NOT EXISTS submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, child_id INTEGER NOT NULL, content TEXT NOT NULL, sub_type TEXT NOT NULL DEFAULT 'text', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), status TEXT NOT NULL DEFAULT 'submitted', attachments TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, submission_id INTEGER NOT NULL, teacher_id INTEGER, comment TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS questionnaires (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, child_id INTEGER, answers TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, child_id INTEGER, task_id INTEGER, event_type TEXT NOT NULL, meta TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS parent_task_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', duration INTEGER NOT NULL DEFAULT 20, status TEXT NOT NULL DEFAULT 'pending', teacher_id INTEGER, teacher_comment TEXT NOT NULL DEFAULT '', task_id INTEGER, concern_category TEXT NOT NULL DEFAULT '', observed_behavior TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '', frequency TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '', parent_expectation TEXT NOT NULL DEFAULT '', family_constraints TEXT NOT NULL DEFAULT '', ai_plan TEXT NOT NULL DEFAULT '{}', ai_status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), reviewed_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, recipient_user_id INTEGER NOT NULL, sender_user_id INTEGER, type TEXT NOT NULL DEFAULT 'announcement', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS engagement_preferences (user_id INTEGER NOT NULL, child_id INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), UNIQUE(user_id, child_id))",
+    "CREATE TABLE IF NOT EXISTS ai_report_cache (cache_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'ready', error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE TABLE IF NOT EXISTS ai_vector_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT NOT NULL DEFAULT 'teacher', doc_key TEXT UNIQUE NOT NULL, doc_type TEXT NOT NULL, ref_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', embedding TEXT NOT NULL DEFAULT '[]', embedding_model TEXT NOT NULL DEFAULT '', embedding_provider TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE INDEX IF NOT EXISTS idx_bindings_user_child ON bindings(user_id, child_id)",
+    "CREATE INDEX IF NOT EXISTS idx_submissions_child_task ON submissions(child_id, task_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_week_child ON tasks(week_start, child_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_class_week ON tasks(class_id, week_start)",
+    "CREATE INDEX IF NOT EXISTS idx_class_members_class_role ON class_members(class_id, role)",
+    "CREATE INDEX IF NOT EXISTS idx_class_members_user ON class_members(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_events_type_child_task ON events(event_type, child_id, task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_parent_task_requests_child_status ON parent_task_requests(child_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications(recipient_user_id, read_at, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
+  ].join(";\n") + ";";
+}
+
+const MIGRATIONS = [
+  {
+    version: 1,
+    statements: [
+      "ALTER TABLE children ADD COLUMN gender TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE children ADD COLUMN age INTEGER",
+      "ALTER TABLE children ADD COLUMN caregiver TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE children ADD COLUMN interests TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE children ADD COLUMN family_note TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE tasks ADD COLUMN child_id INTEGER",
+      "ALTER TABLE tasks ADD COLUMN difficulty TEXT NOT NULL DEFAULT '普通'",
+      "ALTER TABLE tasks ADD COLUMN materials TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE tasks ADD COLUMN fallback_plan TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE submissions ADD COLUMN status TEXT NOT NULL DEFAULT 'submitted'",
+      "ALTER TABLE submissions ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'",
+      "CREATE INDEX IF NOT EXISTS idx_parent_task_requests_child_status ON parent_task_requests(child_id, status)",
+      "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications(recipient_user_id, read_at, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
+    ],
+    allowAlreadyApplied: true
+  },
+  {
+    version: 2,
+    statements: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS uq_submissions_one_submitted ON submissions(task_id, child_id) WHERE status = 'submitted'"
+    ]
+  },
+  {
+    version: 3,
+    statements: [
+      "ALTER TABLE parent_task_requests ADD COLUMN concern_category TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN observed_behavior TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN context TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN frequency TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN impact TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN parent_expectation TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN family_constraints TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE parent_task_requests ADD COLUMN ai_plan TEXT NOT NULL DEFAULT '{}'",
+      "ALTER TABLE parent_task_requests ADD COLUMN ai_status TEXT NOT NULL DEFAULT 'pending'"
+    ],
+    allowAlreadyApplied: true
+  },
+  {
+    version: 4,
+    statements: [
+      "CREATE TABLE IF NOT EXISTS teacher_daily_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', transcript TEXT NOT NULL, summary TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '', parent_message TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', ai_status TEXT NOT NULL DEFAULT 'fallback', recipient_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+      "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)"
+    ],
+    allowAlreadyApplied: true
+  },
+  {
+    version: 5,
+    statements: [
+      "ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN subject TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN employee_no TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE children ADD COLUMN user_id INTEGER",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_children_user_id ON children(user_id)"
+    ],
+    allowAlreadyApplied: true
+  },
+  {
+    version: 6,
+    statements: [
+      "CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, grade TEXT NOT NULL DEFAULT '', head_teacher_id INTEGER, created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+      "CREATE TABLE IF NOT EXISTS class_members (id INTEGER PRIMARY KEY AUTOINCREMENT, class_id INTEGER NOT NULL, user_id INTEGER NOT NULL, role TEXT NOT NULL DEFAULT 'student', relation TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), UNIQUE(class_id, user_id))",
+      "ALTER TABLE tasks ADD COLUMN class_id INTEGER",
+      "CREATE INDEX IF NOT EXISTS idx_tasks_class_week ON tasks(class_id, week_start)",
+      "CREATE INDEX IF NOT EXISTS idx_class_members_class_role ON class_members(class_id, role)",
+      "CREATE INDEX IF NOT EXISTS idx_class_members_user ON class_members(user_id)"
+    ],
+    allowAlreadyApplied: true
+  }
+];
+
+async function applyMigrations(database) {
+  const applied = new Set(
+    (await database.prepare("SELECT version FROM schema_migrations ORDER BY version").all())
+      .map(function (row) { return Number(row.version); })
+  );
+  for (const migration of MIGRATIONS) {
+    if (applied.has(migration.version)) continue;
+    await database.transaction(async function (tx) {
+      // Postgres 以 postgresSchema() 为准（均为幂等 DDL），跳过仅适用于 SQLite 的迁移语句
+      const statements = database.isPostgres && [1, 3, 4, 6].includes(migration.version)
+        ? []
+        : migration.statements;
+      for (const statement of statements) {
+        try {
+          await tx.exec(statement);
+        } catch (error) {
+          if (!migration.allowAlreadyApplied) throw error;
+        }
+      }
+      await tx.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(migration.version);
+    });
+  }
+}
+
+async function initializeDatabase(database) {
+  await database.exec(database.isPostgres ? postgresSchema() : sqliteSchema());
+  await applyMigrations(database);
+}
+
+module.exports = {
+  DatabaseAdapter,
+  initializeDatabase,
+  normalizePostgresSql,
+  replaceQuestionMarks,
+  SCHEMA_VERSION
+};

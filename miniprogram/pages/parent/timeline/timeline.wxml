@@ -1,0 +1,76 @@
+<view class="page page-with-nav">
+  <view class="tl-head">
+    <view class="tl-head__title">成长档案</view>
+    <view class="tl-head__sub">共 {{count}} 条成长记录，按时间倒序</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && error}}">
+    <view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view>
+  </view>
+
+  <view class="card" wx:if="{{!loading && !error && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">🌱</view>
+      <view class="empty__text">还没有成长记录</view>
+      <view class="empty__hint">完成第一次亲子任务后，这里会留下痕迹</view>
+    </view>
+  </view>
+
+  <view class="tl-item" wx:for="{{items}}" wx:key="id">
+    <view class="tl-item__dot {{item.isObservation ? 'obs' : ''}}"></view>
+    <view class="tl-item__body">
+      <view class="tl-item__head">
+        <text class="badge {{item.isObservation ? 'badge-teal' : 'badge-primary'}}">{{item.kindLabel}}</text>
+        <text class="tl-item__date">{{item.dateText}}</text>
+      </view>
+
+      <view class="tl-media" wx:if="{{item.attachments.length}}">
+        <block wx:for="{{item.attachments}}" wx:for-item="media" wx:key="id">
+          <view class="tl-audio" wx:if="{{media.kind === 'audio'}}" data-url="{{media.url}}" bindtap="playAudio">{{playingUrl === media.url ? '■ 停止播放' : '▶ 播放语音'}} · {{media.name}}</view>
+          <video class="tl-video" wx:elif="{{media.kind === 'video'}}" src="{{media.url}}" controls show-center-play-btn />
+        </block>
+      </view>
+
+      <view class="tl-item__title">{{item.title}}</view>
+      <view class="tl-item__content" wx:if="{{item.content}}">{{item.content}}</view>
+
+      <!-- 教师观察补充信息 -->
+      <view class="quote quote-teal" wx:if="{{item.analysis}}">
+        <text class="bold">观察分析：</text>{{item.analysis}}
+      </view>
+      <view class="quote" wx:if="{{item.message}}">
+        <text class="bold">给家长的话：</text>{{item.message}}
+      </view>
+
+      <!-- 图片 -->
+      <view class="tl-imgs" wx:if="{{item.images.length}}">
+        <image
+          class="tl-imgs__pic"
+          wx:for="{{item.images}}"
+          wx:for-item="img"
+          wx:key="url"
+          src="{{img.url}}"
+          mode="aspectFill"
+          data-url="{{img.url}}"
+          data-urls="{{item.imageUrls}}"
+          bindtap="previewImage"
+        />
+      </view>
+
+      <!-- 老师反馈 -->
+      <view class="tl-fb" wx:if="{{item.feedbackComment}}">
+        <view class="tl-fb__label">{{item.teacherName || '老师'}}的反馈</view>
+        <view class="tl-fb__text">{{item.feedbackComment}}</view>
+        <view class="mt-8" wx:if="{{item.feedbackTags.length}}">
+          <text class="tag" wx:for="{{item.feedbackTags}}" wx:for-item="tg" wx:key="*this">{{tg}}</text>
+        </view>
+      </view>
+
+      <view class="tl-item__time">{{item.timeText}}</view>
+    </view>
+  </view>
+</view>
+
+<nav-bar role="parent" active="timeline" />

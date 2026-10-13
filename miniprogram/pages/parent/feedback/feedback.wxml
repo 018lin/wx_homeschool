@@ -1,0 +1,56 @@
+<view class="page page-with-nav">
+  <view class="feedback-head">
+    <view class="feedback-head__title">教师反馈</view>
+    <view class="feedback-head__sub">集中查看老师对孩子成长任务的点评</view>
+  </view>
+
+  <view class="card filter-card" wx:if="{{children.length}}">
+    <view class="filter-row">
+      <view class="filter-item">
+        <view class="field__label">孩子</view>
+        <picker mode="selector" range="{{childNames}}" value="{{childIndex}}" bindchange="onPickChild">
+          <view class="picker-box">{{childNames[childIndex] || '请选择'}} <text>▾</text></view>
+        </picker>
+      </view>
+      <view class="filter-item">
+        <view class="field__label">任务类型</view>
+        <picker mode="selector" range="{{typeOptions}}" value="{{typeIndex}}" bindchange="onPickType">
+          <view class="picker-box">{{typeOptions[typeIndex]}} <text>▾</text></view>
+        </picker>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载教师反馈中…</view>
+
+  <view class="card" wx:if="{{!loading && error}}">
+    <view class="empty">
+      <view class="empty__text">{{error}}</view>
+      <button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{!loading && !error && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">💬</view>
+      <view class="empty__text">当前筛选下暂无教师反馈</view>
+      <view class="empty__hint">老师完成点评后会显示在这里</view>
+    </view>
+  </view>
+
+  <view class="card feedback-card" wx:for="{{items}}" wx:key="id">
+    <view class="between mb-12">
+      <text class="badge badge-primary">{{item.taskType}}</text>
+      <text class="text-sm text-muted">{{item.feedbackTime}}</text>
+    </view>
+    <view class="feedback-card__title">{{item.taskTitle}}</view>
+    <view class="feedback-card__task">任务记录：{{item.taskContent}}</view>
+    <view class="feedback-card__teacher">{{item.teacherName}} · {{item.feedbackRelative}}</view>
+    <view class="feedback-card__comment">{{item.comment}}</view>
+    <view class="mt-12" wx:if="{{item.tags.length}}">
+      <text class="tag" wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
+    </view>
+  </view>
+</view>
+
+<nav-bar role="parent" active="feedback" />

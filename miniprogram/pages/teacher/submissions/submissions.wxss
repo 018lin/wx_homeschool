@@ -1,0 +1,50 @@
+.sm-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.sm-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.sm-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+.sm-item__name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ml {
+  margin-left: 12rpx;
+}
+
+.sm-item__title {
+  font-size: 27rpx;
+  color: #0057b8;
+  margin-top: 8rpx;
+}
+
+.sm-item__content {
+  font-size: 26rpx;
+  color: #536174;
+  line-height: 1.7;
+  margin-top: 10rpx;
+  white-space: pre-wrap;
+}
+
+.sm-item__foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 22rpx;
+  color: #8795a7;
+  margin-top: 16rpx;
+}

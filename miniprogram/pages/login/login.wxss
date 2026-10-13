@@ -1,0 +1,89 @@
+.login {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0057b8 0%, #0f766e 100%);
+  padding: 0 0 40rpx;
+}
+
+.login__hero {
+  padding: 80rpx 40rpx 60rpx;
+  text-align: center;
+  color: #fff;
+}
+
+.login__logo {
+  width: 190rpx;
+  height: 190rpx;
+  margin: 0 auto 24rpx;
+  border-radius: 32rpx;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 20rpx;
+  box-sizing: border-box;
+  display: block;
+  box-shadow: 0 6rpx 24rpx rgba(0, 40, 90, 0.18);
+}
+
+.login__brand {
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+}
+
+.login__slogan {
+  font-size: 26rpx;
+  opacity: 0.85;
+  margin-top: 12rpx;
+}
+
+.login__card {
+  margin: 0 32rpx;
+  background: #fff;
+  border-radius: 28rpx;
+  padding: 48rpx 40rpx 40rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 40, 90, 0.15);
+}
+
+.login__title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 40rpx;
+}
+
+.login__placeholder {
+  color: #b6c0cd;
+}
+
+.login__toggle {
+  position: absolute;
+  right: 24rpx;
+  margin-top: -56rpx;
+  font-size: 24rpx;
+  color: #0057b8;
+  padding: 8rpx 12rpx;
+}
+
+.login__error {
+  background: #fff1f0;
+  color: #b42318;
+  font-size: 24rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 10rpx;
+  margin-bottom: 20rpx;
+}
+
+.login__submit {
+  margin-top: 12rpx;
+}
+
+.login__note {
+  margin-top: 28rpx;
+  font-size: 22rpx;
+  color: #8795a7;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.login__note--dim {
+  margin-top: 8rpx;
+  opacity: 0.8;
+}

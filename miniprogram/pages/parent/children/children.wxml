@@ -1,0 +1,58 @@
+<view class="page page-with-nav">
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:for="{{children}}" wx:key="id" data-id="{{item.id}}" bindtap="onSelect">
+    <view class="between">
+      <view class="flex-1">
+        <view class="title">{{item.name}}</view>
+        <view class="text-sm text-muted mt-8">{{item.grade}}<text wx:if="{{item.age}}"> · {{item.age}} 岁</text></view>
+        <view class="mt-12" wx:if="{{item.interestsArr.length}}">
+          <text class="tag" wx:for="{{item.interestsArr}}" wx:for-item="it" wx:key="*this">{{it}}</text>
+        </view>
+      </view>
+      <view class="badge {{item.id === currentChildId ? 'badge-primary' : 'badge-gray'}}">
+        {{item.id === currentChildId ? '当前' : '切换'}}
+      </view>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{!loading && !children.length}}">
+    <view class="empty">
+      <view class="empty__icon">👶</view>
+      <view class="empty__text">还没有孩子档案</view>
+      <view class="empty__hint">添加后即可查看专属任务</view>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{showAdd}}">
+    <view class="field">
+      <view class="field__label">孩子姓名 / 昵称</view>
+      <input
+        class="field__input"
+        placeholder="如：小宇"
+        placeholder-class="ph"
+        value="{{newName}}"
+        data-key="newName"
+        bindinput="onInput"
+      />
+    </view>
+    <view class="field">
+      <view class="field__label">年级（选填）</view>
+      <input
+        class="field__input"
+        placeholder="如：三年级"
+        placeholder-class="ph"
+        value="{{newGrade}}"
+        data-key="newGrade"
+        bindinput="onInput"
+      />
+    </view>
+    <button class="btn btn-primary btn-block" bindtap="onAdd" disabled="{{saving}}">
+      {{saving ? '保存中…' : '确认添加'}}
+    </button>
+  </view>
+
+  <button class="btn btn-outline btn-block" bindtap="toggleAdd" wx:if="{{!showAdd}}">+ 添加孩子</button>
+</view>
+
+<nav-bar role="parent" active="home" />

@@ -1,0 +1,33 @@
+.feedback-head {
+  padding: 32rpx 28rpx;
+  margin-bottom: 24rpx;
+  border-radius: 20rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #0057b8, #0f766e);
+}
+.feedback-head__title { font-size: 36rpx; font-weight: 700; }
+.feedback-head__sub { margin-top: 8rpx; font-size: 24rpx; opacity: .88; }
+.filter-row { display: flex; gap: 16rpx; }
+.filter-item { flex: 1; min-width: 0; }
+.picker-box {
+  display: flex;
+  justify-content: space-between;
+  padding: 18rpx 20rpx;
+  border: 2rpx solid #e1e8f0;
+  border-radius: 12rpx;
+  background: #f8fbff;
+  color: #1f2937;
+  font-size: 25rpx;
+}
+.feedback-card__title { color: #1f2937; font-size: 30rpx; font-weight: 650; }
+.feedback-card__task {
+  margin-top: 14rpx;
+  padding: 16rpx;
+  border-radius: 12rpx;
+  background: #f8fbff;
+  color: #536174;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+.feedback-card__teacher { margin-top: 18rpx; color: #0f766e; font-size: 24rpx; font-weight: 600; }
+.feedback-card__comment { margin-top: 10rpx; color: #1f2937; font-size: 28rpx; line-height: 1.75; white-space: pre-wrap; }

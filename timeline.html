@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>孩子成长时间线 · 家校共育</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #0878d1;
+      --primary-dark: #0565b4;
+      --teal: #0f766e;
+      --ink: #162432;
+      --text: #1f2937;
+      --text-sub: #667585;
+      --muted: #98a5b3;
+      --line: #dce6ee;
+      --line-soft: #e8eef3;
+      --canvas: #f4f7fa;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --shadow-card: 0 4px 20px -2px rgba(17, 35, 48, 0.07);
+    }
+    html, body { min-height: 100%; }
+    body {
+      min-width: 320px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, select { font: inherit; }
+    .topbar {
+      min-height: 68px;
+      padding: 0 clamp(18px, 4vw, 48px);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: saturate(160%) blur(16px);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 auto;
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .brand .logo {
+      width: 28px;
+      height: 28px;
+      display: inline-block;
+      background: url("assets/site-logo.png") center / contain no-repeat;
+    }
+    .parent-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      max-width: min(460px, 48vw);
+      padding: 4px;
+      overflow-x: auto;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      background: #f6f8fa;
+      scrollbar-width: none;
+    }
+    .parent-nav::-webkit-scrollbar { display: none; }
+    .nav-link {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      padding: 0 14px;
+      border-radius: 8px;
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .nav-link:hover { color: var(--primary-dark); background: #eef6fd; }
+    .nav-link.active {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 5px 12px rgba(8, 120, 209, 0.2);
+    }
+    .user-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      margin-left: auto;
+    }
+    .child-switcher, .btn-logout {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .child-switcher {
+      width: 166px;
+      max-width: 166px;
+      padding: 0 12px;
+    }
+    .btn-logout { min-width: 84px; padding: 0 13px; }
+    .child-switcher:hover, .btn-logout:hover { border-color: #b8c7d4; color: var(--primary); }
+    .user-name {
+      max-width: 118px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-sub);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .main {
+      width: min(1040px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 42px 0 76px;
+    }
+    .page-title {
+      margin: 0 auto 34px;
+      text-align: center;
+    }
+    .page-title .eyebrow {
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+    }
+    .page-title h1 {
+      margin-top: 8px;
+      color: var(--ink);
+      font-size: clamp(27px, 3vw, 34px);
+      line-height: 1.2;
+      font-weight: 750;
+    }
+    .page-title p {
+      max-width: 560px;
+      margin: 10px auto 0;
+      color: var(--text-sub);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .timeline {
+      position: relative;
+      padding: 8px 0 4px;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      top: 26px;
+      bottom: 26px;
+      left: 137px;
+      width: 2px;
+      background: var(--line);
+    }
+    .item {
+      position: relative;
+      display: grid;
+      grid-template-columns: 112px 50px minmax(0, 1fr);
+      margin-bottom: 22px;
+    }
+    .item:last-child { margin-bottom: 0; }
+    .timeline-date {
+      padding: 16px 18px 0 0;
+      text-align: right;
+    }
+    .timeline-date strong {
+      display: block;
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+    .timeline-date span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    .timeline-marker { position: relative; min-height: 100%; }
+    .timeline-marker::before {
+      content: "";
+      position: absolute;
+      top: 21px;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      border: 3px solid var(--primary);
+      border-radius: 50%;
+      background: var(--surface);
+      box-shadow: 0 0 0 5px var(--canvas);
+      transform: translateX(-50%);
+      z-index: 1;
+    }
+    .item.has-feedback .timeline-marker::before { border-color: var(--teal); }
+    .item.is-observation .timeline-marker::before { border-color: #7a62c8; }
+    .card {
+      min-width: 0;
+      padding: 22px 24px 23px;
+      background: var(--surface);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      box-shadow: var(--shadow-card);
+    }
+    .card:hover { border-color: #cfdae3; box-shadow: 0 8px 26px -4px rgba(17, 35, 48, 0.1); }
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .item-title {
+      min-width: 0;
+      color: var(--ink);
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .type-badge {
+      flex: 0 0 auto;
+      min-height: 26px;
+      padding: 4px 9px;
+      border: 1px solid #d6ebfb;
+      border-radius: 999px;
+      background: #eef7ff;
+      color: #0a67af;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .item-meta {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .submission-label {
+      margin-top: 18px;
+      color: var(--text-sub);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .item-content {
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+    }
+    .item-content.is-empty { color: var(--muted); }
+    .observation-card {
+      border-color: #ddd7f2;
+      background: #fdfcff;
+    }
+    .observation-badge {
+      border-color: #e0d8f7;
+      background: #f2effc;
+      color: #6950ad;
+    }
+    .observation-analysis {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-left: 3px solid #b8a7e8;
+      background: #f7f4fd;
+      color: #5c5870;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .observation-analysis-label {
+      color: #443b65;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .observation-analysis p + p { margin-top: 4px; }
+    .attachment-preview {
+      display: grid;
+      gap: 8px;
+      margin-top: 13px;
+    }
+    .attachment-preview img, .attachment-preview video, .attachment-preview audio { max-width: 100%; border-radius: 9px; }
+    .attachment-file {
+      padding: 9px 11px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text-sub);
+      font-size: 13px;
+    }
+    .feedback-box {
+      margin-top: 18px;
+      padding: 11px 0 0 14px;
+      border-top: 1px solid var(--line-soft);
+      border-left: 3px solid #e2a83b;
+    }
+    .feedback-head { display: flex; align-items: center; gap: 8px; }
+    .feedback-avatar {
+      width: 24px;
+      height: 24px;
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #e7f5f3;
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .feedback-box .label { color: var(--ink); font-size: 12px; font-weight: 700; }
+    .feedback-box .content { margin-top: 6px; color: var(--text-sub); font-size: 13px; line-height: 1.7; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .tag {
+      padding: 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--text-sub);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .empty {
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      text-align: center;
+      background: var(--surface);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      box-shadow: var(--shadow-card);
+    }
+    .empty h2 { color: var(--ink); font-size: 20px; }
+    .empty p { margin-top: 8px; color: var(--text-sub); font-size: 14px; line-height: 1.7; }
+    @media (max-width: 960px) {
+      .topbar { align-items: center; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; gap: 10px 14px; }
+      .parent-nav { order: 3; width: 100%; max-width: none; }
+      .user-area { margin-left: auto; }
+    }
+    @media (max-width: 640px) {
+      .topbar { padding: 11px 14px; }
+      .brand { font-size: 15px; }
+      .child-switcher { width: 138px; max-width: 138px; font-size: 13px; }
+      .btn-logout { min-width: 72px; padding: 0 9px; font-size: 13px; }
+      .user-name { display: none; }
+      .main { width: min(100% - 28px, 600px); padding: 28px 0 48px; }
+      .page-title { margin-bottom: 25px; text-align: left; }
+      .page-title h1 { font-size: 26px; }
+      .page-title p { margin-left: 0; font-size: 13px; }
+      .timeline { padding-top: 2px; }
+      .timeline::before { top: 25px; bottom: 24px; left: 11px; width: 2px; }
+      .item { grid-template-columns: 24px minmax(0, 1fr); margin-bottom: 18px; }
+      .timeline-date { grid-column: 2; grid-row: 1; padding: 0 0 8px; text-align: left; }
+      .timeline-date strong, .timeline-date span { display: inline; }
+      .timeline-date strong { font-size: 14px; }
+      .timeline-date span { margin: 0 0 0 8px; font-size: 12px; }
+      .timeline-marker { grid-column: 1; grid-row: 1 / span 2; }
+      .timeline-marker::before { top: 25px; left: 11px; width: 11px; height: 11px; }
+      .card { grid-column: 2; grid-row: 2; padding: 18px; }
+      .card-head { display: block; }
+      .type-badge { display: inline-flex; margin-top: 11px; }
+      .item-title { font-size: 16px; line-height: 1.48; }
+      .submission-label { margin-top: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>家校共育</div>
+    <nav class="parent-nav" aria-label="家长端导航">
+      <a class="nav-link" href="home.html">本周任务</a>
+      <a class="nav-link active" href="timeline.html" aria-current="page">孩子成长时间线</a>
+      <a class="nav-link" href="feedback.html">教师的反馈</a>
+      <a class="nav-link" href="parent-concern.html">成长关注</a>
+    </nav>
+    <div class="user-area">
+      <select class="child-switcher" id="childSwitcher" title="切换孩子"></select>
+      <span class="user-name" id="userName"></span>
+      <button class="btn-logout" id="logoutBtn" type="button">退出登录</button>
+    </div>
+  </header>
+  <main class="main">
+    <div class="page-title">
+      <div class="eyebrow">成长档案</div>
+      <h1>孩子成长时间线</h1>
+      <p>按时间回看任务提交、校园观察、作品记录和成长反馈。</p>
+    </div>
+    <div id="emptyState" class="empty" style="display:none"><div><h2>还没有成长记录</h2><p>完成第一个亲子任务后，这里会记录孩子的成长足迹。</p></div></div>
+    <div class="timeline" id="timeline"></div>
+  </main>
+  <script src="js/api.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      requireAuth();
+      var auth = getAuth();
+      if (auth && auth.user) {
+        document.getElementById("userName").textContent = "你好，" + auth.user.displayName;
+        if (auth.user.role === "teacher") { window.location.href = "teacher.html"; return; }
+      }
+
+      function parseAttachments(value) {
+        try { return JSON.parse(value || "[]") || []; } catch (e) { return []; }
+      }
+
+      function attachmentHtml(value) {
+        var attachments = parseAttachments(value);
+        if (!attachments.length) return "";
+        var h = '<div class="attachment-preview">';
+        attachments.forEach(function (a) {
+          var name = esc(a.name || "附件");
+          var url = a.url || "";
+          if (url && String(a.type || "").indexOf("image/") === 0) h += '<img src="' + esc(url) + '" alt="' + name + '">';
+          else if (url && String(a.type || "").indexOf("audio/") === 0) h += '<audio controls src="' + esc(url) + '"></audio>';
+          else if (url && String(a.type || "").indexOf("video/") === 0) h += '<video controls src="' + esc(url) + '"></video>';
+          else h += '<div class="attachment-file">' + name + '</div>';
+        });
+        return h + '</div>';
+      }
+
+      function parseDate(value) {
+        var raw = String(value || "").trim();
+        if (!raw) return null;
+        if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+          raw = raw.replace(" ", "T") + "+08:00";
+        }
+        var date = new Date(raw);
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+
+      function formatDate(value) {
+        var date = parseDate(value);
+        if (!date) return { date: "日期待定", detail: "提交时间待定", full: "提交时间待定" };
+        var parts = new Intl.DateTimeFormat("zh-CN", {
+          timeZone: "Asia/Shanghai",
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23"
+        }).formatToParts(date).reduce(function (result, part) {
+          result[part.type] = part.value;
+          return result;
+        }, {});
+        var year = parts.year;
+        var month = parts.month;
+        var day = parts.day;
+        var time = parts.hour + ":" + parts.minute;
+        return {
+          date: month + "月" + day + "日",
+          detail: parts.weekday + " " + time,
+          full: year + "年" + month + "月" + day + "日 " + time
+        };
+      }
+
+      function sortTimelineItems(items) {
+        return (items || []).slice().sort(function (a, b) {
+          var timeA = parseDate(a && a.created_at);
+          var timeB = parseDate(b && b.created_at);
+          var timestampA = timeA ? timeA.getTime() : 0;
+          var timestampB = timeB ? timeB.getTime() : 0;
+          if (timestampA !== timestampB) return timestampB - timestampA;
+          return Number(b && b.id || 0) - Number(a && a.id || 0);
+        });
+      }
+
+      function populateChildren(data) {
+        var switcher = document.getElementById("childSwitcher");
+        switcher.innerHTML = "";
+        var children = data.children || [];
+        if (!children.length) {
+          var opt = document.createElement("option");
+          opt.textContent = "未绑定孩子";
+          switcher.appendChild(opt);
+          switcher.disabled = true;
+          return null;
+        }
+        switcher.disabled = false;
+        children.forEach(function (c) {
+          var o = document.createElement("option");
+          o.value = c.id;
+          o.textContent = c.name + (c.grade ? " · " + c.grade : "");
+          if (data.child && c.id === data.child.id) o.selected = true;
+          switcher.appendChild(o);
+        });
+        return data.child && data.child.id;
+      }
+
+      function render(items) {
+        items = sortTimelineItems(items);
+        document.getElementById("emptyState").style.display = items.length ? "none" : "grid";
+        document.getElementById("timeline").innerHTML = items.map(function (it) {
+          var date = formatDate(it.created_at);
+          if (it.timeline_type === "teacher_observation") {
+            var observationTags = String(it.observation_tags || "").split(",").filter(function (tag) {
+              return tag && tag.trim();
+            });
+            var observationHtml = '<article class="item is-observation">' +
+              '<div class="timeline-date"><strong>' + esc(date.date) + '</strong><span>' + esc(date.detail) + '</span></div>' +
+              '<div class="timeline-marker" aria-hidden="true"></div>' +
+              '<div class="card observation-card">' +
+              '<div class="card-head"><h2 class="item-title" title="' + esc(it.title || "今日校园观察") + '">' +
+              esc(it.title || "今日校园观察") + '</h2><span class="type-badge observation-badge">教师记录</span></div>' +
+              '<p class="item-meta">记录于 ' + esc(date.full) + ' · ' + esc(it.teacher_name || "老师") + '</p>' +
+              '<p class="submission-label">老师观察到</p>' +
+              '<div class="item-content">' + esc(it.content || "老师记录了一条校园观察。") + '</div>';
+            if (it.observation_analysis) {
+              observationHtml += '<div class="observation-analysis"><p class="observation-analysis-label">教育观察</p>' +
+                '<p>' + esc(it.observation_analysis) + '</p></div>';
+            }
+            if (observationTags.length) {
+              observationHtml += '<div class="tags">' + observationTags.map(function (tag) {
+                return '<span class="tag">' + esc(tag.trim()) + '</span>';
+              }).join("") + '</div>';
+            }
+            return observationHtml + '</div></article>';
+          }
+          var title = String(it.title || "成长实践记录");
+          var content = String(it.content || "").trim();
+          var teacherName = String(it.teacher_name || "老师");
+          var teacherInitial = teacherName.slice(0, 1);
+          var h = '<article class="item' + (it.feedback_id ? ' has-feedback' : '') + '">';
+          h += '<div class="timeline-date"><strong>' + esc(date.date) + '</strong><span>' + esc(date.detail) + '</span></div>';
+          h += '<div class="timeline-marker" aria-hidden="true"></div>';
+          h += '<div class="card">';
+          h += '<div class="card-head"><h2 class="item-title" title="' + esc(title) + '">' + esc(title) + '</h2>';
+          h += '<span class="type-badge">' + esc(it.task_type || "成长实践") + '</span></div>';
+          h += '<p class="item-meta">提交于 ' + esc(date.full) + '</p>';
+          h += '<p class="submission-label">孩子的记录</p>';
+          h += '<div class="item-content' + (content ? '' : ' is-empty') + '">' + esc(content || "这次提交没有填写文字记录。") + '</div>';
+          h += attachmentHtml(it.attachments);
+          if (it.feedback_id) {
+            h += '<div class="feedback-box"><div class="feedback-head"><span class="feedback-avatar" aria-hidden="true">' + esc(teacherInitial) + '</span><p class="label">' + esc(teacherName) + ' 的反馈</p></div><p class="content">' + esc(it.feedback_comment || "老师已完成点评") + '</p>';
+            var tags = (it.feedback_tags || "").split(",").filter(function (t) { return t && t.trim(); });
+            if (tags.length) h += '<div class="tags">' + tags.map(function (t) { return '<span class="tag">' + esc(t.trim()) + '</span>'; }).join("") + '</div>';
+            h += '</div>';
+          }
+          return h + '</div></article>';
+        }).join("");
+      }
+
+      function loadTimeline(childId) {
+        if (!childId) { render([]); return; }
+        api("/api/timeline?childId=" + childId).then(function (res) {
+          render(res.items || []);
+        }).catch(function (e) { console.error(e); render([]); });
+      }
+
+      function loadPage(childId) {
+        api("/api/home" + (childId ? "?childId=" + childId : "")).then(function (data) {
+          if (data.needQuestionnaire) { window.location.href = "questionnaire.html"; return; }
+          if (data.selectedChildInvalid) localStorage.removeItem("selectedChildId");
+          var selected = populateChildren(data);
+          if (selected) setSelectedChildId(selected);
+          loadTimeline(selected);
+        }).catch(function (e) { console.error(e); render([]); });
+      }
+
+      document.getElementById("childSwitcher").addEventListener("change", function () {
+        setSelectedChildId(this.value);
+        loadTimeline(this.value);
+      });
+      document.getElementById("logoutBtn").addEventListener("click", function () {
+        api("/api/auth/logout", { method: "POST" }).catch(function () {});
+        localStorage.removeItem("auth");
+        localStorage.removeItem("selectedChildId");
+        window.location.href = "index.html";
+      });
+      loadPage(getSelectedChildId());
+    })();
+  </script>
+</body>
+</html>

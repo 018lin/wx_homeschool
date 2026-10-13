@@ -1,0 +1,84 @@
+<view class="page page-with-nav">
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:if="{{!loading && student}}">
+    <view class="sg-head">
+      <view class="sg-head__name">{{student.name}}</view>
+      <view class="sg-head__meta">
+        {{student.grade}}<text wx:if="{{student.gender}}"> · {{student.gender}}</text>
+        <text wx:if="{{student.age}}"> · {{student.age}} 岁</text>
+      </view>
+      <view class="sg-head__sub" wx:if="{{aiMeta}}">{{aiMeta.status}}</view>
+    </view>
+
+    <view class="card">
+      <view class="card-title"><text class="card-title__text">家庭情况</text></view>
+      <view class="ts-row" wx:if="{{student.caregiver}}">
+        <text class="ts-row__label">陪伴人</text>
+        <text class="ts-row__value">{{student.caregiver}}</text>
+      </view>
+      <view class="ts-row" wx:if="{{student.timeAvailable}}">
+        <text class="ts-row__label">可陪伴</text>
+        <text class="ts-row__value">{{student.timeAvailable}}</text>
+      </view>
+      <view class="ts-row" wx:if="{{student.taskPreference}}">
+        <text class="ts-row__label">任务偏好</text>
+        <text class="ts-row__value">{{student.taskPreference}}</text>
+      </view>
+      <view class="mt-12" wx:if="{{student.interests.length}}">
+        <text class="tag" wx:for="{{student.interests}}" wx:key="*this">{{item}}</text>
+      </view>
+      <view class="ts-note" wx:if="{{student.familyNote}}">{{student.familyNote}}</view>
+    </view>
+
+    <view class="card" wx:if="{{history}}">
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{history.totalCompleted || 0}}</view>
+          <view class="stat__label">累计完成</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{history.completedTypes.length || 0}}</view>
+          <view class="stat__label">涉及类型</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section-title">任务建议</view>
+
+    <view class="card" wx:for="{{suggestions}}" wx:key="title">
+      <view class="between mb-12">
+        <text class="badge {{item.aiGenerated ? 'badge-teal' : 'badge-primary'}}">
+          {{item.aiGenerated ? 'AI 建议' : '规则推荐'}}
+        </text>
+        <text class="text-sm text-muted">{{item.duration}} 分钟 · {{item.type}}</text>
+      </view>
+
+      <view class="sg-title">{{item.title}}</view>
+
+      <view class="sg-block" wx:if="{{item.goal}}">
+        <view class="sg-block__label">目标</view>
+        <view class="sg-block__body">{{item.goal}}</view>
+      </view>
+      <view class="sg-block" wx:if="{{item.steps}}">
+        <view class="sg-block__label">步骤</view>
+        <view class="sg-block__body">{{item.steps}}</view>
+      </view>
+      <view class="sg-block" wx:if="{{item.dialogueTips}}">
+        <view class="sg-block__label">话术</view>
+        <view class="sg-block__body sg-block__body--teal">{{item.dialogueTips}}</view>
+      </view>
+      <view class="sg-block" wx:if="{{item.submitHint}}">
+        <view class="sg-block__label">提交</view>
+        <view class="sg-block__body">{{item.submitHint}}</view>
+      </view>
+      <view class="sg-rationale" wx:if="{{item.rationale}}">{{item.rationale}}</view>
+
+      <button class="btn btn-outline btn-block mt-24" data-index="{{index}}" bindtap="useSuggestion">
+        按此建议发布任务
+      </button>
+    </view>
+  </block>
+</view>
+
+<nav-bar role="teacher" active="students" />

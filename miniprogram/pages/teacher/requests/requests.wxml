@@ -1,0 +1,123 @@
+<view class="page page-with-nav">
+  <view class="rq-head">
+    <view class="rq-head__title">家长成长关注</view>
+    <view class="rq-head__sub">家长提交的观察与诉求，需要你回复或转化为任务</view>
+  </view>
+
+  <view class="segment">
+    <view class="segment__item {{filter === 'pending' ? 'active' : ''}}" data-filter="pending" bindtap="switchFilter">待处理</view>
+    <view class="segment__item {{filter === 'approved' ? 'active' : ''}}" data-filter="approved" bindtap="switchFilter">已采纳</view>
+    <view class="segment__item {{filter === 'rejected' ? 'active' : ''}}" data-filter="rejected" bindtap="switchFilter">未采纳</view>
+    <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">全部</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">💬</view>
+      <view class="empty__text">没有需要处理的关注</view>
+    </view>
+  </view>
+
+  <view class="card" wx:for="{{items}}" wx:key="id">
+    <view class="between mb-12">
+      <view class="align-center">
+        <text class="bold">{{item.childName}}</text>
+        <text class="badge badge-gray ml">{{item.grade}}</text>
+        <text class="badge badge-primary ml" wx:if="{{item.category}}">{{item.category}}</text>
+      </view>
+      <text class="badge" style="background:{{item.statusBg}};color:{{item.statusColor}}">{{item.statusText}}</text>
+    </view>
+
+    <view class="rq-title">{{item.title}}</view>
+    <view class="text-sm text-muted mt-8">来自 {{item.parentName}} · {{item.timeText}}</view>
+
+    <view class="rq-block" wx:if="{{item.behavior}}">
+      <view class="rq-block__label">家长观察到的情况</view>
+      <view class="rq-block__body">{{item.behavior}}</view>
+    </view>
+    <view class="rq-block" wx:if="{{item.context}}">
+      <view class="rq-block__label">发生场景</view>
+      <view class="rq-block__body">{{item.context}}</view>
+    </view>
+    <view class="rq-block" wx:if="{{item.frequency}}">
+      <view class="rq-block__label">频率</view>
+      <view class="rq-block__body">{{item.frequency}}</view>
+    </view>
+    <view class="rq-block" wx:if="{{item.impact}}">
+      <view class="rq-block__label">影响</view>
+      <view class="rq-block__body">{{item.impact}}</view>
+    </view>
+    <view class="rq-block" wx:if="{{item.expectation}}">
+      <view class="rq-block__label">家长期望</view>
+      <view class="rq-block__body">{{item.expectation}}</view>
+    </view>
+    <view class="rq-block" wx:if="{{item.constraints}}">
+      <view class="rq-block__label">家庭限制</view>
+      <view class="rq-block__body">{{item.constraints}}</view>
+    </view>
+    <view class="quote quote-teal" wx:if="{{item.aiPlan}}">
+      <text class="bold">AI 建议方案：</text>{{item.aiPlan}}
+    </view>
+    <view class="quote" wx:if="{{item.teacherComment}}">
+      <text class="bold">我的回复：</text>{{item.teacherComment}}
+    </view>
+    <view class="field__hint mt-12" wx:if="{{item.taskTitle}}">已生成任务：{{item.taskTitle}}</view>
+
+    <!-- 审核区 -->
+    <block wx:if="{{item.status === 'pending'}}">
+      <button class="btn btn-outline btn-block mt-24" wx:if="{{reviewId !== item.id}}" data-id="{{item.id}}" bindtap="openReview">
+        处理这条关注
+      </button>
+
+      <block wx:else>
+        <view class="section-title">同意后将创建个性化任务</view>
+
+        <view class="field">
+          <view class="field__label">任务标题</view>
+          <input class="field__input" value="{{title}}" data-key="title" bindinput="onInput" placeholder-class="ph" placeholder="任务标题" />
+        </view>
+        <view class="field">
+          <view class="field__label">目标</view>
+          <input class="field__input" value="{{goal}}" data-key="goal" bindinput="onInput" placeholder-class="ph" placeholder="任务目标" />
+        </view>
+        <view class="field">
+          <view class="field__label">步骤</view>
+          <textarea class="field__textarea field__textarea--sm" value="{{steps}}" data-key="steps" bindinput="onInput" placeholder-class="ph" placeholder="具体步骤" />
+        </view>
+        <view class="field">
+          <view class="field__label">时长（分钟）</view>
+          <input class="field__input" type="number" value="{{duration}}" data-key="duration" bindinput="onInput" placeholder-class="ph" placeholder="20" />
+        </view>
+        <view class="field">
+          <view class="field__label">难度</view>
+          <view class="wrap">
+            <view class="option {{difficulty === it ? 'active' : ''}}" wx:for="{{difficulties}}" wx:for-item="it" wx:key="*this" data-value="{{it}}" bindtap="pickDifficulty">{{it}}</view>
+          </view>
+        </view>
+
+        <view class="field">
+          <view class="field__label">回复家长（拒绝时必填）</view>
+          <textarea
+            class="field__textarea field__textarea--sm"
+            placeholder="写一句家长能直接看懂的话…"
+            placeholder-class="ph"
+            maxlength="500"
+            value="{{comment}}"
+            data-key="comment"
+            bindinput="onInput"
+          />
+        </view>
+
+        <view class="rq-actions">
+          <button class="btn btn-gray" bindtap="closeReview">取消</button>
+          <button class="btn btn-outline" data-decision="rejected" bindtap="onReview" disabled="{{submitting}}">暂不采纳</button>
+          <button class="btn btn-primary" data-decision="approved" bindtap="onReview" disabled="{{submitting}}">同意实施</button>
+        </view>
+      </block>
+    </block>
+  </view>
+</view>
+
+<nav-bar role="teacher" active="workbench" />

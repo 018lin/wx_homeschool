@@ -1,0 +1,74 @@
+.sd-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ml {
+  margin-left: 12rpx;
+}
+
+.sd-task-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #0057b8;
+  line-height: 1.5;
+}
+
+.task-meta {
+  margin-top: 12rpx;
+}
+
+.sd-content {
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.8;
+  background: #f8fbff;
+  border-radius: 12rpx;
+  padding: 24rpx;
+  white-space: pre-wrap;
+}
+
+.sd-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+}
+
+.sd-imgs__pic {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 12rpx;
+  margin: 0 16rpx 16rpx 0;
+}
+
+.sd-fb {
+  background: #e9f8f0;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+}
+
+.sd-fb:last-child {
+  margin-bottom: 0;
+}
+
+.sd-fb__teacher {
+  font-size: 24rpx;
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.sd-fb__text {
+  font-size: 27rpx;
+  color: #1f2937;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.ph {
+  color: #b6c0cd;
+}
+.sd-media { margin-top: 16rpx; }
+.sd-audio { margin-bottom: 12rpx; padding: 18rpx; border-radius: 12rpx; color: #0057b8; background: #edf5ff; font-size: 24rpx; }
+.sd-video { width: 100%; height: 340rpx; margin-bottom: 12rpx; border-radius: 12rpx; background: #111827; }

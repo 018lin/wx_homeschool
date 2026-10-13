@@ -1,0 +1,67 @@
+<view class="page page-with-nav">
+  <view class="at-head">
+    <view class="at-head__title">任务看板</view>
+    <view class="at-head__sub">当前 {{tasks.length}} 条 · 全部 {{allTasks.length}} 条 · {{studentCount}} 名学生</view>
+  </view>
+
+  <view class="segment">
+    <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">全部 {{filterCounts.all}}</view>
+    <view class="segment__item {{filter === 'incomplete' ? 'active' : ''}}" data-filter="incomplete" bindtap="switchFilter">仍有未完成 {{filterCounts.incomplete}}</view>
+    <view class="segment__item {{filter === 'completed' ? 'active' : ''}}" data-filter="completed" bindtap="switchFilter">全部完成 {{filterCounts.completed}}</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+  <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
+
+  <view class="card" wx:if="{{!loading && !error && !tasks.length}}">
+    <view class="empty">
+      <view class="empty__icon">📋</view>
+      <view class="empty__text">当前筛选下没有任务</view>
+    </view>
+  </view>
+
+  <view class="card" wx:for="{{tasks}}" wx:key="id">
+    <view class="between mb-12" data-id="{{item.id}}" bindtap="toggle">
+      <view class="flex-1">
+        <view class="title">{{item.title}}</view>
+        <view class="text-sm text-muted mt-8">
+          {{item.scope}} · {{item.studentName}} · {{item.publisherName}}
+        </view>
+        <view class="mt-12">
+          <text class="tag" wx:if="{{item.type}}">{{item.type}}</text>
+          <text class="tag" wx:if="{{item.duration}}">{{item.duration}} 分钟</text>
+          <text class="tag" wx:if="{{item.weekStart}}">{{item.weekStart}} 起</text>
+        </view>
+      </view>
+      <view class="at-rate">
+        <view class="at-rate__value">{{item.completionRate}}%</view>
+        <view class="at-rate__sub">{{item.completedCount}}/{{item.targetCount}}</view>
+      </view>
+    </view>
+
+    <view class="at-progress">
+      <view class="at-progress__fill" style="width:{{item.completionRate}}%"></view>
+    </view>
+
+    <view class="at-detail" wx:if="{{expanded === item.id}}">
+      <view class="section-title">完成情况</view>
+      <view class="list-item" wx:for="{{item.details}}" wx:for-item="d" wx:key="studentId">
+        <view class="list-item__main">
+          <view class="list-item__title">{{d.studentName}} <text class="text-sm text-muted">{{d.grade}}</text></view>
+          <view class="list-item__desc clamp-1" wx:if="{{d.content}}">{{d.content}}</view>
+          <view class="list-item__desc" wx:if="{{d.submittedAt}}">{{d.submittedAt}} · {{d.subType}}</view>
+        </view>
+        <text class="badge {{d.statusCls}}">{{d.statusText}}</text>
+      </view>
+      <view class="empty" wx:if="{{!item.details.length}}">
+        <view class="empty__text">暂无学生明细</view>
+      </view>
+    </view>
+
+    <view class="at-toggle" data-id="{{item.id}}" bindtap="toggle">
+      {{expanded === item.id ? '收起明细' : '查看明细'}}
+    </view>
+  </view>
+</view>
+
+<nav-bar role="admin" active="tasks" />

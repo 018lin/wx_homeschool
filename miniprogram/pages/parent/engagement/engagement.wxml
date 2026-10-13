@@ -1,0 +1,84 @@
+<view class="page page-with-nav">
+  <view class="eg-head">
+    <view class="eg-head__title">亲子参与</view>
+    <view class="eg-head__sub">{{child ? child.name : ''}} · 近 {{engagement.windowDays || 30}} 天的陪伴轨迹</view>
+  </view>
+
+  <view class="segment">
+    <view class="segment__item {{tab === 'result' ? 'active' : ''}}" data-tab="result" bindtap="switchTab">参与情况</view>
+    <view class="segment__item {{tab === 'privacy' ? 'active' : ''}}" data-tab="privacy" bindtap="switchTab">数据说明</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:if="{{!loading && tab === 'result'}}">
+    <view class="card" wx:if="{{engagement}}">
+      <view class="eg-score-row">
+        <view class="eg-score" style="color:{{engagement.color}}">{{engagement.score}}</view>
+        <view class="flex-1">
+          <view class="eg-level" style="color:{{engagement.color}}">{{engagement.level}}</view>
+          <view class="text-sm text-muted mt-8">置信度：{{engagement.confidence}}</view>
+        </view>
+      </view>
+
+      <view class="quote mt-24" wx:if="{{engagement.recommendation}}">{{engagement.recommendation}}</view>
+
+      <view class="section-title" wx:if="{{engagement.evidence.length}}">判断依据</view>
+      <view class="eg-evidence" wx:for="{{engagement.evidence}}" wx:key="*this">· {{item}}</view>
+    </view>
+
+    <view class="card" wx:if="{{engagement && engagement.counts}}">
+      <view class="card-title"><text class="card-title__text">行为统计</text></view>
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{engagement.counts.touchpoints || 0}}</view>
+          <view class="stat__label">主动查看</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{engagement.counts.followThrough || 0}}</view>
+          <view class="stat__label">完成行动</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{engagement.counts.activeDays || 0}}</view>
+          <view class="stat__label">活跃天数</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="between">
+        <view class="flex-1">
+          <view class="title">关注分析</view>
+          <view class="text-sm text-muted mt-8">关闭后不再统计你的陪伴行为</view>
+        </view>
+        <switch checked="{{enabled}}" bindchange="onToggleEnabled" color="#0057b8" />
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{engagement && !feedbacked}}">
+      <view class="card-title"><text class="card-title__text">这个判断准确吗</text></view>
+      <view class="wrap">
+        <view
+          class="option"
+          wx:for="{{choices}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="onFeedback"
+        >{{item}}</view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:if="{{!loading && tab === 'privacy'}}">
+    <view class="card">
+      <view class="card-title"><text class="card-title__text">我们会看这些数据</text></view>
+      <view class="eg-list-item" wx:for="{{collected}}" wx:key="*this">✓ {{item}}</view>
+    </view>
+    <view class="card">
+      <view class="card-title"><text class="card-title__text">我们不会看这些数据</text></view>
+      <view class="eg-list-item" wx:for="{{notCollected}}" wx:key="*this">× {{item}}</view>
+    </view>
+  </block>
+</view>
+
+<nav-bar role="parent" active="home" />

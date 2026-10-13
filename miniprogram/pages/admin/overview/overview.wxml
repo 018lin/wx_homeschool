@@ -1,0 +1,41 @@
+<view class="page page-with-nav">
+  <view class="ad-head">
+    <view class="ad-head__title">管理员工作台</view>
+    <view class="ad-head__sub" wx:if="{{generatedAt}}">数据更新于 {{generatedAt}}</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card" wx:if="{{stats}}">
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{stats.teacherCount || 0}}</view>
+          <view class="stat__label">教师</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.studentCount || 0}}</view>
+          <view class="stat__label">学生</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.parentCount || 0}}</view>
+          <view class="stat__label">家长</view>
+        </view>
+      </view>
+      <button class="btn btn-primary btn-block mt-24" bindtap="goAccounts">账号管理</button>
+    </view>
+
+    <view class="card">
+      <view class="card-title">
+        <text class="card-title__text">班级管理</text>
+      </view>
+      <view class="text-sm text-muted">
+        创建班级并绑定教师、学生与家长。教师仅能管理自己所在的班级，学生与家长的提交会归入该班级的负责教师。
+      </view>
+      <button class="btn btn-primary btn-block mt-24" bindtap="goClasses">创建班级</button>
+    </view>
+
+  </block>
+</view>
+
+<nav-bar role="admin" active="overview" />

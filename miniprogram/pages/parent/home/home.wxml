@@ -1,0 +1,149 @@
+<view class="page page-with-nav">
+  <!-- 顶部问候 + 孩子切换 -->
+  <view class="home-head">
+    <view class="home-head__row">
+      <view class="flex-1">
+        <view class="home-head__hello">{{greeting}}，{{userName}}</view>
+        <view class="home-head__sub">{{todayText}}</view>
+      </view>
+      <view class="home-head__bell" bindtap="goNotifications">
+        <text class="home-head__bell-icon">🔔</text>
+        <view class="home-head__dot" wx:if="{{unreadCount > 0}}">{{unreadCount > 99 ? '99+' : unreadCount}}</view>
+      </view>
+    </view>
+
+    <scroll-view scroll-x class="child-bar" wx:if="{{children.length > 1}}">
+      <view
+        class="child-chip {{item.id === currentChildId ? 'active' : ''}}"
+        wx:for="{{children}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onSwitchChild"
+      >
+        {{item.name}}
+      </view>
+    </scroll-view>
+
+    <view class="child-bar-single" wx:if="{{children.length === 1}}">
+      <text class="badge badge-primary">{{children[0].name}} · {{children[0].grade || '未填年级'}}</text>
+    </view>
+  </view>
+
+  <!-- 本周任务 -->
+  <view class="card" wx:if="{{task}}">
+    <view class="card-title">
+      <text class="card-title__text">本周任务</text>
+      <text class="badge" style="background:{{task.statusBg}};color:{{task.statusColor}}">{{task.statusText}}</text>
+    </view>
+
+    <view class="task-title">{{task.title}}</view>
+    <view class="task-meta">
+      <text class="tag" wx:if="{{task.type}}">{{task.type}}</text>
+      <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
+      <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+    </view>
+    <view class="quote" wx:if="{{task.goal}}">{{task.goal}}</view>
+
+    <button class="btn btn-primary btn-block mt-24" bindtap="goTask">
+      {{task.statusText === '已完成' ? '查看任务详情' : (task.statusText === '草稿待提交' ? '继续完成提交' : '去完成')}}
+    </button>
+  </view>
+
+  <view class="card" wx:else>
+    <view class="empty">
+      <view class="empty__icon">📋</view>
+      <view class="empty__text">本周还没有新任务</view>
+      <view class="empty__hint">老师发布后会自动出现在这里</view>
+    </view>
+  </view>
+
+  <!-- 老师反馈 -->
+  <view class="card" wx:if="{{feedback}}">
+    <view class="card-title">
+      <text class="card-title__text">老师反馈</text>
+      <text class="text-sm text-muted">{{feedback.timeText}}</text>
+    </view>
+    <view class="feedback-teacher">{{feedback.teacherName || '老师'}} · {{feedback.taskTitle || ''}}</view>
+    <view class="feedback-comment">{{feedback.comment}}</view>
+    <view class="mt-16" wx:if="{{feedback.tags.length}}">
+      <text class="tag" wx:for="{{feedback.tags}}" wx:key="*this">{{item}}</text>
+    </view>
+  </view>
+
+  <!-- 成长数据 -->
+  <view class="card">
+    <view class="card-title">
+      <text class="card-title__text">成长数据</text>
+    </view>
+    <view class="stat-grid">
+      <view class="stat">
+        <view class="stat__value">{{timeline.taskCount || 0}}</view>
+        <view class="stat__label">完成任务</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{timeline.workCount || 0}}</view>
+        <view class="stat__label">提交作品</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{parentTaskRequest ? 1 : 0}}</view>
+        <view class="stat__label">成长关注</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 亲子参与 -->
+  <view class="card" wx:if="{{engagement}}">
+    <view class="card-title">
+      <text class="card-title__text">亲子参与</text>
+      <text class="card-title__more" bindtap="goEngagement">详情 ›</text>
+    </view>
+    <view class="engage-row">
+      <view class="engage-score" style="color:{{engagement.color}}">{{engagement.score}}</view>
+      <view class="flex-1">
+        <view class="engage-level" style="color:{{engagement.color}}">{{engagement.level}}</view>
+        <view class="text-sm text-muted mt-8">{{engagement.recommendation}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 成长关注状态 -->
+  <view class="card" wx:if="{{parentTaskRequest}}">
+    <view class="card-title">
+      <text class="card-title__text">我提交的成长关注</text>
+      <text class="badge" style="background:{{parentTaskRequest.statusBg}};color:{{parentTaskRequest.statusColor}}">
+        {{parentTaskRequest.statusText}}
+      </text>
+    </view>
+    <view class="task-title">{{parentTaskRequest.title}}</view>
+    <view class="quote quote-teal" wx:if="{{parentTaskRequest.teacher_comment}}">
+      老师回复：{{parentTaskRequest.teacher_comment}}
+    </view>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="section-title">快捷入口</view>
+  <view class="card">
+    <view class="entry-grid">
+      <view class="entry" bindtap="goTimeline">
+        <view class="entry__icon">🌱</view>
+        <view class="entry__label">成长档案</view>
+      </view>
+      <view class="entry" bindtap="goConcern">
+        <view class="entry__icon">💬</view>
+        <view class="entry__label">成长关注</view>
+      </view>
+      <view class="entry" bindtap="goNotifications">
+        <view class="entry__icon">🔔</view>
+        <view class="entry__label">通知</view>
+      </view>
+      <view class="entry" bindtap="goChildren">
+        <view class="entry__icon">👶</view>
+        <view class="entry__label">孩子档案</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+</view>
+
+<nav-bar role="parent" active="home" />

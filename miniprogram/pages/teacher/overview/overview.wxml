@@ -1,0 +1,143 @@
+<view class="page page-with-nav">
+  <view class="ov-head">
+    <view class="ov-head__title">班级概览</view>
+    <view class="ov-head__sub">本周完成情况与家庭结构画像</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+  <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
+
+  <block wx:if="{{!loading && !error}}">
+    <view class="card" wx:if="{{stats}}">
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value">{{stats.totalStudents || 0}}</view>
+          <view class="stat__label">学生</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.submittedCount || 0}}</view>
+          <view class="stat__label">已提交</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.completionRate || 0}}%</view>
+          <view class="stat__label">完成率</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.feedbackRate || 0}}%</view>
+          <view class="stat__label">点评率</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value" style="color:#b42318">{{stats.pendingFeedback || 0}}</view>
+          <view class="stat__label">待点评</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{stats.personalTaskCount || 0}}</view>
+          <view class="stat__label">个性化任务</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{task}}">
+      <view class="card-title"><text class="card-title__text">本周全班任务</text></view>
+      <view class="sg-title">{{task.title}}</view>
+      <view class="mt-12">
+        <text class="tag" wx:if="{{task.task_type}}">{{task.task_type}}</text>
+        <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{insights.length}}">
+      <view class="card-title"><text class="card-title__text">数据洞察</text></view>
+      <view class="ov-insight" wx:for="{{insights}}" wx:key="*this">· {{item}}</view>
+    </view>
+
+    <view class="card" wx:if="{{personalTasks.length}}">
+      <view class="card-title">
+        <text class="card-title__text">个性化任务</text>
+        <text class="card-title__more" bindtap="goPublish">+ 新建</text>
+      </view>
+      <view class="list-item" wx:for="{{personalTasks}}" wx:key="id">
+        <view class="list-item__main">
+          <view class="list-item__title">{{item.title}}</view>
+          <view class="list-item__desc">{{item.child_name}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{unsubmitted.length}}">
+      <view class="card-title">
+        <text class="card-title__text">尚未提交（{{unsubmitted.length}}）</text>
+        <text class="card-title__more" bindtap="generateReminder">生成提醒模板</text>
+      </view>
+      <view class="reminder-row" wx:for="{{unsubmitted}}" wx:key="id">
+        <view><view class="bold">{{item.name}}</view><view class="text-sm text-muted">{{item.grade}}</view></view>
+        <button class="mini-action" data-id="{{item.id}}" data-name="{{item.name}}" bindtap="sendReminder" disabled="{{reminding}}">单个提醒</button>
+      </view>
+      <view wx:if="{{reminderTemplate}}" class="reminder-editor">
+        <textarea class="field__textarea field__textarea--sm" value="{{reminderTemplate}}" bindinput="onReminderInput" maxlength="1200" />
+        <view class="reminder-actions">
+          <button class="btn btn-gray" bindtap="copyReminder">复制模板</button>
+          <button class="btn btn-primary" bindtap="sendAllReminders" disabled="{{reminding}}">{{reminding ? '处理中…' : '批量提醒'}}</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{caregiverDist.length}}">
+      <view class="card-title"><text class="card-title__text">主要陪伴人分布</text></view>
+      <view class="ov-bar" wx:for="{{caregiverDist}}" wx:key="label">
+        <view class="ov-bar__label">{{item.label}}</view>
+        <view class="ov-bar__track">
+          <view class="ov-bar__fill" style="width:{{item.count * 100 / stats.totalStudents}}%"></view>
+        </view>
+        <view class="ov-bar__count">{{item.count}}</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{interestDist.length}}">
+      <view class="card-title"><text class="card-title__text">兴趣分布</text></view>
+      <view class="ov-chips">
+        <text class="badge badge-primary" wx:for="{{interestDist}}" wx:key="label">
+          {{item.label}} {{item.count}}
+        </text>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{engagementSummary}}">
+      <view class="card-title"><text class="card-title__text">家长关注分布</text></view>
+      <view class="stat-grid">
+        <view class="stat">
+          <view class="stat__value" style="color:#157a45">{{engagementSummary.high || 0}}</view>
+          <view class="stat__label">较高</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value" style="color:#0f766e">{{engagementSummary.medium || 0}}</view>
+          <view class="stat__label">中等</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value" style="color:#8a4b10">{{engagementSummary.low || 0}}</view>
+          <view class="stat__label">偏低</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value" style="color:#8795a7">{{engagementSummary.insufficient || 0}}</view>
+          <view class="stat__label">证据不足</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{engagementRows.length}}">
+      <view class="card-title"><text class="card-title__text">家长关注明细</text></view>
+      <view class="list-item" wx:for="{{engagementRows}}" wx:key="childId">
+        <view class="list-item__main">
+          <view class="list-item__title">{{item.childName}}</view>
+          <view class="list-item__desc">{{item.caregiver}}{{item.enabled ? '' : '（已关闭分析）'}}</view>
+        </view>
+        <view class="text-right">
+          <view style="color:{{item.color}};font-weight:600">{{item.score}}</view>
+          <view class="text-sm text-muted">{{item.level}}</view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>
+
+<nav-bar role="teacher" active="overview" />
