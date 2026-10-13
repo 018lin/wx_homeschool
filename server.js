@@ -2591,6 +2591,11 @@ async function handleApi(req, res, pathname, query) {
       const limitValue = Number(query.get("limit") || 200);
       const limit = Math.max(1, Math.min(500, Number.isFinite(limitValue) ? limitValue : 200));
       if (peerId) {
+        // 权限校验：非管理员只能查看可联系对象的会话
+        const allowedPeers = await getMessagePeerIds(user);
+        if (allowedPeers !== null && allowedPeers.indexOf(peerId) < 0) {
+          return sendJson(res, 403, { message: "你没有查看该会话的权限" });
+        }
         const peer = await db.prepare("SELECT id, account, display_name, role FROM users WHERE id = ?").get(peerId);
         if (!peer) return sendJson(res, 404, { message: "联系人不存在" });
         const messages = await db.prepare(

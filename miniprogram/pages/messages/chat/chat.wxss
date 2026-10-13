@@ -1,0 +1,31 @@
+/* 聊天页（微信风格）：气泡 + 底部固定输入栏 */
+page { height: 100%; }
+.chat-page { display: flex; flex-direction: column; height: 100vh; background: #f5f9ff; box-sizing: border-box; }
+
+/* 消息区 */
+.chat-list { flex: 1; min-height: 0; }
+.chat-list__inner { padding: 24rpx 24rpx 40rpx; }
+.chat-tip, .chat-empty { text-align: center; color: var(--text-muted); font-size: 24rpx; padding: 60rpx 0; }
+
+.msg { display: flex; align-items: flex-start; margin-bottom: 28rpx; }
+.msg--theirs { justify-content: flex-start; }
+.msg--mine { justify-content: flex-end; }
+
+.msg__avatar { width: 76rpx; height: 76rpx; border-radius: 14rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; font-weight: 600; flex-shrink: 0; background: #0f9d7e; color: #fff; }
+.msg__avatar--me { background: var(--primary); }
+
+.msg__col { max-width: 66%; margin: 0 18rpx; display: flex; flex-direction: column; }
+.msg--theirs .msg__col { align-items: flex-start; }
+.msg--mine .msg__col { align-items: flex-end; }
+
+.msg__bubble { padding: 18rpx 22rpx; border-radius: 18rpx; background: #ffffff; color: var(--text); font-size: 28rpx; line-height: 1.55; white-space: pre-wrap; word-break: break-word; box-shadow: 0 2rpx 8rpx rgba(15, 40, 80, .06); }
+.msg--theirs .msg__bubble { border-top-left-radius: 6rpx; }
+.msg--mine .msg__bubble { background: var(--primary); color: #fff; border-top-right-radius: 6rpx; }
+
+.msg__time { margin-top: 8rpx; color: var(--text-muted); font-size: 20rpx; }
+
+/* 底部输入栏 */
+.chat-composer { display: flex; align-items: flex-end; gap: 14rpx; padding: 16rpx 20rpx calc(16rpx + env(safe-area-inset-bottom)); background: #ffffff; border-top: 2rpx solid var(--line); }
+.chat-composer__input { flex: 1; min-height: 72rpx; max-height: 220rpx; padding: 16rpx 20rpx; background: #f2f5f9; border-radius: 16rpx; font-size: 28rpx; line-height: 1.4; box-sizing: border-box; }
+.chat-composer__send { width: 132rpx; height: 72rpx; margin: 0; padding: 0; line-height: 72rpx; border-radius: 16rpx; background: var(--primary); color: #fff; font-size: 27rpx; }
+.chat-composer__send[disabled] { opacity: .45; }

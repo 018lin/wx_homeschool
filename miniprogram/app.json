@@ -2,6 +2,7 @@
   "pages": [
     "pages/login/login",
     "pages/messages/messages",
+    "pages/messages/chat/chat",
     "pages/mine/mine",
     "pages/parent/home/home",
     "pages/parent/task/task",

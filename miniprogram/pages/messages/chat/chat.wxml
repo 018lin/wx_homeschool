@@ -1,0 +1,20 @@
+<view class="chat-page">
+  <scroll-view class="chat-list" scroll-y scroll-into-view="{{scrollIntoView}}" scroll-with-animation>
+    <view class="chat-list__inner">
+      <view class="chat-tip" wx:if="{{loading}}">加载中…</view>
+      <view class="chat-empty" wx:if="{{!loading && !messages.length}}">还没有消息，发一句问候吧</view>
+      <view class="msg {{item.mine ? 'msg--mine' : 'msg--theirs'}}" wx:for="{{messages}}" wx:key="id" id="msg-{{item.id}}">
+        <view class="msg__avatar" wx:if="{{!item.mine}}">{{peerInitial}}</view>
+        <view class="msg__col">
+          <view class="msg__bubble">{{item.content}}</view>
+          <view class="msg__time">{{item.timeText}}</view>
+        </view>
+        <view class="msg__avatar msg__avatar--me" wx:if="{{item.mine}}">{{myInitial}}</view>
+      </view>
+    </view>
+  </scroll-view>
+  <view class="chat-composer">
+    <textarea class="chat-composer__input" maxlength="2000" auto-height placeholder="输入消息…" placeholder-class="ph" value="{{draft}}" bindinput="onDraftInput" confirm-type="send" adjust-position cursor-spacing="16" disable-default-padding="{{true}}" />
+    <button class="chat-composer__send" bindtap="send" disabled="{{sending || !canSend}}">{{sending ? '发送中' : '发送'}}</button>
+  </view>
+</view>
