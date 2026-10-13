@@ -1,0 +1,31 @@
+<view class="page page-with-nav message-page">
+  <view class="message-head">
+    <view class="message-head__title">信息交流</view>
+    <view class="message-head__sub">和家长、老师、管理员直接沟通</view>
+  </view>
+  <view class="message-layout">
+    <view class="contact-panel">
+      <view class="panel-title">联系人</view>
+      <input class="contact-search" placeholder="搜索姓名或账号" placeholder-class="ph" value="{{keyword}}" bindinput="onSearch" />
+      <scroll-view class="contact-list" scroll-y>
+        <view class="contact-item {{activePeer.id === item.id ? 'active' : ''}}" wx:for="{{filteredContacts}}" wx:key="id" data-peer="{{item}}" bindtap="openPeer">
+          <view class="contact-avatar">{{item.initial}}</view>
+          <view class="contact-main"><view class="contact-name">{{item.name}}</view><view class="contact-role">{{item.roleLabel}} · {{item.account}}</view></view>
+          <view class="contact-unread" wx:if="{{item.unreadCount}}">{{item.unreadCount > 99 ? '99+' : item.unreadCount}}</view>
+        </view>
+        <view class="panel-empty" wx:if="{{!filteredContacts.length}}">暂无可联系的用户</view>
+      </scroll-view>
+    </view>
+    <view class="conversation-panel">
+      <view class="conversation-head" wx:if="{{activePeer.id}}"><view><view class="conversation-title">{{activePeer.name}}</view><view class="conversation-sub">{{activePeer.roleLabel}} · {{activePeer.account}}</view></view><view class="conversation-refresh" bindtap="refreshConversation">刷新</view></view>
+      <view class="conversation-empty" wx:if="{{!activePeer.id}}"><view class="conversation-empty__icon">✉</view><view class="conversation-empty__title">选择联系人开始交流</view><view class="conversation-empty__hint">发送的消息会保存在双方的交流记录中</view></view>
+      <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollIntoView}}" wx:if="{{activePeer.id}}">
+        <view class="message-empty" wx:if="{{!messages.length}}">还没有消息，发一句问候吧</view>
+        <view class="message-row {{item.mine ? 'mine' : 'theirs'}}" wx:for="{{messages}}" wx:key="id" id="msg-{{item.id}}"><view class="message-bubble">{{item.content}}</view><view class="message-time">{{item.timeText}}</view></view>
+      </scroll-view>
+      <view class="composer" wx:if="{{activePeer.id}}"><textarea class="composer-input" maxlength="2000" auto-height placeholder="输入消息…" placeholder-class="ph" value="{{draft}}" bindinput="onDraftInput" /><button class="send-btn" bindtap="send" disabled="{{sending || !canSend}}">{{sending ? '发送中' : '发送'}}</button></view>
+    </view>
+  </view>
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+</view>
+<nav-bar role="{{role}}" active="messages" />

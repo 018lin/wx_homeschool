@@ -5,6 +5,7 @@ var TABS = {
     { key: "feedback", label: "教师反馈", url: "/pages/parent/feedback/feedback" },
     { key: "timeline", label: "成长档案", url: "/pages/parent/timeline/timeline" },
     { key: "concern", label: "成长关注", url: "/pages/parent/concern/concern" },
+    { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],
   student: [
@@ -16,6 +17,7 @@ var TABS = {
     { key: "students", label: "学生", url: "/pages/teacher/students/students" },
     { key: "submissions", label: "批阅", url: "/pages/teacher/submissions/submissions" },
     { key: "overview", label: "班级", url: "/pages/teacher/overview/overview" },
+    { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],
   admin: [
@@ -25,6 +27,7 @@ var TABS = {
     { key: "timeline", label: "时间线", url: "/pages/admin/timeline/timeline" },
     { key: "ai", label: "AI 洞察", url: "/pages/teacher/ai/ai" },
     { key: "students", label: "学生档案", url: "/pages/teacher/students/students" },
+    { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ]
 };

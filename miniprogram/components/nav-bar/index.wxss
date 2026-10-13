@@ -42,5 +42,5 @@
   border-radius: 0 0 6rpx 6rpx;
 }
 
-.nav-bar--compact .nav-bar__label { font-size: 19rpx; }
+.nav-bar--compact .nav-bar__label { font-size: 17rpx; }
 .nav-bar--compact .nav-bar__item { min-width: 0; }

@@ -398,6 +398,48 @@ function studentScopeWhere(alias, classIds) {
     "WHERE cm.role = 'student' AND cm.class_id IN (" + ids.join(",") + ")))";
 }
 
+/**
+ * 交流权限：返回当前用户可联系的对方 user id 数组。
+ * - admin 返回 null，表示"不限制"（全部用户）。
+ * - teacher 可联系：管理员 + 同班学生 + 同班家长。
+ * - student / parent 可联系：管理员 + 同班教师。
+ */
+async function getMessagePeerIds(user) {
+  if (!user || !user.id) return [];
+  if (user.role === "admin") return null;
+
+  const myRole = user.role;
+  // 当前用户以自身角色所属的班级
+  const classRows = await db.prepare(
+    "SELECT DISTINCT class_id FROM class_members WHERE user_id = ? AND role = ?"
+  ).all(user.id, myRole);
+  const classIds = classRows.map(function (r) { return Number(r.class_id); })
+    .filter(function (n) { return Number.isFinite(n); });
+
+  // 管理员始终可联系
+  const adminRows = await db.prepare(
+    "SELECT id FROM users WHERE role = 'admin' AND id <> ?"
+  ).all(user.id);
+  const ids = adminRows.map(function (r) { return Number(r.id); })
+    .filter(function (n) { return Number.isFinite(n); });
+
+  if (!classIds.length) return ids; // 无班级：仅能联系管理员
+
+  // 同班可见的对方角色：教师→学生/家长；学生/家长→教师
+  const peerRoles = myRole === "teacher" ? ["student", "parent"] : ["teacher"];
+  const classHolders = classIds.map(function () { return "?"; }).join(",");
+  const roleHolders = peerRoles.map(function () { return "?"; }).join(",");
+  const rows = await db.prepare(
+    "SELECT DISTINCT cm.user_id FROM class_members cm JOIN users u ON u.id = cm.user_id " +
+    "WHERE cm.class_id IN (" + classHolders + ") AND cm.role IN (" + roleHolders + ") AND u.id <> ?"
+  ).all(...classIds, ...peerRoles, user.id);
+  rows.forEach(function (r) {
+    const n = Number(r.user_id);
+    if (Number.isFinite(n) && ids.indexOf(n) < 0) ids.push(n);
+  });
+  return ids;
+}
+
 function normalizeIdList(value) {
   if (!Array.isArray(value)) return [];
   const seen = {};
@@ -2540,6 +2582,114 @@ async function handleApi(req, res, pathname, query) {
     const token = req.headers["authorization"].slice(7);
     await db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
     return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 信息交流：所有登录角色均可一对一收发站内私信 ---- */
+  if (pathname === "/api/messages" || pathname === "/api/messages/read") {
+    if (req.method === "GET" && pathname === "/api/messages") {
+      const peerId = query.get("peerId") ? Number(query.get("peerId")) : null;
+      const limitValue = Number(query.get("limit") || 200);
+      const limit = Math.max(1, Math.min(500, Number.isFinite(limitValue) ? limitValue : 200));
+      if (peerId) {
+        const peer = await db.prepare("SELECT id, account, display_name, role FROM users WHERE id = ?").get(peerId);
+        if (!peer) return sendJson(res, 404, { message: "联系人不存在" });
+        const messages = await db.prepare(
+          "SELECT m.id, m.sender_user_id, m.recipient_user_id, m.content, m.read_at, m.created_at, " +
+          "su.display_name AS sender_name, ru.display_name AS recipient_name " +
+          "FROM direct_messages m " +
+          "LEFT JOIN users su ON su.id = m.sender_user_id " +
+          "LEFT JOIN users ru ON ru.id = m.recipient_user_id " +
+          "WHERE (m.sender_user_id = ? AND m.recipient_user_id = ?) OR (m.sender_user_id = ? AND m.recipient_user_id = ?) " +
+          "ORDER BY m.id DESC LIMIT " + limit
+        ).all(user.id, peerId, peerId, user.id);
+        return sendJson(res, 200, { peer: peer, messages: messages.reverse() });
+      }
+      const allowedIds = await getMessagePeerIds(user);
+      let contacts;
+      if (allowedIds === null) {
+        // 管理员：全部用户
+        contacts = await db.prepare(
+          "SELECT id, account, display_name, role FROM users WHERE id <> ? ORDER BY " +
+          "CASE role WHEN 'teacher' THEN 1 WHEN 'parent' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, display_name, id"
+        ).all(user.id);
+      } else if (allowedIds.length) {
+        const holders = allowedIds.map(function () { return "?"; }).join(",");
+        contacts = await db.prepare(
+          "SELECT id, account, display_name, role FROM users WHERE id IN (" + holders + ") ORDER BY " +
+          "CASE role WHEN 'teacher' THEN 1 WHEN 'parent' THEN 2 WHEN 'admin' THEN 3 ELSE 4 END, display_name, id"
+        ).all(...allowedIds);
+      } else {
+        contacts = [];
+      }
+      const rows = await db.prepare(
+        "SELECT m.id, m.sender_user_id, m.recipient_user_id, m.content, m.read_at, m.created_at, " +
+        "CASE WHEN m.sender_user_id = ? THEN m.recipient_user_id ELSE m.sender_user_id END AS peer_id, " +
+        "CASE WHEN m.sender_user_id = ? THEN ru.display_name ELSE su.display_name END AS peer_name, " +
+        "CASE WHEN m.sender_user_id = ? THEN ru.role ELSE su.role END AS peer_role " +
+        "FROM direct_messages m " +
+        "LEFT JOIN users su ON su.id = m.sender_user_id LEFT JOIN users ru ON ru.id = m.recipient_user_id " +
+        "WHERE m.sender_user_id = ? OR m.recipient_user_id = ? ORDER BY m.id DESC LIMIT " + limit
+      ).all(user.id, user.id, user.id, user.id, user.id);
+      // 最近会话也按权限收口，避免出现无权联系的历史对象
+      const filteredRows = allowedIds === null
+        ? rows
+        : rows.filter(function (row) { return allowedIds.indexOf(Number(row.peer_id)) >= 0; });
+      const seen = {};
+      const conversations = [];
+      filteredRows.forEach(function (row) {
+        const key = String(row.peer_id);
+        if (seen[key]) return;
+        seen[key] = true;
+        conversations.push({
+          peerId: Number(row.peer_id), peerName: row.peer_name || "联系人", peerRole: row.peer_role || "",
+          lastContent: row.content, lastAt: row.created_at,
+          unreadCount: 0
+        });
+      });
+      const unreadRows = await db.prepare(
+        "SELECT sender_user_id AS peer_id, COUNT(*) AS unread_count FROM direct_messages " +
+        "WHERE recipient_user_id = ? AND read_at IS NULL GROUP BY sender_user_id"
+      ).all(user.id);
+      unreadRows.forEach(function (row) {
+        const found = conversations.filter(function (item) { return Number(item.peerId) === Number(row.peer_id); })[0];
+        if (found) found.unreadCount = Number(row.unread_count || 0);
+      });
+      return sendJson(res, 200, { contacts: contacts, conversations: conversations });
+    }
+
+    if (req.method === "POST" && pathname === "/api/messages") {
+      const body = await readBody(req);
+      const recipientId = Number(body.recipientUserId || body.recipientId);
+      const content = String(body.content || "").trim();
+      if (!recipientId) return sendJson(res, 400, { message: "请选择联系人" });
+      if (recipientId === Number(user.id)) return sendJson(res, 400, { message: "不能给自己发送消息" });
+      if (!content) return sendJson(res, 400, { message: "请输入消息内容" });
+      if (content.length > 2000) return sendJson(res, 400, { message: "消息不能超过 2000 个字" });
+      const recipient = await db.prepare("SELECT id, account, display_name, role FROM users WHERE id = ?").get(recipientId);
+      if (!recipient) return sendJson(res, 404, { message: "联系人不存在" });
+      // 权限校验：非管理员只能发给"管理员 + 同班可见角色"
+      const allowedIds = await getMessagePeerIds(user);
+      if (allowedIds !== null && allowedIds.indexOf(recipientId) < 0) {
+        return sendJson(res, 403, { message: "你没有向该用户发送消息的权限" });
+      }
+      const created = await db.prepare(
+        "INSERT INTO direct_messages (sender_user_id, recipient_user_id, content) VALUES (?,?,?)"
+      ).run(user.id, recipientId, content);
+      return sendJson(res, 201, {
+        ok: true,
+        message: { id: Number(created.lastInsertRowid), sender_user_id: Number(user.id), recipient_user_id: recipientId, content: content, read_at: null, created_at: new Date().toISOString() }
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/messages/read") {
+      const body = await readBody(req);
+      const peerId = Number(body.peerId);
+      if (!peerId) return sendJson(res, 400, { message: "联系人参数无效" });
+      await db.prepare(
+        "UPDATE direct_messages SET read_at = datetime('now','localtime') WHERE sender_user_id = ? AND recipient_user_id = ? AND read_at IS NULL"
+      ).run(peerId, user.id);
+      return sendJson(res, 200, { ok: true });
+    }
   }
 
   /* ---- 管理员全局概览 ---- */

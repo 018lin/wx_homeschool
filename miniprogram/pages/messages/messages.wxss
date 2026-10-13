@@ -1,0 +1,39 @@
+.message-head { padding: 0 0 20rpx; margin-bottom: 12rpx; }
+.message-head__title { font-size: 40rpx; font-weight: 700; color: var(--text); }
+.message-head__sub { margin-top: 4rpx; color: var(--text-muted); font-size: 24rpx; }
+.message-layout { display: flex; gap: 16rpx; height: calc(100vh - 300rpx); min-height: 760rpx; }
+.contact-panel, .conversation-panel { background: var(--card); border-radius: var(--radius); box-shadow: 0 2rpx 12rpx rgba(15, 40, 80, .05); overflow: hidden; }
+.contact-panel { width: 38%; min-width: 230rpx; display: flex; flex-direction: column; }
+.conversation-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.panel-title { padding: 24rpx 22rpx 12rpx; font-size: 28rpx; font-weight: 600; }
+.contact-search { margin: 0 16rpx 12rpx; padding: 14rpx 18rpx; background: #f5f8fc; border-radius: 12rpx; font-size: 24rpx; box-sizing: border-box; }
+.contact-list { flex: 1; min-height: 0; }
+.contact-item { display: flex; align-items: center; padding: 18rpx 16rpx; border-left: 6rpx solid transparent; }
+.contact-item.active { background: var(--primary-light); border-left-color: var(--primary); }
+.contact-avatar { width: 64rpx; height: 64rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--teal-light); color: var(--teal); font-size: 28rpx; font-weight: 600; flex-shrink: 0; }
+.contact-main { min-width: 0; flex: 1; margin-left: 14rpx; }
+.contact-name { font-size: 27rpx; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact-role { margin-top: 3rpx; color: var(--text-muted); font-size: 20rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact-unread { min-width: 30rpx; height: 30rpx; padding: 0 6rpx; border-radius: 999rpx; background: var(--danger); color: #fff; font-size: 18rpx; display: flex; align-items: center; justify-content: center; }
+.panel-empty, .message-empty { color: var(--text-muted); text-align: center; padding: 36rpx 16rpx; font-size: 24rpx; }
+.conversation-head { display: flex; align-items: center; justify-content: space-between; padding: 22rpx 24rpx; border-bottom: 2rpx solid var(--line); }
+.conversation-title { font-size: 30rpx; font-weight: 600; }
+.conversation-sub { color: var(--text-muted); font-size: 22rpx; margin-top: 3rpx; }
+.conversation-refresh { color: var(--primary); font-size: 23rpx; padding: 8rpx; }
+.message-list { flex: 1; min-height: 0; padding: 20rpx 22rpx; box-sizing: border-box; }
+.message-row { display: flex; flex-direction: column; margin-bottom: 20rpx; max-width: 82%; }
+.message-row.mine { margin-left: auto; align-items: flex-end; }
+.message-row.theirs { margin-right: auto; align-items: flex-start; }
+.message-bubble { padding: 16rpx 20rpx; border-radius: 16rpx; background: #f1f5f9; color: var(--text); font-size: 27rpx; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.message-row.mine .message-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4rpx; }
+.message-row.theirs .message-bubble { border-bottom-left-radius: 4rpx; }
+.message-time { margin-top: 6rpx; color: var(--text-muted); font-size: 19rpx; }
+.composer { display: flex; align-items: flex-end; gap: 12rpx; padding: 14rpx 18rpx calc(14rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid var(--line); }
+.composer-input { flex: 1; min-height: 72rpx; max-height: 180rpx; padding: 14rpx 16rpx; background: #f5f8fc; border-radius: 12rpx; font-size: 27rpx; box-sizing: border-box; }
+.send-btn { width: 120rpx; height: 72rpx; margin: 0; padding: 0; line-height: 72rpx; border-radius: 12rpx; background: var(--primary); color: #fff; font-size: 26rpx; }
+.send-btn[disabled] { opacity: .45; }
+.conversation-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; }
+.conversation-empty__icon { font-size: 74rpx; color: var(--primary); line-height: 1; margin-bottom: 24rpx; }
+.conversation-empty__title { color: var(--text-sub); font-size: 29rpx; font-weight: 600; }
+.conversation-empty__hint { font-size: 22rpx; margin-top: 8rpx; }
+@media (max-width: 700px) { .message-layout { height: calc(100vh - 280rpx); min-height: 700rpx; } .contact-panel { width: 42%; min-width: 210rpx; } .contact-role { font-size: 18rpx; } }

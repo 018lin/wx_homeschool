@@ -539,6 +539,29 @@ var api = {
     return request("/api/teacher/notifications/targeted", { method: "POST", data: data, silent: true });
   },
 
+  /* ---- 信息交流 ---- */
+  getMessages: function (peerId, limit) {
+    return request("/api/messages", {
+      method: "GET",
+      query: { peerId: peerId, limit: limit || 200 },
+      silent: true
+    });
+  },
+  sendMessage: function (recipientUserId, content) {
+    return request("/api/messages", {
+      method: "POST",
+      data: { recipientUserId: recipientUserId, content: content },
+      loading: "发送中"
+    });
+  },
+  markMessagesRead: function (peerId) {
+    return request("/api/messages/read", {
+      method: "POST",
+      data: { peerId: peerId },
+      silent: true
+    });
+  },
+
   /* ---- 管理员端 ---- */
   getAdminOverview: function () {
     return request("/api/admin/overview", { method: "GET" });
