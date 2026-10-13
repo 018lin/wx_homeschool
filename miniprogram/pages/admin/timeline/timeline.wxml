@@ -1,0 +1,118 @@
+<view class="page page-with-nav">
+  <view class="al-head">
+    <view class="al-head__title">成长时间线</view>
+    <view class="al-head__sub" wx:if="{{generatedAt}}">{{refreshing ? '正在刷新…' : '数据更新于 ' + generatedAt}}</view>
+  </view>
+
+  <view class="card">
+    <view class="filter-grid">
+    <view class="field filter-field">
+      <view class="field__label">按孩子筛选</view>
+      <picker mode="selector" range="{{childNames}}" value="{{childIndex}}" bindchange="onPickChild">
+        <view class="picker-box">
+          <text>{{childNames[childIndex] || '全部孩子'}}</text>
+          <text class="picker-box__arrow">▾</text>
+        </view>
+      </picker>
+    </view>
+    <view class="field filter-field">
+      <view class="field__label">时间范围</view>
+      <picker mode="selector" range="{{rangeNames}}" value="{{rangeIndex}}" bindchange="onPickRange">
+        <view class="picker-box"><text>{{rangeNames[rangeIndex]}}</text><text class="picker-box__arrow">▾</text></view>
+      </picker>
+    </view>
+    </view>
+    <view class="kind-filter">
+      <view class="option {{kind === 'all' ? 'active' : ''}}" data-kind="all" bindtap="switchKind">全部记录</view>
+      <view class="option {{kind === 'submission' ? 'active' : ''}}" data-kind="submission" bindtap="switchKind">孩子提交</view>
+      <view class="option {{kind === 'observation' ? 'active' : ''}}" data-kind="observation" bindtap="switchKind">教师观察</view>
+    </view>
+    <button class="btn btn-gray btn-block mt-16" bindtap="onRefresh" disabled="{{refreshing}}">{{refreshing ? '刷新中…' : '刷新数据'}}</button>
+  </view>
+
+  <view class="card" wx:if="{{stats}}">
+    <view class="stat-grid">
+      <view class="stat">
+        <view class="stat__value">{{stats.timelineCount || 0}}</view>
+        <view class="stat__label">记录总数</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{stats.submissionCount || 0}}</view>
+        <view class="stat__label">孩子提交</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{stats.observationCount || 0}}</view>
+        <view class="stat__label">教师观察</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{stats.feedbackCount || 0}}</view>
+        <view class="stat__label">教师点评</view>
+      </view>
+      <view class="stat">
+        <view class="stat__value">{{stats.activeStudentCount || 0}}</view>
+        <view class="stat__label">活跃学生</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+  <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
+
+  <view class="card" wx:if="{{!loading && !error}}">
+    <view class="card-title"><text class="card-title__text">近 7 天趋势</text><text class="text-sm text-muted">{{trendTotal}} 条</text></view>
+    <view class="trend-chart">
+      <view class="trend-day" wx:for="{{trend}}" wx:key="label">
+        <text class="trend-count">{{item.count || ''}}</text>
+        <view class="trend-track"><view class="trend-fill" style="height:{{item.height}}%"></view></view>
+        <text class="trend-label">{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{!loading && !error}}">
+    <view class="card-title"><text class="card-title__text">活跃学生排行</text><text class="text-sm text-muted">按当前筛选记录数</text></view>
+    <view class="rank-row" wx:for="{{ranking}}" wx:key="childId">
+      <text class="rank-no">{{item.rank}}</text><text class="rank-name">{{item.name}}</text>
+      <view class="rank-track"><view class="rank-fill" style="width:{{item.percent}}%"></view></view><text class="rank-count">{{item.count}}</text>
+    </view>
+    <view class="empty" wx:if="{{!ranking.length}}"><view class="empty__text">暂无排行数据</view></view>
+  </view>
+
+  <view class="card" wx:if="{{!loading && !error && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">🌱</view>
+      <view class="empty__text">暂无成长记录</view>
+    </view>
+  </view>
+
+  <view class="card" wx:for="{{items}}" wx:key="id">
+    <view class="between mb-12">
+      <view class="align-center">
+        <text class="badge {{item.kindCls}}">{{item.kindLabel}}</text>
+        <text class="bold ml">{{item.studentName}}</text>
+        <text class="badge badge-gray ml" wx:if="{{item.grade}}">{{item.grade}}</text>
+      </view>
+      <text class="text-sm text-muted">{{item.createdAt}}</text>
+    </view>
+
+    <view class="al-title">{{item.title}}</view>
+    <view class="mt-12" wx:if="{{item.taskType}}"><text class="tag">{{item.taskType}}</text></view>
+
+    <view class="al-content" wx:if="{{item.content}}">{{item.content}}</view>
+    <view class="quote quote-teal" wx:if="{{item.analysis}}">
+      <text class="bold">分析：</text>{{item.analysis}}
+    </view>
+
+    <view class="al-fb" wx:if="{{item.feedback}}">
+      <view class="al-fb__label">{{item.feedback.teacherName || '老师'}}的点评 · {{item.feedback.createdAt}}</view>
+      <view class="al-fb__text">{{item.feedback.comment}}</view>
+      <view class="mt-8" wx:if="{{item.feedback.tags.length}}">
+        <text class="tag" wx:for="{{item.feedback.tags}}" wx:for-item="tg" wx:key="*this">{{tg}}</text>
+      </view>
+    </view>
+
+    <view class="field__hint mt-12" wx:if="{{item.teacherName}}">记录人：{{item.teacherName}}</view>
+  </view>
+</view>
+
+<nav-bar role="admin" active="timeline" />

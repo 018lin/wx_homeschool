@@ -1,0 +1,11 @@
+<view class="nav-bar {{role === 'admin' ? 'nav-bar--compact' : ''}}" wx:if="{{tabs.length}}">
+  <view
+    class="nav-bar__item {{item.key === active ? 'active' : ''}}"
+    wx:for="{{tabs}}"
+    wx:key="key"
+    data-item="{{item}}"
+    bindtap="onTap"
+  >
+    <view class="nav-bar__label">{{item.label}}</view>
+  </view>
+</view>

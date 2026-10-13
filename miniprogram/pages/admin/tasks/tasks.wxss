@@ -1,0 +1,68 @@
+.at-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.at-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.at-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+.title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.at-rate {
+  text-align: right;
+  margin-left: 20rpx;
+  flex-shrink: 0;
+}
+
+.at-rate__value {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #0057b8;
+}
+
+.at-rate__sub {
+  font-size: 20rpx;
+  color: #8795a7;
+}
+
+.at-progress {
+  height: 12rpx;
+  background: #eef2f7;
+  border-radius: 999rpx;
+  overflow: hidden;
+  margin: 16rpx 0;
+}
+
+.at-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0057b8, #0f766e);
+  border-radius: 999rpx;
+}
+
+.at-toggle {
+  text-align: center;
+  font-size: 24rpx;
+  color: #0057b8;
+  padding: 12rpx 0 0;
+  border-top: 2rpx solid #f1f5f9;
+}
+
+.at-detail {
+  padding-top: 8rpx;
+}

@@ -1,0 +1,32 @@
+# Render 部署配置
+# 小程序需要的后端服务：server.js + Neon PostgreSQL
+#
+# 使用方式：
+#   1. Render 后台 → New → Blueprint（读取本文件自动创建服务）
+#   2. 创建后到服务页面手动填入三个 Secret 环境变量（本仓库不含任何密钥）：
+#      DATABASE_URL      Neon 数据库连接串
+#      ZHIPU_API_KEY     智谱 AI
+#      DEEPSEEK_API_KEY  DeepSeek
+#   3. 得到服务域名后，把它填到 miniprogram/utils/api.js 的 REMOTE_BASE
+services:
+  - type: web
+    name: wx-homeschool-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22.22.2"
+      - key: PORT
+        value: "3123"
+      # 以下三项不在仓库里，请在 Render 后台填写
+      - key: DATABASE_URL
+        sync: false
+      - key: ZHIPU_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false

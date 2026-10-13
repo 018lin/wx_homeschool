@@ -1,0 +1,128 @@
+<view class="page">
+  <view class="q-head">
+    <view class="q-head__title">先认识一下你的孩子</view>
+    <view class="q-head__sub">只需 1 分钟，帮助老师为你推荐更合适的亲子任务</view>
+  </view>
+
+  <view class="card">
+    <view class="field">
+      <view class="field__label">孩子的昵称 <text class="text-danger">*</text></view>
+      <input
+        class="field__input"
+        placeholder="如：小宇"
+        placeholder-class="ph"
+        value="{{childName}}"
+        data-key="childName"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">性别 <text class="text-danger">*</text></view>
+      <view class="wrap">
+        <view class="option {{gender === '男' ? 'active' : ''}}" data-value="男" bindtap="pickGender">男孩</view>
+        <view class="option {{gender === '女' ? 'active' : ''}}" data-value="女" bindtap="pickGender">女孩</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">年龄 <text class="text-danger">*</text></view>
+      <input
+        class="field__input"
+        type="number"
+        placeholder="3-18"
+        placeholder-class="ph"
+        value="{{age}}"
+        data-key="age"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">年级（选填）</view>
+      <view class="wrap">
+        <view
+          class="option {{grade === item ? 'active' : ''}}"
+          wx:for="{{grades}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="pickGrade"
+        >{{item}}</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">主要陪伴人 <text class="text-danger">*</text>（可多选）</view>
+      <view class="wrap">
+        <view
+          class="option {{caregiver.indexOf(item) >= 0 ? 'active' : ''}}"
+          wx:for="{{caregivers}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="toggleCaregiver"
+        >{{item}}</view>
+      </view>
+      <input
+        class="field__input mt-16"
+        wx:if="{{caregiver.indexOf('其他') >= 0}}"
+        placeholder="请填写其他陪伴人"
+        placeholder-class="ph"
+        value="{{caregiverOther}}"
+        data-key="caregiverOther"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">希望共同完成的任务类型 <text class="text-danger">*</text></view>
+      <view class="wrap">
+        <view
+          class="option {{taskPreference === item ? 'active' : ''}}"
+          wx:for="{{preferences}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="pickPreference"
+        >{{item}}</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">孩子的兴趣 <text class="text-danger">*</text>（可多选）</view>
+      <view class="wrap">
+        <view
+          class="option {{interests.indexOf(item) >= 0 ? 'active' : ''}}"
+          wx:for="{{interestList}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="toggleInterest"
+        >{{item}}</view>
+      </view>
+      <input class="field__input mt-16" wx:if="{{interests.indexOf('其他') >= 0}}" placeholder="请填写其他兴趣" placeholder-class="ph" value="{{interestOther}}" data-key="interestOther" bindinput="onInput" />
+    </view>
+
+    <view class="field">
+      <view class="field__label">每周可以一起做任务的时间 <text class="text-danger">*</text></view>
+      <view class="wrap">
+        <view class="option {{timeChoice === item ? 'active' : ''}}" wx:for="{{timeOptions}}" wx:key="*this" data-value="{{item}}" bindtap="pickTime">{{item}}</view>
+      </view>
+      <input class="field__input mt-16" wx:if="{{timeChoice === '其他'}}" placeholder="请填写方便的时间" placeholder-class="ph" value="{{timeOther}}" data-key="timeOther" bindinput="onInput" />
+    </view>
+
+    <view class="field">
+      <view class="field__label">家庭情况补充（选填）</view>
+      <textarea
+        class="field__textarea"
+        placeholder="想让老师特别了解的情况，比如近期的变化、家里的小约定…"
+        placeholder-class="ph"
+        maxlength="800"
+        value="{{familyNote}}"
+        data-key="familyNote"
+        bindinput="onInput"
+      />
+    </view>
+
+    <button class="btn btn-primary btn-block" bindtap="onSubmit" disabled="{{submitting}}">
+      {{submitting ? '提交中…' : '创建档案'}}
+    </button>
+  </view>
+</view>

@@ -1,0 +1,162 @@
+<view class="page page-with-nav">
+  <view class="pb-head">
+    <view class="pb-head__title">发布共育任务</view>
+    <view class="pb-head__sub">可以发给全班，也可以为某个学生定制</view>
+  </view>
+
+  <view class="card">
+    <view class="field">
+      <view class="field__label">发布对象</view>
+      <picker mode="selector" range="{{studentNames}}" value="{{studentIndex}}" bindchange="onPickStudent">
+        <view class="picker-box">
+          <text>{{studentNames[studentIndex] || '全班学生'}}</text>
+          <text class="picker-box__arrow">▾</text>
+        </view>
+      </picker>
+      <view class="field__hint" wx:if="{{childId}}">个性化任务：仅该学生可见，同一周可发布多条</view>
+      <view class="field__hint" wx:else>全班任务：每周仅一条，重复发布会更新本周任务</view>
+    </view>
+
+    <button
+      class="btn btn-ai-generate btn-block"
+      bindtap="onGenerateTask"
+      disabled="{{generating}}"
+    >
+      {{generating ? 'AI 生成中…' : '一键生成个性任务'}}
+    </button>
+
+    <view class="field">
+      <view class="field__label">任务标题 <text class="text-danger">*</text></view>
+      <input
+        class="field__input"
+        placeholder="如：一起读一本关于情绪的书"
+        placeholder-class="ph"
+        value="{{title}}"
+        data-key="title"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">任务类型</view>
+      <view class="wrap">
+        <view
+          class="option {{type === item ? 'active' : ''}}"
+          wx:for="{{types}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="pickType"
+        >{{item}}</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">难度</view>
+      <view class="wrap">
+        <view
+          class="option {{difficulty === item ? 'active' : ''}}"
+          wx:for="{{difficulties}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="pickDifficulty"
+        >{{item}}</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">预计时长</view>
+      <view class="wrap">
+        <view
+          class="option {{duration === item ? 'active' : ''}}"
+          wx:for="{{durations}}"
+          wx:key="*this"
+          data-value="{{item}}"
+          bindtap="pickDuration"
+        >{{item}} 分钟</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">共育目标</view>
+      <textarea
+        class="field__textarea field__textarea--sm"
+        placeholder="这次任务希望孩子获得什么？"
+        placeholder-class="ph"
+        maxlength="600"
+        value="{{goal}}"
+        data-key="goal"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">具体步骤</view>
+      <textarea
+        class="field__textarea"
+        placeholder="1. …&#10;2. …&#10;3. …"
+        placeholder-class="ph"
+        maxlength="3000"
+        value="{{steps}}"
+        data-key="steps"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">家长可以这样说</view>
+      <textarea
+        class="field__textarea field__textarea--sm"
+        placeholder="给出可以直接用的话术"
+        placeholder-class="ph"
+        maxlength="200"
+        value="{{dialogueTips}}"
+        data-key="dialogueTips"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">提交什么</view>
+      <textarea
+        class="field__textarea field__textarea--sm"
+        placeholder="如：一段 100 字的对话记录 + 1 张照片"
+        placeholder-class="ph"
+        maxlength="200"
+        value="{{submitHint}}"
+        data-key="submitHint"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">需要准备的材料</view>
+      <input
+        class="field__input"
+        placeholder="如：一本绘本、纸和笔"
+        placeholder-class="ph"
+        value="{{materials}}"
+        data-key="materials"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">如果孩子不配合</view>
+      <textarea
+        class="field__textarea field__textarea--sm"
+        placeholder="给家长一个可退守的替代方案"
+        placeholder-class="ph"
+        maxlength="240"
+        value="{{fallbackPlan}}"
+        data-key="fallbackPlan"
+        bindinput="onInput"
+      />
+    </view>
+
+    <button class="btn btn-primary btn-block" bindtap="onSubmit" disabled="{{submitting}}">
+      {{submitting ? '发布中…' : '确认发布'}}
+    </button>
+  </view>
+</view>
+
+<nav-bar role="teacher" active="workbench" />

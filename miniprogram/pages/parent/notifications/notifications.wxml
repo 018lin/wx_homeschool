@@ -1,0 +1,53 @@
+<view class="page page-with-nav">
+  <view class="noti-head">
+    <view class="noti-head__row">
+      <view>
+        <view class="noti-head__title">通知中心</view>
+        <view class="noti-head__sub" wx:if="{{unreadCount > 0}}">有 {{unreadCount}} 条未读</view>
+        <view class="noti-head__sub" wx:else>全部已读</view>
+      </view>
+      <view class="noti-head__btn" wx:if="{{unreadCount > 0}}" bindtap="onReadAll">全部已读</view>
+    </view>
+  </view>
+
+  <view class="card subscribe-card">
+    <view class="between">
+      <view class="flex-1">
+        <view class="noti-item__title">微信订阅提醒</view>
+        <view class="text-sm text-muted mt-8">{{subscribeStatus || '正在读取订阅配置…'}}</view>
+      </view>
+      <button class="subscribe-btn" wx:if="{{subscribeConfigured}}" bindtap="onEnableSubscribe" disabled="{{subscribing}}">{{subscribing ? '处理中' : '开启'}}</button>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">🔔</view>
+      <view class="empty__text">暂无通知</view>
+      <view class="empty__hint">老师发布通知后会第一时间出现在这里</view>
+    </view>
+  </view>
+
+  <view
+    class="card noti-item {{item.unread ? 'unread' : ''}}"
+    wx:for="{{items}}"
+    wx:key="id"
+    data-id="{{item.id}}"
+    data-index="{{index}}"
+    bindtap="onTapItem"
+  >
+    <view class="noti-item__head">
+      <text class="badge {{item.typeCls}}">{{item.typeLabel}}</text>
+      <text class="noti-item__time">{{item.timeText}}</text>
+      <view class="noti-item__dot" wx:if="{{item.unread}}"></view>
+    </view>
+    <view class="noti-item__title">{{item.title}}</view>
+    <view class="noti-item__content">{{item.content}}</view>
+    <view class="noti-item__sender" wx:if="{{item.sender}}">来自 {{item.sender}}</view>
+    <view class="noti-item__hide" data-id="{{item.id}}" catchtap="onHideItem">从本机列表隐藏</view>
+  </view>
+</view>
+
+<nav-bar role="parent" active="home" />

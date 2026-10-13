@@ -1,0 +1,19 @@
+.ad-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.ad-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.ad-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+

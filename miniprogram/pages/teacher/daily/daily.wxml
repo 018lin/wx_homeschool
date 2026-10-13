@@ -1,0 +1,82 @@
+<view class="daily-page page-with-nav">
+  <view class="daily-panel">
+    <view class="daily-eyebrow"><text class="daily-eyebrow__spark">✦</text> 今日校园观察</view>
+    <view class="daily-title">记录今天，孩子在学校发生的事</view>
+    <view class="daily-subtitle">说出学生姓名和事情，AI 会整理成校园观察并通知对应家长。</view>
+
+    <view class="voice-panel">
+      <button
+        class="voice-button"
+        wx:if="{{!recording}}"
+        bindtap="startRecording"
+        disabled="{{transcribing || publishing}}"
+      >
+        <view class="mic-shape" aria-hidden="true">
+          <view class="mic-shape__head"></view>
+          <view class="mic-shape__stem"></view>
+          <view class="mic-shape__base"></view>
+        </view>
+        <text>{{transcribing ? '正在转写' : '点击开始说'}}</text>
+      </button>
+      <button class="voice-button voice-button--recording" wx:else bindtap="stopRecording">
+        <view class="record-wave"><text></text><text></text><text></text><text></text></view>
+        <text>停止录音 · {{recordSeconds}} 秒</text>
+      </button>
+      <view class="voice-hint">普通话语音，也可直接输入文字</view>
+    </view>
+
+    <view class="record-status record-status--{{statusTone}}">
+      <view class="record-status__dot"></view>
+      <text>{{statusText}}</text>
+    </view>
+
+    <view class="daily-divider"></view>
+
+    <view class="editor-shell">
+      <textarea
+        class="daily-editor"
+        placeholder="补充文字记录（可选）"
+        placeholder-class="daily-editor__placeholder"
+        maxlength="2000"
+        value="{{transcript}}"
+        bindinput="onTranscriptInput"
+        disabled="{{publishing}}"
+      />
+    </view>
+
+    <view class="publish-row">
+      <text class="char-count">{{charCount}} / 2000</text>
+      <button
+        class="publish-button"
+        bindtap="onPublish"
+        disabled="{{recording || transcribing || publishing || !transcript}}"
+      ><text class="publish-button__spark">✦</text> {{publishing ? '整理发布中…' : '整理并发布'}}</button>
+    </view>
+
+    <view class="published-result" wx:if="{{lastPublished}}">
+      <view class="published-result__label">刚刚发布 · {{lastPublished.studentName}}</view>
+      <view class="published-result__text">{{lastPublished.summary}}</view>
+      <view class="published-result__meta">{{lastPublished.recipientCount ? '已写入 ' + lastPublished.recipientCount + ' 位家长通知中心' : '暂未匹配到家长'}}</view>
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">同步历史观察中…</view>
+  <view class="state-card" wx:if="{{!loading && error}}">
+    <view>{{error}}</view>
+    <button class="retry-button" bindtap="onRetry">重新加载</button>
+  </view>
+
+  <view class="recent-section" wx:if="{{!loading && !error && recent.length}}">
+    <view class="recent-heading"><text>最近记录</text><text>{{recent.length}} 条</text></view>
+    <view class="recent-card" wx:for="{{recent}}" wx:key="id">
+      <view class="recent-card__top">
+        <text class="recent-card__student">{{item.studentName}}</text>
+        <text class="recent-card__time">{{item.timeText}}</text>
+      </view>
+      <view class="recent-card__summary">{{item.summary}}</view>
+      <view class="recent-card__meta">{{item.aiStatus}} · {{item.recipientCount ? '已通知 ' + item.recipientCount + ' 位家长' : '暂未匹配家长'}}</view>
+    </view>
+  </view>
+</view>
+
+<nav-bar role="teacher" active="workbench" />

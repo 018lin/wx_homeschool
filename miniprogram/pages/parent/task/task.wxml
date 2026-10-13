@@ -1,0 +1,94 @@
+<view class="page page-with-nav">
+  <view class="loading-wrap" wx:if="{{loading}}">加载任务中…</view>
+  <view class="card" wx:if="{{!loading && error}}">
+    <view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view>
+  </view>
+  <view class="card" wx:if="{{!loading && !error && !task}}">
+    <view class="empty"><view class="empty__icon">📋</view><view class="empty__text">没有找到该任务</view></view>
+  </view>
+
+  <block wx:if="{{!loading && !error && task}}">
+    <view class="card">
+      <view class="between mb-16">
+        <text class="badge" style="background:{{statusBg}};color:{{statusColor}}">{{statusText}}</text>
+        <text class="text-sm text-muted" wx:if="{{childName}}">{{childName}}</text>
+      </view>
+      <view class="task-title">{{task.title}}</view>
+      <view class="task-meta mt-16">
+        <text class="tag" wx:if="{{task.task_type}}">{{task.task_type}}</text>
+        <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
+        <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+      </view>
+      <view class="quote mt-24" wx:if="{{task.goal}}"><text class="bold">共育目标：</text>{{task.goal}}</view>
+      <view class="task-block" wx:if="{{task.steps}}"><view class="task-block__label">一起这样做</view><view class="task-block__body">{{task.steps}}</view></view>
+      <view class="task-block" wx:if="{{task.dialogueTips}}"><view class="task-block__label">可以这样说</view><view class="task-block__body quote-teal">{{task.dialogueTips}}</view></view>
+      <view class="task-block" wx:if="{{task.materials}}"><view class="task-block__label">需要准备</view><view class="task-block__body">{{task.materials}}</view></view>
+      <view class="task-block" wx:if="{{task.submitHint}}"><view class="task-block__label">提交什么</view><view class="task-block__body">{{task.submitHint}}</view></view>
+      <view class="task-block" wx:if="{{task.fallbackPlan}}"><view class="task-block__label">如果孩子不配合</view><view class="task-block__body">{{task.fallbackPlan}}</view></view>
+    </view>
+
+    <view class="card" wx:if="{{showFit}}">
+      <view class="card-title"><text class="card-title__text">这项任务适合你们吗？</text></view>
+      <view class="fit-option {{fitChoice === 'suitable' ? 'active' : ''}}" data-choice="suitable" bindtap="chooseFit">
+        <view class="bold">任务适合我和孩子</view><view class="field__hint">节奏、材料和互动方式比较合适</view>
+      </view>
+      <view class="fit-option {{fitChoice === 'unsuitable' ? 'active' : ''}}" data-choice="unsuitable" bindtap="chooseFit">
+        <view class="bold">任务不适合我和孩子</view><view class="field__hint">时间、材料或执行方式存在困难</view>
+      </view>
+      <view class="fit-saved" wx:if="{{fitChoice}}">已评价，当前选择：{{fitChoice === 'suitable' ? '适合' : '不适合'}}</view>
+    </view>
+
+    <view class="card" wx:if="{{feedback}}">
+      <view class="card-title"><text class="card-title__text">老师反馈</text><text class="text-sm text-muted">{{feedback.timeText}}</text></view>
+      <view class="feedback-teacher">{{feedback.teacherName}}</view>
+      <view class="feedback-comment">{{feedback.comment}}</view>
+      <view class="mt-16" wx:if="{{feedback.tags.length}}"><text class="tag" wx:for="{{feedback.tags}}" wx:key="*this">{{item}}</text></view>
+    </view>
+
+    <view class="card">
+      <view class="card-title"><text class="card-title__text">{{locked ? '我的提交' : '记录这次共育'}}</text></view>
+      <scroll-view scroll-x class="type-scroll" wx:if="{{!locked}}">
+        <view class="type-row">
+          <view class="option {{subType === 'text' ? 'active' : ''}}" data-type="text" bindtap="setSubType">文字记录</view>
+          <view class="option {{subType === 'check' ? 'active' : ''}}" data-type="check" bindtap="setSubType">完成打卡</view>
+          <view class="option {{subType === 'image' ? 'active' : ''}}" data-type="image" bindtap="setSubType">图片</view>
+          <view class="option {{subType === 'audio' ? 'active' : ''}}" data-type="audio" bindtap="setSubType">语音</view>
+          <view class="option {{subType === 'video' ? 'active' : ''}}" data-type="video" bindtap="setSubType">视频</view>
+        </view>
+      </scroll-view>
+
+      <view class="check-list" wx:if="{{subType === 'check'}}">
+        <view class="check-item {{checks.indexOf(item) >= 0 ? 'active' : ''}}" wx:for="{{checkOptions}}" wx:key="*this" data-value="{{item}}" bindtap="toggleCheck">
+          <text class="check-box">{{checks.indexOf(item) >= 0 ? '✓' : ''}}</text><text>{{item}}</text>
+        </view>
+      </view>
+      <textarea class="field__textarea" wx:if="{{!locked && subType !== 'check'}}" placeholder="记录孩子说了什么、做了什么，你们的互动过程…" placeholder-class="ph" maxlength="4000" value="{{content}}" bindinput="onContentInput" />
+      <view class="feedback-comment" wx:if="{{locked}}">{{content || '（无文字记录）'}}</view>
+
+      <view class="media-actions" wx:if="{{!locked}}">
+        <button class="media-btn" bindtap="chooseImage" disabled="{{uploading || recording || attachments.length >= 6}}">添加图片</button>
+        <button class="media-btn recording" wx:if="{{recording}}" bindtap="stopRecording">停止录音 {{recordSeconds}}s</button>
+        <button class="media-btn" wx:else bindtap="startRecording" disabled="{{uploading || attachments.length >= 6}}">录制语音</button>
+        <button class="media-btn" bindtap="chooseVideo" disabled="{{uploading || recording || attachments.length >= 6}}">添加视频</button>
+      </view>
+      <view class="upload-state" wx:if="{{uploading}}">附件上传中 {{uploadProgress}}%，请勿离开页面…</view>
+      <view class="field__hint" wx:if="{{!locked}}">最多 6 个附件，单个不超过 15MB；上传失败不会加入提交。</view>
+
+      <view class="attachment-list" wx:if="{{attachments.length}}">
+        <view class="attachment" wx:for="{{attachments}}" wx:key="id">
+          <image wx:if="{{item.kind === 'image'}}" class="attachment__image" src="{{item.url}}" mode="aspectFill" data-url="{{item.url}}" bindtap="previewImage" />
+          <view wx:elif="{{item.kind === 'audio'}}" class="attachment__audio" data-url="{{item.url}}" bindtap="playAudio">{{playingUrl === item.url ? '■ 停止播放' : '▶ 播放语音'}} · {{item.sizeText}}</view>
+          <video wx:elif="{{item.kind === 'video'}}" class="attachment__video" src="{{item.url}}" controls show-center-play-btn />
+          <view wx:else class="attachment__file">{{item.name}}</view>
+          <view class="attachment__meta">{{item.name}}</view>
+          <view class="attachment__delete" wx:if="{{!locked}}" data-index="{{index}}" catchtap="removeAttachment">×</view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>
+
+<view class="footer-bar" wx:if="{{!loading && task && !locked}}">
+  <button class="btn btn-gray" bindtap="onSaveDraft" disabled="{{submitting || uploading || recording}}">{{submitting ? '处理中…' : '存草稿'}}</button>
+  <button class="btn btn-primary" bindtap="onConfirmSubmit" disabled="{{submitting || uploading || recording}}">{{submitting ? '提交中…' : '正式提交'}}</button>
+</view>

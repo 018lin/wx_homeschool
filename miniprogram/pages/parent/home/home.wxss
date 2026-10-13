@@ -1,0 +1,157 @@
+/* ---------- 顶部 ---------- */
+.home-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx 24rpx;
+  margin-bottom: 24rpx;
+  color: #fff;
+}
+
+.home-head__row {
+  display: flex;
+  align-items: center;
+}
+
+.home-head__hello {
+  font-size: 36rpx;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.home-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 4rpx;
+}
+
+.home-head__bell {
+  position: relative;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+}
+
+.home-head__bell-icon {
+  font-size: 32rpx;
+}
+
+.home-head__dot {
+  position: absolute;
+  top: -4rpx;
+  right: -4rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 6rpx;
+  box-sizing: border-box;
+  background: #b42318;
+  color: #fff;
+  font-size: 20rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid #fff;
+}
+
+/* ---------- 孩子切换 ---------- */
+.child-bar {
+  margin-top: 24rpx;
+  white-space: nowrap;
+}
+
+.child-chip {
+  display: inline-block;
+  padding: 12rpx 32rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 26rpx;
+  margin-right: 16rpx;
+}
+
+.child-chip.active {
+  background: #fff;
+  color: #0057b8;
+  font-weight: 600;
+}
+
+.child-bar-single {
+  margin-top: 20rpx;
+}
+
+/* ---------- 任务卡 ---------- */
+.task-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.task-meta {
+  margin-top: 12rpx;
+}
+
+/* ---------- 反馈 ---------- */
+.feedback-teacher {
+  font-size: 24rpx;
+  color: #536174;
+  margin-bottom: 12rpx;
+}
+
+.feedback-comment {
+  font-size: 28rpx;
+  color: #1f2937;
+  line-height: 1.7;
+  background: #f8fbff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+}
+
+/* ---------- 亲子参与 ---------- */
+.engage-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.engage-score {
+  font-size: 56rpx;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 110rpx;
+  text-align: center;
+}
+
+.engage-level {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+/* ---------- 快捷入口 ---------- */
+.entry-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.entry {
+  width: 25%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16rpx 0;
+}
+
+.entry__icon {
+  font-size: 44rpx;
+  line-height: 1;
+  margin-bottom: 12rpx;
+}
+
+.entry__label {
+  font-size: 24rpx;
+  color: #536174;
+}

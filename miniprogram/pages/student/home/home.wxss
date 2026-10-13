@@ -1,0 +1,70 @@
+.st-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 36rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.st-head__hello {
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.st-head__sub {
+  font-size: 24rpx;
+  opacity: 0.9;
+  margin-top: 6rpx;
+}
+
+.task-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.task-meta {
+  margin-top: 12rpx;
+}
+
+.task-block {
+  margin-top: 24rpx;
+}
+
+.task-block__label {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #0057b8;
+  margin-bottom: 10rpx;
+}
+
+.task-block__body {
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  background: #f8fbff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+}
+
+.feedback-comment {
+  font-size: 28rpx;
+  color: #1f2937;
+  line-height: 1.7;
+  background: #e9f8f0;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  white-space: pre-wrap;
+}
+
+.st-locked {
+  margin-top: 24rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #157a45;
+  background: #e9f8f0;
+  border-radius: 12rpx;
+  padding: 20rpx;
+}

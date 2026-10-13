@@ -1,0 +1,169 @@
+<view class="page page-with-nav">
+  <view class="cl-head">
+    <view class="cl-head__title">班级管理</view>
+    <view class="cl-head__sub">创建班级并绑定教师、学生与家长</view>
+  </view>
+
+  <button class="btn btn-primary btn-block mb-24" bindtap="openCreate" wx:if="{{!mode}}">+ 创建班级</button>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && error}}">
+    <view class="empty">
+      <view class="empty__text">{{error}}</view>
+      <button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button>
+    </view>
+  </view>
+
+  <block wx:if="{{!loading && !error}}">
+    <view class="card" wx:for="{{classes}}" wx:key="id">
+      <view class="between" data-id="{{item.id}}" bindtap="toggleClass">
+        <view class="flex-1">
+          <view class="cl-name">{{item.name}}</view>
+          <view class="text-sm text-muted mt-8">
+            {{item.grade || '未填年级'}} · 负责教师 {{item.headTeacherName || '未指定'}}
+          </view>
+          <view class="cl-counts mt-8">
+            <text class="badge badge-primary">教师 {{item.teacherCount}}</text>
+            <text class="badge badge-teal">学生 {{item.studentCount}}</text>
+            <text class="badge badge-gray">家长 {{item.parentCount}}</text>
+          </view>
+        </view>
+        <text class="text-sm text-primary">{{expandedId === item.id ? '收起' : '详情'}} ›</text>
+      </view>
+
+      <view class="cl-detail" wx:if="{{expandedId === item.id}}">
+        <view class="cd-row">
+          <view class="cd-row__label">教师</view>
+          <view class="cd-row__body">
+            <block wx:if="{{item.teachers.length}}">
+              <text class="tag" wx:for="{{item.teachers}}" wx:for-item="t" wx:key="id">
+                {{t.name}}<text wx:if="{{t.id === item.headTeacherId}}"> · 负责</text>
+              </text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定教师</text>
+          </view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">学生</view>
+          <view class="cd-row__body">
+            <block wx:if="{{item.students.length}}">
+              <text class="tag" wx:for="{{item.students}}" wx:for-item="s" wx:key="id">
+                {{s.name}}<text wx:if="{{s.grade}}">（{{s.grade}}）</text>
+              </text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定学生</text>
+          </view>
+        </view>
+        <view class="cd-row">
+          <view class="cd-row__label">家长</view>
+          <view class="cd-row__body">
+            <block wx:if="{{item.parents.length}}">
+              <text class="tag" wx:for="{{item.parents}}" wx:for-item="p" wx:key="id">{{p.name}}</text>
+            </block>
+            <text class="text-sm text-muted" wx:else>未绑定家长</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{!classes.length && !mode}}">
+      <view class="empty">
+        <view class="empty__text">还没有班级</view>
+        <view class="empty__hint">点击上方「+ 创建班级」，从已有教师、学生、家长账号中组建班级</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 创建班级表单 -->
+  <view class="card" wx:if="{{mode}}">
+    <view class="card-title">
+      <text class="card-title__text">创建班级</text>
+      <text class="card-title__more" bindtap="closeForm">取消</text>
+    </view>
+
+    <view class="field">
+      <view class="field__label">班级名称 <text class="text-danger">*</text></view>
+      <input class="field__input" placeholder="如：四年级一班" placeholder-class="ph" value="{{form.name}}" data-key="name" bindinput="onFormInput" />
+    </view>
+
+    <view class="field">
+      <view class="field__label">年级</view>
+      <input class="field__input" placeholder="如：四年级" placeholder-class="ph" value="{{form.grade}}" data-key="grade" bindinput="onFormInput" />
+    </view>
+
+    <view class="field">
+      <view class="field__label">负责教师 <text class="text-danger">*</text></view>
+      <view class="field__hint">该班学生与家长的提交会归入这位教师的端</view>
+      <view class="wrap mt-8">
+        <view
+          class="option {{item.active ? 'active' : ''}}"
+          wx:for="{{headTeacherOptions}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="pickHeadTeacher"
+        >{{item.name}}<text class="option__sub"> {{item.account}}</text></view>
+      </view>
+      <view class="text-sm text-muted mt-8" wx:if="{{!headTeacherOptions.length}}">
+        暂无教师账号，请先在「账号管理」中创建
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">任课教师（可多选）</view>
+      <scroll-view scroll-y class="pick-list">
+        <view class="wrap">
+          <view
+            class="option {{item.selected ? 'active' : ''}}"
+            wx:for="{{teacherOptions}}"
+            wx:key="id"
+            data-id="{{item.id}}"
+            bindtap="toggleTeacher"
+          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+        </view>
+      </scroll-view>
+      <view class="text-sm text-muted mt-8" wx:if="{{!teacherOptions.length}}">暂无教师账号</view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">学生（可多选）</view>
+      <scroll-view scroll-y class="pick-list">
+        <view class="wrap">
+          <view
+            class="option {{item.selected ? 'active' : ''}}"
+            wx:for="{{studentOptions}}"
+            wx:key="id"
+            data-id="{{item.id}}"
+            bindtap="toggleStudent"
+          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+        </view>
+      </scroll-view>
+      <view class="field__hint" wx:if="{{studentOptions.length}}">
+        已选 {{form.studentIds.length}} 人 · 学生绑定的家长会一并纳入班级
+      </view>
+      <view class="text-sm text-muted mt-8" wx:elif="{{!studentOptions.length}}">暂无学生账号</view>
+    </view>
+
+    <view class="field">
+      <view class="field__label">家长（可多选）</view>
+      <scroll-view scroll-y class="pick-list">
+        <view class="wrap">
+          <view
+            class="option {{item.selected ? 'active' : ''}}"
+            wx:for="{{parentOptions}}"
+            wx:key="id"
+            data-id="{{item.id}}"
+            bindtap="toggleParent"
+          >{{item.name}}<text class="option__sub" wx:if="{{item.desc}}"> {{item.desc}}</text></view>
+        </view>
+      </scroll-view>
+      <view class="text-sm text-muted mt-8" wx:if="{{!parentOptions.length}}">暂无家长账号</view>
+    </view>
+
+    <button class="btn btn-primary btn-block mt-16" bindtap="onSubmit" disabled="{{submitting}}">
+      {{submitting ? '创建中…' : '创建班级'}}
+    </button>
+  </view>
+</view>
+
+<nav-bar role="admin" active="overview" />

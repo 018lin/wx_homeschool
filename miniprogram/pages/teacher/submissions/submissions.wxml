@@ -1,0 +1,47 @@
+<view class="page page-with-nav">
+  <view class="sm-head">
+    <view class="sm-head__title">作业批阅</view>
+    <view class="sm-head__sub">共 {{counts.all}} 份提交，{{counts.pending}} 份待点评</view>
+  </view>
+
+  <view class="segment">
+    <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">
+      全部 {{counts.all}}
+    </view>
+    <view class="segment__item {{filter === 'pending' ? 'active' : ''}}" data-filter="pending" bindtap="switchFilter">
+      待点评 {{counts.pending}}
+    </view>
+    <view class="segment__item {{filter === 'done' ? 'active' : ''}}" data-filter="done" bindtap="switchFilter">
+      已点评 {{counts.done}}
+    </view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <view class="card" wx:if="{{!loading && !items.length}}">
+    <view class="empty">
+      <view class="empty__icon">✅</view>
+      <view class="empty__text">没有符合条件的提交</view>
+    </view>
+  </view>
+
+  <view class="card sm-item" wx:for="{{items}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail">
+    <view class="between mb-12">
+      <view class="align-center">
+        <text class="sm-item__name">{{item.childName}}</text>
+        <text class="badge badge-gray ml">{{item.grade}}</text>
+      </view>
+      <text class="badge {{item.feedbackCount ? 'badge-teal' : 'badge-warning'}}">
+        {{item.feedbackCount ? '已点评' : '待点评'}}
+      </text>
+    </view>
+    <view class="sm-item__title">{{item.title}}</view>
+    <view class="sm-item__content clamp-2">{{item.content}}</view>
+    <view class="sm-item__foot">
+      <text>{{item.subType}}</text>
+      <text>{{item.timeText}}</text>
+    </view>
+  </view>
+</view>
+
+<nav-bar role="teacher" active="submissions" />

@@ -1,0 +1,9 @@
+.ph {
+  color: #b6c0cd;
+}
+
+.title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}

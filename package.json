@@ -1,0 +1,19 @@
+{
+  "name": "home-school-co-education-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "家校共育系统 · 后端服务（Render 部署用）",
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check database.js && node --check js/api.js && node --check js/login.js && node --check js/teacher-page.js && node --check js/teacher-daily.js",
+    "check:mp": "node scripts/check-mp.js",
+    "migrate:neon": "node --experimental-sqlite scripts/migrate-sqlite-to-neon.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

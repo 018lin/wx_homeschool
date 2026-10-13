@@ -1,0 +1,51 @@
+{
+  "miniprogramRoot": "./",
+  "projectname": "家校共育系统",
+  "description": "家校共育系统微信小程序（家长端 / 学生端 / 教师端 / 管理员端）",
+  "appid": "wx18af8940724074b9",
+  "compileType": "miniprogram",
+  "libVersion": "3.16.1",
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "docs",
+        "type": "folder"
+      }
+    ],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "minifyWXML": true,
+    "minifyWXSS": true,
+    "uglifyFileName": false,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "useCompilerPlugins": false,
+    "ignoreDevUnusedFiles": true,
+    "ignoreUploadUnusedFiles": true,
+    "checkInvalidKey": true,
+    "checkSiteMap": false,
+    "autoAudits": false,
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
+  },
+  "editorSetting": {},
+  "simulatorPluginLibVersion": {}
+}

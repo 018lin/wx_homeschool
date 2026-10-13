@@ -1,0 +1,28 @@
+<view class="page page-with-nav">
+  <view class="mine-head">
+    <view class="mine-head__avatar-wrap">
+      <image class="mine-head__avatar" src="{{avatarImage}}" mode="aspectFill" />
+    </view>
+    <view class="mine-head__name">{{user.displayName || '未设置姓名'}}</view>
+    <view class="mine-head__account">账号 {{user.account || '-'}}</view>
+    <view class="mine-head__role" style="color:{{roleColor}}">{{roleLabel}}</view>
+  </view>
+
+  <view class="card">
+    <view class="list-item">
+      <view class="list-item__main">
+        <view class="list-item__title">身份</view>
+        <view class="list-item__desc">{{roleLabel}}账号，由学校统一创建</view>
+      </view>
+    </view>
+  </view>
+
+  <button class="btn btn-danger btn-block" bindtap="onLogout">退出登录</button>
+
+  <view class="mine-foot">
+    <view>凌田家校 · 家校共育系统</view>
+    <view class="mine-foot__sub">小程序版</view>
+  </view>
+</view>
+
+<nav-bar role="{{user.role}}" active="mine" />

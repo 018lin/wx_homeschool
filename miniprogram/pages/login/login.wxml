@@ -1,0 +1,53 @@
+<view class="login">
+  <view class="login__hero">
+    <image class="login__logo" src="/assets/site-logo.png" mode="aspectFit" />
+    <view class="login__brand">凌田家校</view>
+    <view class="login__slogan">家校共育 · 让成长被看见</view>
+  </view>
+
+  <view class="login__card">
+    <view class="login__title">账号登录</view>
+
+    <view class="field">
+      <view class="field__label">账号</view>
+      <input
+        class="field__input"
+        type="text"
+        placeholder="请输入账号"
+        placeholder-class="login__placeholder"
+        maxlength="30"
+        value="{{account}}"
+        bindinput="onAccountInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="field__label">密码</view>
+      <input
+        class="field__input"
+        password="{{!showPwd}}"
+        placeholder="请输入密码"
+        placeholder-class="login__placeholder"
+        maxlength="64"
+        value="{{password}}"
+        bindinput="onPasswordInput"
+        bindconfirm="onSubmit"
+      />
+      <view class="login__toggle" bindtap="onTogglePwd">
+        {{showPwd ? '隐藏' : '显示'}}
+      </view>
+    </view>
+
+    <view class="login__error" wx:if="{{error}}">{{error}}</view>
+
+    <button
+      class="btn btn-primary btn-block login__submit"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+      bindtap="onSubmit"
+    >{{loading ? '登录中…' : '登 录'}}</button>
+
+    <view class="login__note">家长账号由学校管理员统一创建，请联系班主任或学校管理员</view>
+    <view class="login__note login__note--dim">登录即代表同意《用户协议》与《隐私政策》</view>
+  </view>
+</view>

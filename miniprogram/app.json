@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/mine/mine",
+    "pages/parent/home/home",
+    "pages/parent/task/task",
+    "pages/parent/timeline/timeline",
+    "pages/parent/feedback/feedback",
+    "pages/parent/notifications/notifications",
+    "pages/parent/concern/concern",
+    "pages/parent/engagement/engagement",
+    "pages/parent/questionnaire/questionnaire",
+    "pages/parent/children/children",
+    "pages/student/home/home",
+    "pages/student/task/task",
+    "pages/teacher/workbench/workbench",
+    "pages/teacher/publish/publish",
+    "pages/teacher/submissions/submissions",
+    "pages/teacher/submission-detail/submission-detail",
+    "pages/teacher/students/students",
+    "pages/teacher/suggestion/suggestion",
+    "pages/teacher/overview/overview",
+    "pages/teacher/ai/ai",
+    "pages/teacher/daily/daily",
+    "pages/teacher/requests/requests",
+    "pages/admin/overview/overview",
+    "pages/admin/accounts/accounts",
+    "pages/admin/classes/classes",
+    "pages/admin/tasks/tasks",
+    "pages/admin/timeline/timeline"
+  ],
+  "window": {
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#0057b8",
+    "navigationBarTitleText": "凌田家校",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f9ff",
+    "backgroundColorTop": "#f5f9ff",
+    "backgroundColorBottom": "#f5f9ff"
+  },
+  "style": "v2",
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/index"
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

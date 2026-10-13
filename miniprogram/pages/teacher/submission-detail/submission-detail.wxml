@@ -1,0 +1,96 @@
+<view class="page page-with-nav">
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+  <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
+
+  <block wx:if="{{!loading && submission}}">
+    <!-- 学生与任务 -->
+    <view class="card">
+      <view class="between mb-16">
+        <view class="align-center">
+          <text class="sd-name">{{submission.childName}}</text>
+          <text class="badge badge-gray ml">{{submission.grade}}</text>
+        </view>
+        <text class="text-sm text-muted">{{submission.createdAt}}</text>
+      </view>
+      <view class="sd-task-title">{{task.title}}</view>
+      <view class="task-meta mt-12">
+        <text class="tag" wx:if="{{task.type}}">{{task.type}}</text>
+        <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+        <text class="tag">{{submission.subType}}</text>
+      </view>
+    </view>
+
+    <!-- 提交内容 -->
+    <view class="card">
+      <view class="card-title"><text class="card-title__text">提交内容</text></view>
+      <view class="sd-content" wx:if="{{submission.content}}">{{submission.content}}</view>
+      <view class="text-muted text-sm" wx:else>（本次没有文字记录）</view>
+
+      <view class="sd-imgs" wx:if="{{images.length}}">
+        <image
+          class="sd-imgs__pic"
+          wx:for="{{images}}"
+          wx:key="*this"
+          src="{{item}}"
+          mode="aspectFill"
+          data-url="{{item}}"
+          bindtap="previewImage"
+        />
+      </view>
+      <view class="sd-media" wx:if="{{attachments.length}}">
+        <block wx:for="{{attachments}}" wx:for-item="media" wx:key="id">
+          <view class="sd-audio" wx:if="{{media.kind === 'audio'}}" data-url="{{media.url}}" bindtap="playAudio">{{playingUrl === media.url ? '■ 停止播放' : '▶ 播放语音'}} · {{media.name}}</view>
+          <video class="sd-video" wx:elif="{{media.kind === 'video'}}" src="{{media.url}}" controls show-center-play-btn />
+        </block>
+      </view>
+    </view>
+
+    <!-- 历史点评 -->
+    <view class="card" wx:if="{{feedbacks.length}}">
+      <view class="card-title"><text class="card-title__text">历史点评</text></view>
+      <view class="sd-fb" wx:for="{{feedbacks}}" wx:key="id">
+        <view class="between mb-8">
+          <text class="sd-fb__teacher">{{item.teacherName}}</text>
+          <text class="text-sm text-muted">{{item.timeText}}</text>
+        </view>
+        <view class="sd-fb__text">{{item.comment}}</view>
+        <view class="mt-8" wx:if="{{item.tags.length}}">
+          <text class="tag" wx:for="{{item.tags}}" wx:for-item="tg" wx:key="*this">{{tg}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 写点评 -->
+    <view class="card">
+      <view class="card-title">
+        <text class="card-title__text">写点评</text>
+        <text class="card-title__more" bindtap="onAiFeedback">{{generating ? '生成中…' : 'AI 生成草稿'}}</text>
+      </view>
+      <textarea
+        class="field__textarea"
+        placeholder="针对孩子的具体表现给出肯定与建议…"
+        placeholder-class="ph"
+        maxlength="500"
+        value="{{comment}}"
+        data-key="comment"
+        bindinput="onInput"
+      />
+      <view class="field mt-16">
+        <view class="field__label">标签（用逗号分隔，最多 5 个）</view>
+        <input
+          class="field__input"
+          placeholder="如：表达清晰，有耐心"
+          placeholder-class="ph"
+          value="{{tags}}"
+          data-key="tags"
+          bindinput="onInput"
+        />
+      </view>
+      <button class="btn btn-primary btn-block mt-16" bindtap="onSaveFeedback" disabled="{{saving}}">
+        {{saving ? '发送中…' : '发送点评'}}
+      </button>
+    </view>
+  </block>
+</view>
+
+<nav-bar role="teacher" active="submissions" />

@@ -1,0 +1,59 @@
+<view class="page page-with-nav">
+  <view class="st-head">
+    <view class="st-head__hello">你好，{{child ? child.name : '同学'}}</view>
+    <view class="st-head__sub">{{child && child.grade ? child.grade : '我的本周任务'}}</view>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:if="{{!loading}}">
+    <view class="card" wx:if="{{task}}">
+      <view class="between mb-16">
+        <text class="badge" style="background:{{statusBg}};color:{{statusColor}}">{{statusText}}</text>
+        <text class="text-sm text-muted" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+      </view>
+      <view class="task-title">{{task.title}}</view>
+      <view class="task-meta mt-16">
+        <text class="tag" wx:if="{{task.task_type}}">{{task.task_type}}</text>
+        <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
+      </view>
+      <view class="quote mt-24" wx:if="{{task.goal}}">
+        <text class="bold">目标：</text>{{task.goal}}
+      </view>
+      <view class="task-block" wx:if="{{task.steps}}">
+        <view class="task-block__label">怎么做</view>
+        <view class="task-block__body">{{task.steps}}</view>
+      </view>
+      <view class="task-block" wx:if="{{task.submitHint}}">
+        <view class="task-block__label">要提交什么</view>
+        <view class="task-block__body">{{task.submitHint}}</view>
+      </view>
+
+      <button class="btn btn-primary btn-block mt-24" wx:if="{{!locked}}" bindtap="goTask">
+        {{statusText === '草稿待提交' ? '继续完成' : '去完成任务'}}
+      </button>
+      <view class="st-locked" wx:else>已提交，等待老师点评</view>
+    </view>
+
+    <view class="card" wx:else>
+      <view class="empty">
+        <view class="empty__icon">📚</view>
+        <view class="empty__text">本周还没有任务</view>
+        <view class="empty__hint">老师发布任务后就能看到啦</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{feedback}}">
+      <view class="card-title">
+        <text class="card-title__text">老师点评</text>
+        <text class="text-sm text-muted">{{feedback.timeText}}</text>
+      </view>
+      <view class="feedback-comment">{{feedback.comment}}</view>
+      <view class="mt-16" wx:if="{{feedback.tags.length}}">
+        <text class="tag" wx:for="{{feedback.tags}}" wx:key="*this">{{item}}</text>
+      </view>
+    </view>
+  </block>
+</view>
+
+<nav-bar role="student" active="home" />

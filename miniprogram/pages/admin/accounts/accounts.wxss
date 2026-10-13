@@ -1,0 +1,35 @@
+.ac-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.ac-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.ac-head__sub {
+  font-size: 24rpx;
+  opacity: 0.9;
+  margin-top: 6rpx;
+}
+
+.title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ph {
+  color: #b6c0cd;
+}
+
+.field__textarea--sm {
+  min-height: 140rpx;
+}
+.search-box { margin-bottom: 12rpx; padding: 0 2rpx; }
+.search-box__input { height: 82rpx; padding: 0 24rpx; border: 2rpx solid #e1e8f0; border-radius: 14rpx; background: #fff; font-size: 27rpx; }
+.result-count { margin-bottom: 18rpx; color: #8795a7; font-size: 23rpx; text-align: right; }

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>本周任务 · 家校共育</title>
+  <link rel="stylesheet" href="css/refined-ui.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #0066cc;
+      --primary-dark: #0057b8;
+      --accent: #0f766e;
+      --ink: #1d1d1f;
+      --text-sub: #6e737d;
+      --muted: #8a8f98;
+      --line: #dedfe4;
+      --line-soft: #eceef2;
+      --canvas: #f5f6f7;
+      --surface: #ffffff;
+      --surface-soft: #fafafa;
+      --success: #157a45;
+      --danger: #b42318;
+      --warning-bg: #fff7e8;
+      --warning-text: #8a4b10;
+    }
+    body {
+      min-height: 100vh;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .topbar {
+      min-height: 64px;
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: rgba(255, 255, 255, 0.9);
+      border-bottom: 1px solid rgba(222, 223, 228, 0.86);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: saturate(180%) blur(18px);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .brand .logo {
+      width: 28px;
+      height: 28px;
+      background: url("assets/site-logo.png") center / contain no-repeat;
+      display: inline-block;
+    }
+    .parent-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      padding: 4px;
+      overflow-x: auto;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      background: rgba(245, 246, 247, 0.9);
+      scrollbar-width: none;
+    }
+    .parent-nav::-webkit-scrollbar { display: none; }
+    .nav-link {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 13px;
+      border-radius: 8px;
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .nav-link:hover { color: var(--ink); background: rgba(255, 255, 255, 0.82); }
+    .nav-link.active {
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: 0 6px 18px rgba(29, 29, 31, 0.08);
+    }
+    .user-area {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .child-switcher, .btn-logout, button {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .child-switcher { max-width: 190px; padding: 0 10px; }
+    .user-name { color: var(--text-sub); font-size: 13px; white-space: nowrap; }
+    .btn-logout { padding: 0 14px; }
+    .btn-logout:hover, .child-switcher:hover { border-color: #b8bec8; color: var(--primary); }
+    .main {
+      width: min(1120px, calc(100% - 48px));
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 34px 0 72px;
+    }
+    .page-title {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-end;
+    }
+    .page-title h1 { font-size: 28px; line-height: 1.18; font-weight: 680; }
+    .page-title p { margin-top: 8px; color: var(--text-sub); font-size: 14px; }
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .status-ongoing { background: #edf5ff; color: #0057b8; }
+    .status-submitted { background: #fff5df; color: #8a4b10; }
+    .status-done { background: #e9f8f0; color: var(--success); }
+    .bind-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border: 1px solid #f5d6a5;
+      border-radius: 12px;
+      background: var(--warning-bg);
+      color: var(--warning-text);
+      font-size: 14px;
+    }
+    .bind-bar button, .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+      padding: 0 16px;
+    }
+    .bind-bar button { background: #1d1d1f; border-color: #1d1d1f; }
+    .btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+    .btn-secondary { padding: 0 16px; }
+    .task-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .stack { display: grid; gap: 18px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line-soft);
+      border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(29, 29, 31, 0.06);
+      padding: 24px;
+    }
+    .empty-card {
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--text-sub);
+    }
+    .task-type {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #edf5ff;
+      color: #0057b8;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .task-title { margin-top: 14px; font-size: 30px; line-height: 1.18; font-weight: 680; }
+    .task-meta { margin-top: 10px; color: var(--text-sub); font-size: 14px; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-box, .detail-block, .tip-box, .submitted-box, .feedback-box {
+      background: var(--surface-soft);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .meta-box .label, .detail-label, .submitted-box .label, .feedback-box .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .meta-box .value { margin-top: 5px; font-size: 14px; font-weight: 650; }
+    .detail-grid { display: grid; gap: 14px; margin-top: 20px; }
+    .detail-block p, .tip-box, .submitted-box .content, .feedback-box .content {
+      margin-top: 8px;
+      color: var(--text-sub);
+      font-size: 14px;
+      line-height: 1.75;
+      white-space: pre-line;
+    }
+    .panel-title { font-size: 18px; line-height: 1.35; font-weight: 650; }
+    .panel-sub { margin-top: 6px; color: var(--text-sub); font-size: 13px; line-height: 1.6; }
+    .fit-options { display: grid; gap: 10px; margin-top: 16px; }
+    .fit-option {
+      width: 100%;
+      min-width: 0;
+      min-height: 56px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: left;
+      border-color: var(--line-soft);
+    }
+    .fit-option strong, .fit-option span { min-width: 0; }
+    .fit-option span { color: var(--text-sub); font-size: 13px; font-weight: 550; }
+    .fit-option.active {
+      border-color: var(--primary);
+      background: #edf5ff;
+      color: var(--primary-dark);
+    }
+    .fit-message { min-height: 20px; margin-top: 12px; color: var(--success); font-size: 12px; }
+    .submit-card h2, .submitted-card h2 { font-size: 18px; margin-bottom: 14px; }
+    .type-tabs { display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto; padding-bottom: 2px; }
+    .type-tab { flex: 0 0 auto; padding: 0 14px; border-radius: 999px; color: var(--text-sub); }
+    .type-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    textarea, input, select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+      outline: none;
+    }
+    textarea { min-height: 112px; padding: 12px; line-height: 1.65; resize: vertical; }
+    input, select { padding: 0 12px; }
+    textarea:focus, input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(0, 102, 204, 0.14); }
+    .check-group { display: grid; gap: 10px; }
+    .check-group label { display: flex; align-items: center; gap: 8px; color: var(--text-sub); font-size: 14px; }
+    .check-group input { width: auto; min-height: auto; }
+    .media-panel { border: 1px dashed #bfdbfe; border-radius: 12px; padding: 14px; background: #f8fbff; }
+    .media-list { margin-top: 10px; display: grid; gap: 8px; }
+    .media-item, .attachment-file { font-size: 13px; color: var(--text-sub); background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; }
+    .attachment-preview { margin-top: 10px; display: grid; gap: 8px; }
+    .attachment-preview img, .attachment-preview video, .attachment-preview audio { max-width: 100%; border-radius: 10px; }
+    .feedback-box { margin-top: 14px; background: #fff8ed; border-color: #f2d7ad; }
+    .tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { padding: 2px 10px; border: 1px solid var(--line-soft); border-radius: 999px; background: #fff; color: var(--text-sub); font-size: 12px; }
+    .action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+    .form-error { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 8px; }
+    .form-ok { color: var(--success); font-size: 12px; min-height: 16px; margin-top: 8px; }
+    .footer-note { margin-top: 28px; text-align: center; color: var(--muted); font-size: 12px; }
+    .modal-mask {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(22, 23, 25, 0.44);
+      backdrop-filter: blur(10px);
+    }
+    .modal-mask.show { display: flex; }
+    .modal { width: min(100%, 420px); background: #fff; border: 1px solid var(--line-soft); border-radius: 18px; padding: 30px; box-shadow: 0 24px 70px rgba(29, 29, 31, 0.12); }
+    .modal h3 { font-size: 18px; }
+    .modal-desc { margin-top: 6px; color: var(--text-sub); font-size: 13px; line-height: 1.6; }
+    .field { margin-top: 18px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 650; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .btn-confirm { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-cancel { background: #fff; }
+    @media (max-width: 900px) {
+      .topbar { align-items: flex-start; flex-wrap: wrap; padding: 12px 18px; gap: 10px; }
+      .parent-nav { order: 3; width: 100%; }
+      .user-area { margin-left: auto; }
+      .task-layout { grid-template-columns: 1fr; }
+      .main { width: min(100% - 40px, 760px); padding-top: 28px; }
+    }
+    @media (max-width: 640px) {
+      .main { width: min(100% - 28px, 560px); padding-top: 22px; }
+      .page-title { display: block; }
+      .page-title h1 { font-size: 24px; }
+      .card { padding: 18px; border-radius: 12px; }
+      .task-title { font-size: 24px; }
+      .meta-grid, .action-row, .modal-actions { grid-template-columns: 1fr; }
+      .fit-option { height: auto; padding: 12px 14px; flex-direction: column; align-items: flex-start; }
+      .user-name { display: none; }
+      .child-switcher { max-width: 150px; }
+    }
+  </style>
+  <link rel="stylesheet" href="css/parent-home.css">
+</head>
+<body class="parent-home">
+  <header class="topbar">
+    <div class="brand"><span class="logo"></span>家校共育</div>
+    <nav class="parent-nav" aria-label="家长端导航">
+      <a class="nav-link active" href="home.html">本周任务</a>
+      <a class="nav-link" href="timeline.html">孩子成长时间线</a>
+      <a class="nav-link" href="feedback.html">教师的反馈</a>
+      <a class="nav-link" href="parent-concern.html">成长关注</a>
+    </nav>
+    <div class="user-area">
+      <select class="child-switcher" id="childSwitcher" title="切换孩子"></select>
+      <span class="user-name" id="userName"></span>
+      <button class="btn-logout" id="logoutBtn" type="button">退出登录</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="page-title">
+      <div>
+        <h1>本周任务</h1>
+        <p>和孩子一起完成本周任务，记录过程，再把你们的感受告诉老师。</p>
+      </div>
+      <span class="status-tag" id="taskStatusTag" style="display:none"></span>
+    </div>
+
+    <section class="notification-bar" id="notificationBar" aria-labelledby="notificationTitle">
+      <div class="notification-bar-head">
+        <div class="notification-heading">
+          <span class="notification-mark" aria-hidden="true">通</span>
+          <div>
+            <h2 id="notificationTitle">教师通知</h2>
+            <p id="notificationSummary">正在读取最新通知</p>
+          </div>
+        </div>
+        <div class="notification-actions">
+          <button class="notification-read-all" id="markNotificationsRead" type="button" style="display:none">全部标记已读</button>
+          <button class="notification-hide" id="hideNotifications" type="button" style="display:none">隐藏通知</button>
+        </div>
+      </div>
+      <div class="notification-list" id="notificationList"></div>
+    </section>
+
+    <div class="bind-bar" id="bindBar" style="display:none">
+      <span>还没有绑定孩子，绑定后才能接收每周亲子任务。</span>
+      <button id="bindBtn" type="button">去绑定</button>
+    </div>
+
+    <section class="card empty-card" id="emptyState" style="display:none">
+      <div>
+        <h2>本周暂无成长任务</h2>
+        <p class="panel-sub">老师发布后，任务详情会出现在这里。</p>
+      </div>
+    </section>
+
+    <section class="task-layout is-hidden" id="taskLayout" style="display:none">
+      <div class="stack">
+        <article class="card" id="taskCard">
+          <span class="task-type" id="taskType"></span>
+          <h2 class="task-title" id="taskTitle"></h2>
+          <p class="task-meta" id="taskMeta"></p>
+          <div class="meta-grid">
+            <div class="meta-box"><p class="label">难度</p><p class="value" id="taskDifficulty">普通</p></div>
+            <div class="meta-box"><p class="label">材料</p><p class="value" id="taskMaterials">无特殊材料</p></div>
+            <div class="meta-box"><p class="label">替代方案</p><p class="value" id="taskFallback">按家庭情况简化</p></div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-block"><p class="detail-label">任务目标</p><p id="taskGoal"></p></div>
+            <div class="detail-block"><p class="detail-label">亲子步骤</p><p id="taskSteps"></p></div>
+            <div class="detail-block"><p class="detail-label">对话提示</p><div class="tip-box" id="taskTips"></div></div>
+            <div class="detail-block"><p class="detail-label">提交什么</p><p id="taskSubmitHint"></p></div>
+          </div>
+        </article>
+
+        <article class="card submit-card" id="submitCard" style="display:none">
+          <h2>提交你们的成果</h2>
+          <div class="type-tabs">
+            <button class="type-tab active" data-type="text" type="button">文字记录</button>
+            <button class="type-tab" data-type="check" type="button">完成打卡</button>
+            <button class="type-tab" data-type="image" type="button">照片</button>
+            <button class="type-tab" data-type="audio" type="button">语音</button>
+            <button class="type-tab" data-type="video" type="button">视频</button>
+          </div>
+          <div id="textArea"><textarea id="contentInput" placeholder="记录一下这次亲子任务的感受、孩子的表现或有趣瞬间"></textarea></div>
+          <div id="checkArea" style="display:none" class="check-group">
+            <label><input type="checkbox" class="check-item" value="我们完成了全部步骤"> 我们完成了全部步骤</label>
+            <label><input type="checkbox" class="check-item" value="孩子主动参与了"> 孩子主动参与了</label>
+            <label><input type="checkbox" class="check-item" value="我们有说有笑"> 我们有说有笑</label>
+            <label><input type="checkbox" class="check-item" value="孩子提出了自己的想法"> 孩子提出了自己的想法</label>
+          </div>
+          <div id="mediaArea" class="media-panel" style="display:none">
+            <input id="mediaInput" type="file">
+            <textarea id="mediaNote" style="margin-top:10px;min-height:80px" placeholder="补充一句说明，方便老师理解作品内容"></textarea>
+            <div class="media-list" id="mediaList"></div>
+          </div>
+          <p class="form-error" id="submitError"></p>
+          <p class="form-ok" id="submitOk"></p>
+          <div class="action-row">
+            <button class="btn-secondary" id="draftBtn" type="button">保存草稿</button>
+            <button class="btn-primary" id="submitBtn" type="button">正式提交</button>
+          </div>
+        </article>
+
+        <article class="card submitted-card" id="submittedCard" style="display:none">
+          <h2>已提交</h2>
+          <div class="submitted-box">
+            <p class="label">你们的记录</p>
+            <p class="content" id="submittedContent"></p>
+            <div class="attachment-preview" id="submittedAttachments"></div>
+          </div>
+          <div id="feedbackArea" style="display:none">
+            <div class="feedback-box">
+              <p class="label">老师的反馈</p>
+              <p class="content" id="feedbackContent"></p>
+              <div class="tags" id="feedbackTags"></div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="stack">
+        <article class="card" id="fitCard">
+          <h2 class="panel-title">这项任务适合你和孩子吗？</h2>
+          <p class="panel-sub">你的选择会帮助老师理解任务负担和家庭实际情况。</p>
+          <div class="fit-options" id="fitOptions">
+            <button class="fit-option" data-choice="suitable" type="button"><strong>该任务较适合我和孩子</strong><span>节奏、材料和亲子互动都比较合适</span></button>
+            <button class="fit-option" data-choice="unsuitable" type="button"><strong>该任务不适合我和孩子</strong><span>时间、材料或执行方式存在困难</span></button>
+          </div>
+          <p class="fit-message" id="fitMessage"></p>
+        </article>
+      </aside>
+    </section>
+
+
+  </main>
+
+  <div class="modal-mask" id="bindModal">
+    <div class="modal">
+      <h3>绑定孩子</h3>
+      <p class="modal-desc">填写孩子信息完成绑定。支持绑定多个孩子，可在顶部随时切换。</p>
+      <div class="field"><label for="childName">孩子姓名 / 昵称</label><input type="text" id="childName" placeholder="如：小明" maxlength="20"></div>
+      <div class="field"><label for="childGrade">年级</label><select id="childGrade"><option value="">请选择年级</option><option>一年级</option><option>二年级</option><option>三年级</option><option>四年级</option><option>五年级</option><option>六年级</option><option>初一</option><option>初二</option><option>初三</option></select></div>
+      <p class="error-msg" id="bindError" style="color:#b42318;font-size:12px;min-height:16px"></p>
+      <div class="modal-actions"><button class="btn-cancel" id="bindCancel" type="button">取消</button><button class="btn-confirm" id="bindConfirm" type="button">确认绑定</button></div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      requireAuth();
+
+      var auth = getAuth();
+      if (auth && auth.user) {
+        document.getElementById("userName").textContent = "你好，" + auth.user.displayName;
+        if (auth.user.role === "teacher") { window.location.href = "teacher.html"; return; }
+      }
+
+      var statusText = { ongoing: "进行中", draft: "草稿", submitted: "已提交", done: "已反馈" };
+      var statusClass = { ongoing: "status-ongoing", draft: "status-ongoing", submitted: "status-submitted", done: "status-done" };
+      var subType = "text";
+      var currentTaskId = null;
+      var currentChildId = Number(getSelectedChildId());
+      var mediaAttachments = [];
+      var formInteracted = false;
+      var savedThisSession = false;
+      var notificationLatestId = "";
+      var notificationHiddenKey = "parentNotificationBarHidden:" +
+        ((auth && auth.user && auth.user.id) || "current");
+
+      function parseAttachments(value) {
+        try { return JSON.parse(value || "[]") || []; }
+        catch (e) { return []; }
+      }
+
+      function renderAttachmentPreview(el, attachments) {
+        el.innerHTML = (attachments || []).map(function (a) {
+          var name = esc(a.name || "附件");
+          var url = a.url || "";
+          if (url && String(a.type || "").indexOf("image/") === 0) return '<img src="' + esc(url) + '" alt="' + name + '">';
+          if (url && String(a.type || "").indexOf("audio/") === 0) return '<audio controls src="' + esc(url) + '"></audio>';
+          if (url && String(a.type || "").indexOf("video/") === 0) return '<video controls src="' + esc(url) + '"></video>';
+          return '<div class="attachment-file">' + name + '</div>';
+        }).join("");
+      }
+
+      function renderMediaList() {
+        document.getElementById("mediaList").innerHTML = mediaAttachments.map(function (a) {
+          return '<div class="media-item">' + esc(a.name) + ' · ' + Math.ceil((a.size || 0) / 1024) + 'KB</div>';
+        }).join("");
+      }
+
+      function switchType(type) {
+        subType = type;
+        document.querySelectorAll(".type-tab").forEach(function (t) {
+          t.classList.toggle("active", t.getAttribute("data-type") === type);
+        });
+        document.getElementById("textArea").style.display = type === "text" ? "" : "none";
+        document.getElementById("checkArea").style.display = type === "check" ? "" : "none";
+        document.getElementById("mediaArea").style.display = ["image", "audio", "video"].indexOf(type) >= 0 ? "" : "none";
+        var mediaInput = document.getElementById("mediaInput");
+        mediaInput.accept = type === "image" ? "image/*" : type === "audio" ? "audio/*" : type === "video" ? "video/*" : "";
+      }
+
+      function readFiles(files) {
+        var picked = Array.prototype.slice.call(files || []).slice(0, 3);
+        var total = picked.reduce(function (n, f) { return n + f.size; }, 0);
+        if (total > 4500000) return Promise.reject(new Error("附件总大小请控制在 4.5MB 以内"));
+        return Promise.all(picked.map(function (file) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve({ name: file.name, type: file.type, size: file.size, url: reader.result }); };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        }));
+      }
+
+      function fitKey() {
+        return currentChildId && currentTaskId ? "taskFit:" + currentChildId + ":" + currentTaskId : "";
+      }
+
+      function renderFit(choice) {
+        document.querySelectorAll(".fit-option").forEach(function (btn) {
+          btn.classList.toggle("active", btn.getAttribute("data-choice") === choice);
+        });
+        document.getElementById("fitMessage").textContent = choice ? "已记录你的评价。" : "";
+      }
+
+      function formatNotificationTime(value) {
+        var raw = String(value || "").replace(" ", "T");
+        var date = new Date(raw);
+        if (Number.isNaN(date.getTime())) return "";
+        var now = new Date();
+        var sameDay = date.getFullYear() === now.getFullYear() &&
+          date.getMonth() === now.getMonth() &&
+          date.getDate() === now.getDate();
+        return sameDay
+          ? String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0")
+          : (date.getMonth() + 1) + "月" + date.getDate() + "日 " +
+            String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0");
+      }
+
+      function renderNotifications(data) {
+        var notifications = data.notifications || [];
+        var unreadCount = Number(data.unreadCount || 0);
+        var notificationBar = document.getElementById("notificationBar");
+        var list = document.getElementById("notificationList");
+        var summary = document.getElementById("notificationSummary");
+        var readAll = document.getElementById("markNotificationsRead");
+        var hideButton = document.getElementById("hideNotifications");
+        notificationLatestId = notifications.reduce(function (latest, item) {
+          return Math.max(latest, Number(item.id) || 0);
+        }, 0) || "";
+        var hiddenAtId = localStorage.getItem(notificationHiddenKey) || "";
+        if (unreadCount || (notificationLatestId && hiddenAtId !== String(notificationLatestId))) {
+          localStorage.removeItem(notificationHiddenKey);
+          hiddenAtId = "";
+        }
+        var isHidden = !!(notificationLatestId && hiddenAtId === String(notificationLatestId));
+        notificationBar.style.display = isHidden ? "none" : "";
+        hideButton.style.display = !isHidden && notifications.length && !unreadCount ? "inline-flex" : "none";
+        summary.textContent = unreadCount
+          ? "有 " + unreadCount + " 条未读通知，点击通知可标记为已读"
+          : (notifications.length ? "最近通知已读完" : "暂无新的班级通知");
+        readAll.style.display = unreadCount ? "inline-flex" : "none";
+        if (isHidden) return;
+        if (!notifications.length) {
+          list.innerHTML = '<div class="notification-empty">老师发布的班级通知会显示在这里。</div>';
+          return;
+        }
+        list.innerHTML = notifications.map(function (item) {
+          var unread = !item.read_at;
+          return '<article class="notification-item' + (unread ? " unread" : "") +
+            '" data-notification-id="' + esc(item.id) + '" role="button" tabindex="0">' +
+            '<div class="notification-item-top"><div><span class="notification-item-label">' +
+            esc(item.title || "教师通知") + '</span>' +
+            (unread ? '<span class="notification-unread">未读</span>' : "") +
+            '</div><time>' + esc(formatNotificationTime(item.created_at)) + '</time></div>' +
+            '<p>' + esc(item.content || "") + '</p><div class="notification-sender">' +
+            esc(item.sender_name || "老师") + '</div></article>';
+        }).join("");
+      }
+
+      function loadNotifications() {
+        return api("/api/parent/notifications?limit=6").then(function (data) {
+          renderNotifications(data || {});
+        }).catch(function () {
+          document.getElementById("notificationSummary").textContent = "通知暂时无法加载，请稍后刷新";
+          document.getElementById("notificationList").innerHTML =
+            '<div class="notification-empty">网络异常，暂时无法读取通知。</div>';
+        });
+      }
+
+      function markNotificationRead(id) {
+        return api("/api/parent/notifications/" + encodeURIComponent(id) + "/read", {
+          method: "POST"
+        }).then(loadNotifications);
+      }
+
+      function renderChildren(data) {
+        var children = data.children || [];
+        var switcher = document.getElementById("childSwitcher");
+        switcher.innerHTML = "";
+        if (children.length === 0) {
+          var opt = document.createElement("option");
+          opt.textContent = "未绑定孩子";
+          switcher.appendChild(opt);
+          switcher.disabled = true;
+          return;
+        }
+        switcher.disabled = false;
+        children.forEach(function (c) {
+          var o = document.createElement("option");
+          o.value = c.id;
+          o.textContent = c.name + (c.grade ? " · " + c.grade : "");
+          if (data.child && c.id === data.child.id) o.selected = true;
+          switcher.appendChild(o);
+        });
+      }
+
+      function resetTaskUi() {
+        document.getElementById("emptyState").style.display = "none";
+        var taskLayout = document.getElementById("taskLayout");
+        taskLayout.classList.add("is-hidden");
+        taskLayout.style.display = "none";
+        document.getElementById("submitCard").style.display = "none";
+        document.getElementById("submittedCard").style.display = "none";
+        document.getElementById("feedbackArea").style.display = "none";
+      }
+
+      function render(data) {
+        currentChildId = data.child && data.child.id;
+        renderChildren(data);
+        document.getElementById("bindBar").style.display = (data.children || []).length ? "none" : "flex";
+        resetTaskUi();
+
+        if (!data.task || !data.child) {
+          currentTaskId = null;
+          document.getElementById("taskStatusTag").style.display = "none";
+          document.getElementById("emptyState").style.display = "grid";
+          return;
+        }
+
+        currentTaskId = data.task.id;
+        setSelectedChildId(data.child.id);
+        trackEvent("task_detail_viewed", { childId: currentChildId, taskId: currentTaskId, meta: { source: "home" } });
+
+        var tag = document.getElementById("taskStatusTag");
+        tag.style.display = "inline-flex";
+        tag.textContent = statusText[data.taskStatus] || "进行中";
+        tag.className = "status-tag " + (statusClass[data.taskStatus] || "status-ongoing");
+
+        var taskLayout = document.getElementById("taskLayout");
+        taskLayout.classList.remove("is-hidden");
+        taskLayout.style.display = "grid";
+        document.getElementById("taskType").textContent = data.task.task_type || "亲子任务";
+        document.getElementById("taskTitle").textContent = data.task.title || "本周成长任务";
+        document.getElementById("taskMeta").textContent = "约 " + (data.task.duration || 20) + " 分钟 · 截止周日";
+        document.getElementById("taskDifficulty").textContent = data.task.difficulty || "普通";
+        document.getElementById("taskMaterials").textContent = data.task.materials || "无特殊材料";
+        document.getElementById("taskFallback").textContent = data.task.fallback_plan || "按家庭情况简化";
+        document.getElementById("taskGoal").textContent = data.task.goal || "-";
+        document.getElementById("taskSteps").textContent = data.task.steps || "-";
+        document.getElementById("taskTips").textContent = data.task.dialogue_tips || "-";
+        document.getElementById("taskSubmitHint").textContent = data.task.submit_hint || "-";
+        renderFit(localStorage.getItem(fitKey()) || "");
+
+        if (data.taskStatus === "ongoing" || data.taskStatus === "draft") {
+          document.getElementById("submitCard").style.display = "block";
+          trackEvent("submit_page_entered", { childId: currentChildId, taskId: currentTaskId, meta: { source: "home" } });
+          if (data.taskStatus === "draft" && data.submission) {
+            switchType(data.submission.sub_type || "text");
+            if (subType === "text") document.getElementById("contentInput").value = data.submission.content || "";
+            if (subType === "check") {
+              var saved = data.submission.content || "";
+              document.querySelectorAll(".check-item").forEach(function (c) { c.checked = saved.indexOf(c.value) >= 0; });
+            }
+            if (["image", "audio", "video"].indexOf(subType) >= 0) {
+              document.getElementById("mediaNote").value = data.submission.content || "";
+              mediaAttachments = parseAttachments(data.submission.attachments);
+              renderMediaList();
+            }
+            document.getElementById("submitOk").textContent = "草稿已保存，可继续编辑后正式提交";
+          }
+          return;
+        }
+
+        if (data.submission) {
+          document.getElementById("submittedCard").style.display = "block";
+          document.getElementById("submittedContent").textContent = data.submission.content || "";
+          renderAttachmentPreview(document.getElementById("submittedAttachments"), parseAttachments(data.submission.attachments));
+          if (data.taskStatus === "done" && data.feedback) {
+            document.getElementById("feedbackArea").style.display = "block";
+            document.getElementById("feedbackContent").textContent = data.feedback.comment || "";
+            trackEvent("feedback_read", { childId: currentChildId, taskId: currentTaskId, meta: { source: "home" } });
+            var tags = (data.feedback.tags || "").split(",").filter(function (t) { return t.trim(); });
+            document.getElementById("feedbackTags").innerHTML = tags.map(function (t) { return '<span class="tag">' + esc(t.trim()) + '</span>'; }).join("");
+          }
+        }
+      }
+
+      function loadHome(childId) {
+        var qs = childId ? "?childId=" + childId : "";
+        return api("/api/home" + qs).then(function (data) {
+          if (data.needQuestionnaire) { window.location.href = "questionnaire.html"; return; }
+          if (data.selectedChildInvalid) localStorage.removeItem("selectedChildId");
+          render(data);
+        }).catch(function (e) {
+          resetTaskUi();
+          document.getElementById("emptyState").style.display = "grid";
+          console.error(e);
+        });
+      }
+
+      document.getElementById("childSwitcher").addEventListener("change", function () {
+        setSelectedChildId(this.value);
+        loadHome(this.value);
+      });
+
+      document.getElementById("logoutBtn").addEventListener("click", function () {
+        api("/api/auth/logout", { method: "POST" }).catch(function () {});
+        localStorage.removeItem("auth");
+        localStorage.removeItem("selectedChildId");
+        window.location.href = "index.html";
+      });
+
+      document.getElementById("fitOptions").addEventListener("click", function (e) {
+        var btn = e.target.closest(".fit-option");
+        if (!btn || !currentChildId || !currentTaskId) return;
+        var choice = btn.getAttribute("data-choice");
+        localStorage.setItem(fitKey(), choice);
+        renderFit(choice);
+        trackEvent("task_fit_feedback", { childId: currentChildId, taskId: currentTaskId, meta: { choice: choice } });
+      });
+
+      document.getElementById("notificationList").addEventListener("click", function (e) {
+        var item = e.target.closest(".notification-item.unread");
+        if (!item) return;
+        markNotificationRead(item.getAttribute("data-notification-id"));
+      });
+
+      document.getElementById("notificationList").addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        var item = e.target.closest(".notification-item.unread");
+        if (!item) return;
+        e.preventDefault();
+        markNotificationRead(item.getAttribute("data-notification-id"));
+      });
+
+      document.getElementById("markNotificationsRead").addEventListener("click", function () {
+        var button = this;
+        button.disabled = true;
+        api("/api/parent/notifications/read-all", { method: "POST" }).then(loadNotifications).finally(function () {
+          button.disabled = false;
+        });
+      });
+
+      document.getElementById("hideNotifications").addEventListener("click", function () {
+        if (!notificationLatestId) return;
+        localStorage.setItem(notificationHiddenKey, String(notificationLatestId));
+        document.getElementById("notificationBar").style.display = "none";
+      });
+
+      document.querySelectorAll(".type-tab").forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          formInteracted = true;
+          switchType(tab.getAttribute("data-type"));
+        });
+      });
+      document.getElementById("contentInput").addEventListener("input", function () { formInteracted = true; });
+      document.getElementById("mediaNote").addEventListener("input", function () { formInteracted = true; });
+      document.querySelectorAll(".check-item").forEach(function (c) { c.addEventListener("change", function () { formInteracted = true; }); });
+      document.getElementById("mediaInput").addEventListener("change", function () {
+        formInteracted = true;
+        var errEl = document.getElementById("submitError");
+        errEl.textContent = "";
+        readFiles(this.files).then(function (items) {
+          mediaAttachments = items;
+          renderMediaList();
+        }).catch(function (e) { errEl.textContent = e.message || "附件读取失败"; });
+      });
+
+      function collectContent(status) {
+        var errEl = document.getElementById("submitError");
+        errEl.textContent = "";
+        document.getElementById("submitOk").textContent = "";
+        var content = "";
+        if (subType === "text") content = document.getElementById("contentInput").value.trim();
+        else if (subType === "check") {
+          var checked = Array.prototype.slice.call(document.querySelectorAll(".check-item:checked")).map(function (c) { return c.value; });
+          content = checked.length ? "打卡：" + checked.join("；") : "";
+        } else {
+          content = document.getElementById("mediaNote").value.trim();
+          if (!content && mediaAttachments.length) content = "已上传" + mediaAttachments.length + "个附件";
+        }
+        if (status === "submitted" && !content && mediaAttachments.length === 0) {
+          errEl.textContent = "请先填写记录或添加附件";
+          return null;
+        }
+        return content || "";
+      }
+
+      function save(status, btn) {
+        var content = collectContent(status);
+        if (content === null) return;
+        var errEl = document.getElementById("submitError");
+        var okEl = document.getElementById("submitOk");
+        var oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = status === "draft" ? "保存中" : "提交中";
+        api("/api/submissions", {
+          method: "POST",
+          body: { taskId: currentTaskId, childId: currentChildId, content: content, subType: subType, status: status, attachments: mediaAttachments }
+        }).then(function (res) {
+          if (res.ok) {
+            savedThisSession = true;
+            if (status === "submitted") { window.location.reload(); return; }
+            okEl.textContent = "草稿已保存";
+          } else {
+            errEl.textContent = res.message || "操作失败";
+          }
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }).catch(function () {
+          errEl.textContent = "网络异常，请稍后再试";
+          btn.disabled = false;
+          btn.textContent = oldText;
+        });
+      }
+
+      document.getElementById("submitBtn").addEventListener("click", function () { save("submitted", this); });
+      document.getElementById("draftBtn").addEventListener("click", function () { save("draft", this); });
+
+      window.addEventListener("pagehide", function () {
+        if (formInteracted && !savedThisSession && currentTaskId) {
+          var hadContent = false;
+          if (subType === "text") hadContent = !!document.getElementById("contentInput").value.trim();
+          else if (subType === "check") hadContent = document.querySelectorAll(".check-item:checked").length > 0;
+          else hadContent = !!document.getElementById("mediaNote").value.trim() || mediaAttachments.length > 0;
+          trackEvent("submit_abandoned", { childId: currentChildId, taskId: currentTaskId, meta: { subType: subType, hadContent: hadContent, source: "home" } });
+        }
+      });
+
+      var bindModal = document.getElementById("bindModal");
+      function openBind() {
+        document.getElementById("childName").value = "";
+        document.getElementById("childGrade").value = "";
+        document.getElementById("bindError").textContent = "";
+        bindModal.classList.add("show");
+      }
+      document.getElementById("bindBtn").addEventListener("click", openBind);
+      document.getElementById("bindCancel").addEventListener("click", function () { bindModal.classList.remove("show"); });
+      bindModal.addEventListener("click", function (e) { if (e.target === bindModal) bindModal.classList.remove("show"); });
+      document.getElementById("bindConfirm").addEventListener("click", function () {
+        var name = document.getElementById("childName").value.trim();
+        var grade = document.getElementById("childGrade").value;
+        var errEl = document.getElementById("bindError");
+        errEl.textContent = "";
+        if (!name) { errEl.textContent = "请填写孩子姓名/昵称"; return; }
+        api("/api/children", { method: "POST", body: { name: name, grade: grade } }).then(function (res) {
+          if (res.child) {
+            setSelectedChildId(res.child.id);
+            bindModal.classList.remove("show");
+            loadHome(res.child.id);
+          } else {
+            errEl.textContent = res.message || "绑定失败";
+          }
+        }).catch(function () { errEl.textContent = "网络异常，请稍后再试"; });
+      });
+
+      loadNotifications();
+      loadHome(getSelectedChildId());
+    })();
+  </script>
+</body>
+</html>

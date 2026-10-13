@@ -1,0 +1,73 @@
+.ts-head {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  color: #fff;
+  margin-bottom: 24rpx;
+}
+
+.ts-head__title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.ts-head__sub {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+.search-box {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 12rpx 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(15, 40, 80, 0.05);
+}
+
+.search-box__input {
+  font-size: 28rpx;
+  height: 64rpx;
+  color: #1f2937;
+}
+
+.ph {
+  color: #b6c0cd;
+}
+
+.ts-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ml {
+  margin-left: 12rpx;
+}
+
+.ts-row {
+  display: flex;
+  font-size: 25rpx;
+  margin-top: 8rpx;
+}
+
+.ts-row__label {
+  color: #8795a7;
+  width: 120rpx;
+  flex-shrink: 0;
+}
+
+.ts-row__value {
+  color: #536174;
+  flex: 1;
+}
+
+.ts-note {
+  margin-top: 16rpx;
+  background: #f8fbff;
+  border-radius: 10rpx;
+  padding: 16rpx;
+  font-size: 25rpx;
+  color: #536174;
+  line-height: 1.7;
+}

@@ -1,0 +1,534 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>发布任务 · 家校共育</title><style>
+ * { margin: 0; padding: 0; box-sizing: border-box; }
+ :root {
+ --primary: #3b82f6; --text: #1f2937; --text-sub: #6b7280; --border: #e5e7eb;
+ }
+ body {
+ min-height: 100vh; font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+ background: linear-gradient(160deg, #eff6ff 0%, #f0fdf4 100%); color: var(--text);
+ }
+ .topbar {
+ display: flex; align-items: center; gap: 18px; padding: 12px 20px;
+ background: rgba(255,255,255,0.88); border-bottom: 1px solid var(--border);
+ position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px);
+ }
+ .brand { font-size: 16px; font-weight: 700; white-space: nowrap; }
+ .teacher-nav { display: flex; align-items: center; gap: 6px; flex: 1; overflow-x: auto; }
+ .nav-link {
+ flex: 0 0 auto; padding: 7px 12px; border-radius: 8px; color: var(--text-sub);
+ text-decoration: none; font-size: 14px; font-weight: 600;
+ }
+ .nav-link:hover { color: var(--primary); background: #eff6ff; }
+ .nav-link.active { color: #1d4ed8; background: #dbeafe; }
+ .top-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+ .user-name { font-size: 13px; color: var(--text-sub); white-space: nowrap; }
+ .btn-logout {
+ padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px;
+ background: #fff; color: var(--text-sub); font-size: 13px; cursor: pointer;
+ }
+ .btn-logout:hover { color: var(--primary); border-color: var(--primary); }
+ .main { max-width: 640px; margin: 0 auto; padding: 24px 20px 48px; }
+ .publish-panel {
+ background: #fff; border: 1px solid var(--border); border-radius: 12px;
+ box-shadow: 0 4px 20px rgba(59,130,246,0.08); padding: 20px;
+ }
+ .panel-title { font-size: 16px; font-weight: 700; }
+ .panel-sub { margin-top: 4px; font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+ .field { margin-top: 12px; }
+ .field label { display: block; font-size: 12px; color: var(--text-sub); margin-bottom: 6px; }
+ .field input, .field textarea, .field select {
+ width: 100%; border: 1px solid var(--border); border-radius: 8px;
+ padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; background: #fff;
+ }
+ .field textarea { min-height: 76px; resize: vertical; line-height: 1.6; }
+ .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--primary); }
+ .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+ .btn-primary {
+ width: 100%; height: 42px; margin-top: 14px; border: none; border-radius: 8px;
+ background: var(--primary); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+ }
+ .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+ .form-msg { min-height: 18px; margin-top: 8px; font-size: 12px; color: #16a34a; }
+ .ai-request-plan {
+ background: #f5fbff; border: 1px solid #cfe5f4; border-radius: 8px; padding: 12px;
+ margin-top: 10px; color: #496779; font-size: 12px; line-height: 1.65;
+ }
+ .ai-request-plan p { margin-top: 6px; }
+ .ai-request-plan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #164b68; }
+ .ai-request-plan-head span { color: #31739a; font-size: 11px; font-weight: 600; }
+ .ai-risk { color: #a13a2a !important; font-weight: 600; }
+ @media (max-width: 700px) {
+ .topbar { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+ .teacher-nav { order: 3; width: 100%; flex-basis: 100%; }
+ .top-actions { margin-left: auto; }
+ }
+ @media (max-width: 520px) { .row2 { grid-template-columns: 1fr; } }
+ </style><link rel="stylesheet" href="css/refined-ui.css"><style>
+ body:has(#publishBtn) {
+ --teacher-primary: #0f766e; --teacher-primary-dark: #115e59;
+ --teacher-ink: #0b1220; --teacher-muted: #556273; --teacher-line: #d9e2e7;
+ --teacher-canvas: #f5f7f8; background: var(--teacher-canvas) !important;
+ }
+ body:has(#publishBtn) .publish-panel {
+ border-color: #e5e7eb !important; box-shadow: 0 14px 32px rgba(15,23,42,0.055) !important;
+ }
+ body:has(#publishBtn) .request-panel {
+ background: #f9fafb !important; border-color: #e5e7eb !important; box-shadow: none !important;
+ }
+ body:has(#publishBtn) #parentRequestList { display: grid !important; gap: 16px !important; }
+ body:has(#publishBtn) .parent-request-item {
+ padding: 18px !important; border-color: #e5e7eb !important; border-radius: 12px !important;
+ background: #fff !important; box-shadow: 0 10px 24px rgba(15,23,42,0.06) !important;
+ }
+ body:has(#publishBtn) .parent-request-item + .parent-request-item { margin-top: 0 !important; }
+ body:has(#publishBtn) textarea {
+ min-height: 112px !important; overflow: hidden !important; resize: none !important; scrollbar-width: none;
+ }
+ body:has(#publishBtn) textarea::-webkit-scrollbar { display: none; }
+ body:has(#publishBtn) .parent-request-original {
+ margin-top: 14px !important; padding: 14px !important; background: #f8fafc !important;
+ border-color: #e6edf3 !important;
+ }
+ body:has(#publishBtn) .parent-request-original b,
+ body:has(#publishBtn) .ai-request-plan-head b {
+ color: #0b1220 !important; font-size: 13px !important; font-weight: 650 !important;
+ }
+ body:has(#publishBtn) .parent-request-original p {
+ margin-top: 8px !important; color: #374151 !important; font-size: 14px !important;
+ line-height: 1.6 !important;
+ }
+ body:has(#publishBtn) .ai-request-plan {
+ margin-top: 14px !important; padding: 14px !important; background: #ffffff !important;
+ border: 1px solid #d8e8e5 !important; border-radius: 10px !important; color: #374151 !important;
+ font-size: 14px !important; line-height: 1.6 !important;
+ }
+ body:has(#publishBtn) .ai-request-plan-head {
+ display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important;
+ color: #0b1220 !important;
+ }
+ body:has(#publishBtn) .ai-request-plan-head span {
+ color: #0f766e !important; font-size: 12px !important; font-weight: 650 !important;
+ }
+ body:has(#publishBtn) .ai-request-plan-body {
+ margin-top: 10px !important; color: #374151 !important; font-size: 14px !important; line-height: 1.6 !important;
+ }
+ body:has(#publishBtn) .ai-request-plan-body p { margin-top: 8px !important; }
+ body:has(#publishBtn) .ai-request-plan.is-collapsed .ai-request-plan-body {
+ display: -webkit-box !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+ overflow: hidden !important;
+ }
+ body:has(#publishBtn) .ai-request-toggle {
+ width: auto !important; min-height: 32px !important; margin-top: 10px !important; padding: 0 11px !important;
+ border: 1px solid #b9d9d4 !important; border-radius: 8px !important; background: #fff !important;
+ color: #0f766e !important; font-size: 13px !important; font-weight: 650 !important; cursor: pointer;
+ }
+ body:has(#publishBtn) .ai-risk { color: #b42318 !important; font-weight: 650 !important; }
+ body:has(#publishBtn) .request-sticky-actions {
+ position: sticky !important; bottom: 16px !important; z-index: 5 !important; margin: 20px -4px -4px !important;
+ padding: 12px !important; border: 1px solid rgba(217,226,231,0.94) !important; border-radius: 12px !important;
+ background: rgba(255,255,255,0.94) !important; box-shadow: 0 12px 28px rgba(15,23,42,0.12) !important;
+ backdrop-filter: blur(12px);
+ }
+ body:has(#publishBtn) .request-actions {
+ display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 10px !important; margin-top: 0 !important;
+ }
+ body:has(#publishBtn) .request-sticky-actions .form-msg { margin-top: 8px !important; }
+ body:has(#publishBtn) #parentRequestList {
+ display: grid !important; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+ gap: 12px !important;
+ }
+ body:has(#publishBtn) .request-thumb {
+ width: 100% !important; min-height: 154px !important; padding: 14px !important;
+ border: 1px solid #e5e7eb !important; border-radius: 12px !important; background: #fff !important;
+ box-shadow: 0 10px 24px rgba(15,23,42,0.055) !important; color: inherit !important;
+ text-align: left !important; cursor: pointer !important; display: flex !important; flex-direction: column !important;
+ gap: 10px !important; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease !important;
+ }
+ body:has(#publishBtn) .request-thumb:hover,
+ body:has(#publishBtn) .request-thumb:focus-visible {
+ border-color: #b9d9d4 !important; box-shadow: 0 14px 28px rgba(15,118,110,0.12) !important;
+ transform: translateY(-1px) !important; outline: none !important;
+ }
+ body:has(#publishBtn) .request-thumb-top {
+ display: flex !important; align-items: flex-start !important; justify-content: space-between !important;
+ gap: 10px !important;
+ }
+ body:has(#publishBtn) .request-thumb-name {
+ color: #0b1220 !important; font-size: 15px !important; font-weight: 650 !important; line-height: 1.35 !important;
+ }
+ body:has(#publishBtn) .request-thumb-meta,
+ body:has(#publishBtn) .request-thumb-desc,
+ body:has(#publishBtn) .request-thumb-foot {
+ color: #607086 !important; font-size: 12px !important; line-height: 1.5 !important;
+ }
+ body:has(#publishBtn) .request-thumb-title {
+ color: #172033 !important; font-size: 14px !important; font-weight: 650 !important; line-height: 1.45 !important;
+ display: -webkit-box !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden !important;
+ }
+ body:has(#publishBtn) .request-thumb-desc {
+ display: -webkit-box !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden !important;
+ }
+ body:has(#publishBtn) .request-thumb-foot {
+ margin-top: auto !important; display: flex !important; align-items: center !important; justify-content: space-between !important;
+ gap: 8px !important;
+ }
+ body:has(#publishBtn) .request-thumb-link { color: #0f766e !important; font-weight: 650 !important; }
+ .request-modal-mask {
+ position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center;
+ padding: 28px; background: rgba(15,23,42,0.42); backdrop-filter: blur(6px);
+ }
+ .request-modal-mask.show { display: flex; }
+ .request-modal-shell {
+ width: min(860px, 100%); max-height: min(88vh, 860px); display: flex; flex-direction: column;
+ background: #fff; border: 1px solid #dbe4ef; border-radius: 14px; box-shadow: 0 24px 80px rgba(15,23,42,0.24);
+ overflow: hidden;
+ }
+ .request-modal-head {
+ display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+ padding: 20px 22px 16px; border-bottom: 1px solid #e5e7eb; background: #fbfdff;
+ }
+ .request-modal-head h2 { margin: 0; color: #0b1220; font-size: 18px; line-height: 1.35; }
+ .request-modal-sub { margin-top: 4px; color: #607086; font-size: 13px; line-height: 1.5; }
+ .request-modal-close {
+ width: 36px; height: 36px; border: 1px solid #d9e2e7; border-radius: 8px; background: #fff;
+ color: #607086; font-size: 22px; line-height: 1; cursor: pointer;
+ }
+ .request-modal-close:hover { color: #0f766e; border-color: #b9d9d4; }
+ .request-modal-body { padding: 20px 22px 24px; overflow: auto; }
+ .request-modal-body .parent-request-item { box-shadow: none !important; border-color: #e5e7eb !important; }
+ body.request-modal-open { overflow: hidden; }
+ @media (max-width: 640px) {
+ body:has(#publishBtn) .request-actions { grid-template-columns: 1fr !important; }
+ body:has(#publishBtn) .request-sticky-actions { bottom: 10px !important; }
+ .request-modal-mask { padding: 12px; align-items: stretch; }
+ .request-modal-shell { max-height: calc(100vh - 24px); }
+ .request-modal-head { padding: 16px; }
+ .request-modal-body { padding: 16px; }
+ }
+</style>
+</head><body><header class="topbar"><span class="brand">教师工作台</span><nav class="teacher-nav" aria-label="教师端导航"><a class="nav-link" href="teacher.html">全局报告</a><a class="nav-link" href="teacher-ai.html">AI 洞察</a><a class="nav-link" href="teacher-class-overview.html">班级概览</a><a class="nav-link active" href="teacher-publish.html">发布任务</a><a class="nav-link" href="teacher-submissions.html">学生提交</a><a class="nav-link" href="teacher-students.html">学生档案</a></nav><div class="top-actions"><span class="user-name" id="userName"></span><button class="btn-logout" id="logoutBtn">退出登录</button></div></header><main class="main"><section class="publish-panel"><p class="panel-title">发布本周亲子任务</p><p class="panel-sub">从模板带出任务卡，老师可微调后发布给全班。</p><div class="field"><label>任务模板</label><select id="templateSelect"></select></div><div class="field"><label>任务标题</label><input id="pubTitle" maxlength="50"></div><div class="row2"><div class="field"><label>任务类型</label><select id="pubType"><option>阅读</option><option>习惯养成</option><option>学科应用</option><option>情绪社交</option><option>家务实践</option><option>运动健身</option><option>观察探究</option></select></div><div class="field"><label>预计时长</label><input id="pubDuration" type="number" min="5" max="60"></div></div><div class="row2"><div class="field"><label>难度</label><select id="pubDifficulty"><option>简单</option><option selected>普通</option><option>进阶</option></select></div><div class="field"><label>所需材料</label><input id="pubMaterials" maxlength="80"></div></div><div class="field"><label>目标</label><input id="pubGoal" maxlength="100"></div><div class="field"><label>亲子步骤</label><textarea id="pubSteps"></textarea></div><div class="field"><label>对话提示</label><input id="pubTips" maxlength="100"></div><div class="field"><label>提交要求</label><input id="pubSubmit" maxlength="100"></div><div class="field"><label>替代方案</label><input id="pubFallback" maxlength="120"></div><button class="btn-primary" id="publishBtn">发布给全班</button><p class="form-msg" id="publishMsg"></p></section><section class="card request-panel"><div class="request-panel-head"><div><p class="panel-title">家长自主定制任务</p><p class="panel-sub">右侧按提交项目展示缩略卡，点击卡片查看详情并处理。</p></div><span class="request-count" id="requestCount"></span></div><div id="parentRequestList"><p class="empty-text">正在加载家长提议…</p></div></section></main><div class="request-modal-mask" id="requestModal" aria-hidden="true"><div class="request-modal-shell" role="dialog" aria-modal="true" aria-labelledby="requestModalTitle"><div class="request-modal-head"><div><h2 id="requestModalTitle">提交项目详情</h2><p class="request-modal-sub" id="requestModalSub">查看家长提交内容、AI 建议与审核表单。</p></div><button class="request-modal-close" id="requestModalClose" type="button" aria-label="关闭详情">×</button></div><div class="request-modal-body" id="requestModalBody"></div></div></div><script src="js/api.js"></script><script>
+ (function () {
+ "use strict";
+ requireAuth();
+ var auth = getAuth();
+ if (auth && auth.user) {
+ if (auth.user.role !== "teacher") { window.location.href = "home.html"; return; }
+ document.getElementById("userName").textContent = "你好，" + auth.user.displayName;
+ }
+ document.getElementById("logoutBtn").addEventListener("click", function () {
+ api("/api/auth/logout", { method: "POST" }).catch(function () {});
+ localStorage.removeItem("auth");
+ window.location.href = "index.html";
+ });
+
+ function fitTextarea(textarea) {
+ if (!textarea) return;
+ textarea.style.height = "auto";
+ textarea.style.height = textarea.scrollHeight + "px";
+ }
+
+ function fitAllTextareas(root) {
+ Array.prototype.forEach.call((root || document).querySelectorAll("textarea"), fitTextarea);
+ }
+
+ document.addEventListener("input", function (e) {
+ if (e.target && e.target.matches("textarea")) fitTextarea(e.target);
+ }, true);
+
+ var TASK_TEMPLATES = [
+ { title: "亲子共读：共读一本好书", type: "阅读", duration: 20, difficulty: "普通", materials: "一本课外书", goal: "营造家庭阅读氛围，培养孩子表达与思考能力", steps: "1. 和孩子一起选一本想读的书\n2. 安静共读 20 分钟\n3. 分享各自最喜欢的段落\n4. 讨论故事中的道理", tips: "你觉得这个故事里，如果你是主角会怎么做？", submit: "拍照、语音或写一段读后感", fallback: "时间有限时可共读一个章节，祖辈陪伴可改为听孩子讲故事" },
+ { title: "家庭观察：一起种一颗豆子", type: "观察探究", duration: 15, difficulty: "简单", materials: "豆子、纸巾或小杯子", goal: "培养观察能力与责任感", steps: "1. 一起泡豆子\n2. 每天观察记录变化\n3. 周末一起画出变化\n4. 讨论植物生长需要什么", tips: "你觉得它明天会有什么变化？为什么？", submit: "照片或文字记录观察发现", fallback: "没有豆子时可观察家里的一盆植物或窗外天气" },
+ { title: "整理小能手：书桌大变身", type: "家务实践", duration: 20, difficulty: "简单", materials: "书桌、收纳盒可选", goal: "培养整理习惯和家庭责任感", steps: "1. 一起观察书桌现状\n2. 分类书本和文具\n3. 决定保留和归位\n4. 整理后一起拍照复盘", tips: "整理之后，你觉得哪里最方便？", submit: "整理前后照片或一句感受", fallback: "空间有限时只整理一个抽屉或书包" },
+ { title: "情绪卡片：画出今天的心情", type: "情绪社交", duration: 15, difficulty: "简单", materials: "纸和彩笔", goal: "帮助孩子识别并表达情绪", steps: "1. 家长和孩子各画一张心情卡\n2. 互相介绍自己的画\n3. 说一件让自己有这种心情的事\n4. 一起想一个让心情变好的方法", tips: "今天最开心或最难过的事是什么？", submit: "拍照心情卡片或录一段分享", fallback: "没有彩笔时可用表情或口头描述代替" },
+ { title: "生活数学：超市小账本", type: "学科应用", duration: 25, difficulty: "普通", materials: "购物清单或小票", goal: "把数学应用到真实生活场景", steps: "1. 一起列购物清单\n2. 给孩子一个预算\n3. 让孩子估算价格\n4. 结账后核对差距", tips: "为什么同样的东西价格会不一样？", submit: "小票照片或计算过程", fallback: "不去超市时可用家中物品模拟标价" },
+ { title: "亲子运动：一起跳绳", type: "运动健身", duration: 15, difficulty: "普通", materials: "跳绳", goal: "在运动中增进亲子默契", steps: "1. 家长先示范\n2. 孩子尝试跳绳\n3. 互相计数和鼓励\n4. 记录一次小进步", tips: "一起运动和一个人运动有什么不同？", submit: "运动照片、视频或一句感受", fallback: "没有跳绳时可改为原地开合跳或散步计步" },
+ { title: "早睡早起挑战周", type: "习惯养成", duration: 10, difficulty: "普通", materials: "作息记录表", goal: "帮助孩子建立稳定作息", steps: "1. 约定睡觉和起床时间\n2. 制作简单打卡表\n3. 每天完成后打勾\n4. 周末一起回顾变化", tips: "早睡后第二天感觉有什么不同？", submit: "打卡表照片或文字总结", fallback: "只做三天小挑战也可以，重点是一起复盘" },
+ { title: "角色互换：今天我来当大人", type: "情绪社交", duration: 20, difficulty: "进阶", materials: "一个家庭场景", goal: "培养换位思考和表达能力", steps: "1. 选一个生活场景\n2. 孩子扮演大人\n3. 家长扮演孩子\n4. 结束后互相说感受", tips: "当大人的感觉和你想象中一样吗？", submit: "一段对话记录或感受", fallback: "孩子害羞时可只做口头讨论" },
+ { title: "厨房协作：一起做一道凉菜", type: "家务实践", duration: 25, difficulty: "普通", materials: "简单食材、餐具", goal: "培养生活技能和合作意识", steps: "1. 一起决定做什么\n2. 分工清洗和摆盘\n3. 家长负责安全步骤\n4. 一起品尝并收拾", tips: "你觉得合作时最重要的是什么？", submit: "成品照片或语音分享", fallback: "不方便做菜时可改为一起摆餐桌" },
+ { title: "自然探索：小区里的秘密", type: "观察探究", duration: 20, difficulty: "普通", materials: "手机拍照可选", goal: "培养观察力和科学探究兴趣", steps: "1. 到楼下或窗边观察\n2. 找到三种植物或昆虫\n3. 说说它们的特点\n4. 回家查一个小知识", tips: "它为什么会生活在这里？", submit: "照片记录或一句发现", fallback: "天气不好时可观察家中物品的材质和形状" }
+ ];
+
+ function fillTemplate(tpl) {
+ document.getElementById("pubTitle").value = tpl.title;
+ document.getElementById("pubType").value = tpl.type;
+ document.getElementById("pubDuration").value = tpl.duration;
+ document.getElementById("pubDifficulty").value = tpl.difficulty;
+ document.getElementById("pubMaterials").value = tpl.materials;
+ document.getElementById("pubGoal").value = tpl.goal;
+ document.getElementById("pubSteps").value = tpl.steps;
+ document.getElementById("pubTips").value = tpl.tips;
+ document.getElementById("pubSubmit").value = tpl.submit;
+ document.getElementById("pubFallback").value = tpl.fallback;
+ fitTextarea(document.getElementById("pubSteps"));
+ }
+
+ var templateSelect = document.getElementById("templateSelect");
+ templateSelect.innerHTML = TASK_TEMPLATES.map(function (tpl, idx) {
+ return '<option value="' + idx + '">' + esc(tpl.title) + " · " + esc(tpl.type) + '</option>';
+ }).join("");
+ fillTemplate(TASK_TEMPLATES[0]);
+ templateSelect.addEventListener("change", function () {
+ fillTemplate(TASK_TEMPLATES[Number(this.value)] || TASK_TEMPLATES[0]);
+ });
+
+ document.getElementById("publishBtn").addEventListener("click", function () {
+ var btn = this;
+ var msg = document.getElementById("publishMsg");
+ var title = document.getElementById("pubTitle").value.trim();
+ msg.style.color = "#16a34a";
+ msg.textContent = "";
+ if (!title) { msg.style.color = "#dc2626"; msg.textContent = "请填写任务标题"; return; }
+ btn.disabled = true;
+ btn.textContent = "发布中…";
+ api("/api/teacher/tasks", {
+ method: "POST",
+ body: {
+ title: title,
+ type: document.getElementById("pubType").value,
+ duration: Number(document.getElementById("pubDuration").value) || 20,
+ difficulty: document.getElementById("pubDifficulty").value,
+ materials: document.getElementById("pubMaterials").value.trim(),
+ goal: document.getElementById("pubGoal").value.trim(),
+ steps: document.getElementById("pubSteps").value.trim(),
+ dialogueTips: document.getElementById("pubTips").value.trim(),
+ submitHint: document.getElementById("pubSubmit").value.trim(),
+ fallbackPlan: document.getElementById("pubFallback").value.trim()
+ }
+ }).then(function (res) {
+ btn.disabled = false;
+ btn.textContent = "发布给全班";
+ if (res.ok) {
+ msg.textContent = "已发布，本周任务会出现在家长端";
+ } else {
+ msg.style.color = "#dc2626";
+ msg.textContent = res.message || "发布失败";
+ }
+ }).catch(function () {
+ btn.disabled = false;
+ btn.textContent = "发布给全班";
+ msg.style.color = "#dc2626";
+ msg.textContent = "网络异常，请稍后再试";
+ });
+ });
+
+ function requestStatusText(status) {
+ return status === "approved" ? "已同意" : status === "rejected" ? "已拒绝" : "待审核";
+ }
+
+ function parseAiPlan(req) {
+ try { return JSON.parse(req.ai_plan || "{}") || {}; } catch (e) { return {}; }
+ }
+
+ function taskTypeOptions(selected) {
+ var types = ["阅读", "习惯养成", "学科应用", "情绪社交", "家务实践", "运动健身", "观察探究"];
+ return types.map(function (type) {
+ return '<option' + (type === selected ? ' selected' : '') + '>' + esc(type) + '</option>';
+ }).join("");
+ }
+
+ function defaultTaskFromRequest(req) {
+ var plan = parseAiPlan(req);
+ var aiTask = plan.task || {};
+ return {
+  title: aiTask.title || req.title || "家长自主定制任务",
+  type: aiTask.type || "家务实践",
+  duration: Number(aiTask.duration) || Number(req.duration) || 20,
+  difficulty: aiTask.difficulty || "普通",
+  materials: aiTask.materials || "按家庭实际准备",
+  goal: aiTask.goal || req.goal || "结合家庭意愿开展一次亲子活动",
+  steps: aiTask.steps || req.description || "",
+  tips: aiTask.dialogueTips || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？",
+  submit: aiTask.submitHint || "可提交照片、文字记录或一段亲子对话",
+  fallback: aiTask.fallbackPlan || "时间有限时可缩短步骤，只保留一次共同完成和一次交流",
+  plan: plan
+  };
+ }
+
+ var parentRequests = [];
+ var activeRequestId = null;
+
+ function requestPreviewText(req) {
+ return req.observed_behavior || req.description || req.context || req.parent_expectation || req.goal || "家长已提交一项亲子任务提议";
+ }
+
+ function renderRequestThumb(req) {
+ var task = defaultTaskFromRequest(req);
+ var meta = [(req.grade || ""), (req.parent_name || "家长")].filter(Boolean).join(" · ");
+ var foot = req.concern_category || task.type || "提交项目";
+ var h = '<button class="request-thumb" type="button" data-id="' + req.id + '">';
+ h += '<div class="request-thumb-top"><div><p class="request-thumb-name">' + esc(req.child_name || "学生") + '</p>';
+ h += '<p class="request-thumb-meta">' + esc(meta || "家庭提议") + '</p></div>';
+ h += '<em class="request-status ' + esc(req.status) + '">' + requestStatusText(req.status) + '</em></div>';
+ h += '<p class="request-thumb-title">' + esc(task.title) + '</p>';
+ h += '<p class="request-thumb-desc">' + esc(requestPreviewText(req)) + '</p>';
+ h += '<div class="request-thumb-foot"><span>' + esc(foot) + '</span><span class="request-thumb-link">查看详情</span></div>';
+ h += '</button>';
+ return h;
+ }
+
+ function renderRequestDetail(req) {
+ var task = defaultTaskFromRequest(req);
+ var h = '<article class="parent-request-item" data-id="' + req.id + '">';
+ h += '<div class="parent-request-top"><div><strong>' + esc(req.child_name || "学生") + '</strong><span>' + esc((req.grade || "") + " · " + (req.parent_name || "家长")) + '</span></div><em class="request-status ' + esc(req.status) + '">' + requestStatusText(req.status) + '</em></div>';
+  h += '<div class="parent-request-original"><b>家长观察</b>';
+  h += (req.concern_category ? '<p>关注方向：' + esc(req.concern_category) + '</p>' : '');
+  h += '<p>' + esc(req.observed_behavior || req.description || "") + '</p>';
+  h += (req.context ? '<p>发生场景：' + esc(req.context) + '</p>' : '');
+  h += (req.frequency ? '<p>出现频率：' + esc(req.frequency) + '</p>' : '');
+  h += (req.impact ? '<p>家庭影响：' + esc(req.impact) + '</p>' : '');
+  h += (req.parent_expectation || req.goal ? '<p>家长期待：' + esc(req.parent_expectation || req.goal) + '</p>' : '');
+  h += (req.family_constraints ? '<p>执行限制：' + esc(req.family_constraints) + '</p>' : '') + '</div>';
+  if (task.plan && task.plan.analysisSummary) {
+  h += '<div class="ai-request-plan is-collapsed"><div class="ai-request-plan-head"><b>AI 分析报告</b><span>' +
+    esc(req.ai_status === "ai" ? "AI 已生成" : "基础规则兜底") + '</span></div>';
+  h += '<div class="ai-request-plan-body">';
+  h += '<p>' + esc(task.plan.analysisSummary) + '</p>';
+  if (task.plan.supportGoal) h += '<p><b>支持目标：</b>' + esc(task.plan.supportGoal) + '</p>';
+  if (task.plan.boundaryNote) h += '<p><b>边界提示：</b>' + esc(task.plan.boundaryNote) + '</p>';
+  if (task.plan.needsProfessionalReview) h += '<p class="ai-risk">包含需要进一步人工了解的风险信号，请谨慎决定是否适合用家庭任务处理。</p>';
+  h += '</div><button class="ai-request-toggle" type="button" aria-expanded="false">展开详情</button></div>';
+  }
+ if (req.status === "pending") {
+ h += '<div class="field"><label>任务标题</label><input class="pr-title" maxlength="80" value="' + esc(task.title) + '"></div>';
+  h += '<div class="row2"><div class="field"><label>任务类型</label><select class="pr-type">' + taskTypeOptions(task.type) + '</select></div><div class="field"><label>预计时长</label><input class="pr-duration" type="number" min="5" max="90" value="' + task.duration + '"></div></div>';
+  h += '<div class="row2"><div class="field"><label>难度</label><select class="pr-difficulty"><option' + (task.difficulty === "简单" ? ' selected' : '') + '>简单</option><option' + (task.difficulty === "普通" ? ' selected' : '') + '>普通</option><option' + (task.difficulty === "进阶" ? ' selected' : '') + '>进阶</option></select></div><div class="field"><label>所需材料</label><input class="pr-materials" maxlength="180" value="' + esc(task.materials) + '"></div></div>';
+ h += '<div class="field"><label>目标</label><input class="pr-goal" maxlength="180" value="' + esc(task.goal) + '"></div>';
+ h += '<div class="field"><label>实施步骤</label><textarea class="pr-steps">' + esc(task.steps) + '</textarea></div>';
+ h += '<div class="field"><label>对话提示</label><input class="pr-tips" maxlength="200" value="' + esc(task.tips) + '"></div>';
+ h += '<div class="field"><label>提交要求</label><input class="pr-submit" maxlength="200" value="' + esc(task.submit) + '"></div>';
+  h += '<div class="field"><label>替代方案</label><input class="pr-fallback" maxlength="240" value="' + esc(task.fallback) + '"></div>';
+ h += '<div class="field"><label>教师评价</label><textarea class="pr-comment" placeholder="同意时可写鼓励，拒绝时需说明原因或替代建议"></textarea></div>';
+ h += '<div class="request-sticky-actions"><div class="request-actions"><button class="btn-confirm pr-approve" type="button">同意实施</button><button class="btn-cancel pr-reject" type="button">拒绝并评价</button></div><p class="form-msg pr-msg"></p></div>';
+ } else {
+ h += '<div class="parent-request-original"><b>教师评价</b><p>' + esc(req.teacher_comment || "暂无") + '</p>' + (req.task_title ? '<p>已生成任务：' + esc(req.task_title) + '</p>' : '') + '</div>';
+ }
+ h += '</article>';
+ return h;
+ }
+
+ function renderParentRequests(requests) {
+ var list = document.getElementById("parentRequestList");
+ var count = document.getElementById("requestCount");
+ parentRequests = requests;
+ var pending = requests.filter(function (r) { return r.status === "pending"; }).length;
+ count.textContent = requests.length ? (requests.length + " 项" + (pending ? " · " + pending + " 待处理" : " · 已处理")) : "";
+ if (!requests.length) {
+ list.innerHTML = '<p class="empty-text">暂无家长自主定制任务提议</p>';
+ return;
+ }
+ list.innerHTML = requests.map(renderRequestThumb).join("");
+ }
+
+ function findRequest(id) {
+ id = Number(id);
+ return parentRequests.find(function (req) { return Number(req.id) === id; });
+ }
+
+ function openRequestModal(id) {
+ var req = findRequest(id);
+ if (!req) return;
+ activeRequestId = Number(req.id);
+ document.getElementById("requestModalTitle").textContent = (req.child_name || "学生") + "的提交项目详情";
+ document.getElementById("requestModalSub").textContent = (req.grade || "班级") + " · " + (req.parent_name || "家长") + " · " + requestStatusText(req.status);
+ var body = document.getElementById("requestModalBody");
+ body.innerHTML = renderRequestDetail(req);
+ fitAllTextareas(body);
+ document.getElementById("requestModal").classList.add("show");
+ document.getElementById("requestModal").setAttribute("aria-hidden", "false");
+ document.body.classList.add("request-modal-open");
+ document.getElementById("requestModalClose").focus();
+ }
+
+ function closeRequestModal() {
+ activeRequestId = null;
+ document.getElementById("requestModal").classList.remove("show");
+ document.getElementById("requestModal").setAttribute("aria-hidden", "true");
+ document.body.classList.remove("request-modal-open");
+ document.getElementById("requestModalBody").innerHTML = "";
+ }
+
+ function loadParentRequests() {
+ api("/api/teacher/parent-task-requests").then(function (data) {
+ renderParentRequests(data.requests || []);
+ }).catch(function () {
+ document.getElementById("parentRequestList").innerHTML = '<p class="empty-text">加载失败，请刷新重试</p>';
+ });
+ }
+
+ function reviewParentRequest(item, status) {
+ var msg = item.querySelector(".pr-msg");
+ var comment = item.querySelector(".pr-comment").value.trim();
+ msg.style.color = "";
+ msg.textContent = "";
+ if (status === "rejected" && !comment) { msg.style.color = "#dc2626"; msg.textContent = "拒绝时请填写评价或原因"; return; }
+ var buttons = item.querySelectorAll("button");
+ buttons.forEach(function (btn) { btn.disabled = true; });
+ api("/api/teacher/parent-task-requests/review", {
+ method: "POST",
+ body: {
+ requestId: Number(item.getAttribute("data-id")),
+ status: status,
+ teacherComment: comment,
+ title: item.querySelector(".pr-title").value.trim(),
+ type: item.querySelector(".pr-type").value,
+ duration: Number(item.querySelector(".pr-duration").value) || 20,
+              difficulty: item.querySelector(".pr-difficulty").value,
+              materials: item.querySelector(".pr-materials").value.trim(),
+ goal: item.querySelector(".pr-goal").value.trim(),
+ steps: item.querySelector(".pr-steps").value.trim(),
+ dialogueTips: item.querySelector(".pr-tips").value.trim(),
+              submitHint: item.querySelector(".pr-submit").value.trim(),
+              fallbackPlan: item.querySelector(".pr-fallback").value.trim()
+ }
+ }).then(function (res) {
+ if (res.ok) {
+ closeRequestModal();
+ loadParentRequests();
+ }
+ else {
+ buttons.forEach(function (btn) { btn.disabled = false; });
+ msg.style.color = "#dc2626";
+ msg.textContent = res.message || "处理失败";
+ }
+ }).catch(function () {
+ buttons.forEach(function (btn) { btn.disabled = false; });
+ msg.style.color = "#dc2626";
+ msg.textContent = "网络异常，请稍后重试";
+ });
+ }
+
+ document.getElementById("parentRequestList").addEventListener("click", function (e) {
+ var card = e.target.closest(".request-thumb");
+ if (!card) return;
+ openRequestModal(card.getAttribute("data-id"));
+ });
+
+ document.getElementById("requestModalBody").addEventListener("click", function (e) {
+ var toggle = e.target.closest(".ai-request-toggle");
+ if (toggle) {
+ var plan = toggle.closest(".ai-request-plan");
+ var expanded = !plan.classList.contains("is-expanded");
+ plan.classList.toggle("is-expanded", expanded);
+ plan.classList.toggle("is-collapsed", !expanded);
+ toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+ toggle.textContent = expanded ? "收起详情" : "展开详情";
+ return;
+ }
+ var approve = e.target.closest(".pr-approve");
+ var reject = e.target.closest(".pr-reject");
+ if (!approve && !reject) return;
+ var item = e.target.closest(".parent-request-item");
+ reviewParentRequest(item, approve ? "approved" : "rejected");
+ });
+
+ document.getElementById("requestModalClose").addEventListener("click", closeRequestModal);
+ document.getElementById("requestModal").addEventListener("click", function (e) {
+ if (e.target === this) closeRequestModal();
+ });
+ document.addEventListener("keydown", function (e) {
+ if (e.key === "Escape" && document.getElementById("requestModal").classList.contains("show")) closeRequestModal();
+ });
+
+ loadParentRequests();
+ })();
+ </script></body></html>
