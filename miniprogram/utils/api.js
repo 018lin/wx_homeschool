@@ -12,8 +12,8 @@
 var REMOTE_BASE = "https://wx-homeschool-1.onrender.com";
 var LOCAL_BASE = "http://localhost:3123";
 
-// 开发版 / 体验版自动走本机后端。想让开发版也连线上，把这里改成 false
-var AUTO_LOCAL_IN_DEV = true;
+// 默认所有版本走线上后端；本地调试时可临时改为 true，并先重启本地 server.js
+var AUTO_LOCAL_IN_DEV = false;
 
 var resolvedBase = null;
 function API_BASE() {
