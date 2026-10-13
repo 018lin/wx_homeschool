@@ -26,6 +26,6 @@ page { height: 100%; }
 
 /* 底部输入栏 */
 .chat-composer { display: flex; align-items: flex-end; gap: 14rpx; padding: 16rpx 20rpx calc(16rpx + env(safe-area-inset-bottom)); background: #ffffff; border-top: 2rpx solid var(--line); }
-.chat-composer__input { flex: 1; min-height: 72rpx; max-height: 220rpx; padding: 16rpx 20rpx; background: #f2f5f9; border-radius: 16rpx; font-size: 28rpx; line-height: 1.4; box-sizing: border-box; }
-.chat-composer__send { width: 132rpx; height: 72rpx; margin: 0; padding: 0; line-height: 72rpx; border-radius: 16rpx; background: var(--primary); color: #fff; font-size: 27rpx; }
+.chat-composer__input { flex: 1; width: 100%; min-height: 72rpx; max-height: 220rpx; padding: 16rpx 20rpx; background: #f2f5f9; border-radius: 16rpx; font-size: 28rpx; line-height: 1.4; box-sizing: border-box; }
+.chat-composer__send { flex-shrink: 0; width: 132rpx; height: 72rpx; margin: 0; padding: 0; line-height: 72rpx; border-radius: 16rpx; background: var(--primary); color: #fff; font-size: 27rpx; }
 .chat-composer__send[disabled] { opacity: .45; }

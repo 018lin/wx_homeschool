@@ -15,6 +15,6 @@
   </scroll-view>
   <view class="chat-composer">
     <textarea class="chat-composer__input" maxlength="2000" auto-height placeholder="输入消息…" placeholder-class="ph" value="{{draft}}" bindinput="onDraftInput" confirm-type="send" adjust-position cursor-spacing="16" disable-default-padding="{{true}}" />
-    <button class="chat-composer__send" bindtap="send" disabled="{{sending || !canSend}}">{{sending ? '发送中' : '发送'}}</button>
+    <button class="chat-composer__send" wx:if="{{canSend || sending}}" bindtap="send" disabled="{{sending || !canSend}}">{{sending ? '发送中' : '发送'}}</button>
   </view>
 </view>
