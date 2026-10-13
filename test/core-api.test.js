@@ -518,3 +518,40 @@ test("admin creates classes and teacher scope stays inside its own class", async
   assert.ok(result.data.task);
   assert.equal(result.data.task.title, "分班班级任务A");
 });
+
+test("admin can delete a managed account but cannot delete admin accounts", async function () {
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  assert.equal(result.response.status, 200);
+  const adminToken = result.data.token;
+  const account = "delete_teacher_" + Date.now();
+
+  result = await request("/api/admin/accounts", {
+    method: "POST",
+    token: adminToken,
+    body: { role: "teacher", account: account, password: "123456", displayName: "待删除教师" }
+  });
+  assert.equal(result.response.status, 201);
+  const accountId = Number(result.data.id);
+
+  result = await request("/api/admin/accounts/" + accountId, {
+    method: "DELETE",
+    token: adminToken
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.ok, true);
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: account, password: "123456" }
+  });
+  assert.equal(result.response.status, 401);
+
+  result = await request("/api/admin/accounts/1", {
+    method: "DELETE",
+    token: adminToken
+  });
+  assert.equal(result.response.status, 404);
+});

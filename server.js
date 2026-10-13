@@ -11,7 +11,11 @@ const { DatabaseAdapter, initializeDatabase } = require("./database");
 const { ApiError, errorPayload } = require("./lib/errors");
 const { fetchWithRetry } = require("./lib/ai-client");
 const { createStaticServer } = require("./lib/static-server");
-const { normalizeAttachments } = require("./lib/attachments");
+const {
+  normalizeAttachments,
+  ALLOWED_ATTACHMENT_TYPES,
+  MAX_ATTACHMENT_URL_LENGTH
+} = require("./lib/attachments");
 const { createRequestContext } = require("./lib/request-context");
 
 const configuredPort = process.env.PORT == null || process.env.PORT === ""
@@ -126,6 +130,104 @@ function readBody(req) {
       }
     });
   });
+}
+
+/* 小程序录音使用 wx.uploadFile。这里保留文件为短期 data URL，避免额外引入对象存储依赖。 */
+function readMultipart(req, maxBytes) {
+  return new Promise(function (resolve, reject) {
+    const contentType = String(req.headers["content-type"] || "");
+    const match = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+    if (!match) return reject(new ApiError(400, "上传格式不正确", "INVALID_MULTIPART"));
+    const boundary = Buffer.from("--" + (match[1] || match[2]).trim());
+    const chunks = [];
+    let bytes = 0;
+    let settled = false;
+    req.on("data", function (chunk) {
+      if (settled) return;
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        settled = true;
+        req.resume();
+        reject(new ApiError(413, "录音文件不能超过 2MB", "UPLOAD_TOO_LARGE"));
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    req.on("end", function () {
+      if (settled) return;
+      settled = true;
+      const body = Buffer.concat(chunks);
+      const fields = {};
+      let file = null;
+      let cursor = 0;
+      while (cursor < body.length) {
+        const start = body.indexOf(boundary, cursor);
+        if (start < 0) break;
+        const partStart = start + boundary.length;
+        if (body.slice(partStart, partStart + 2).toString() === "--") break;
+        const contentStart = partStart + 2;
+        const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), contentStart);
+        if (headerEnd < 0) break;
+        const nextBoundary = body.indexOf(boundary, headerEnd + 4);
+        if (nextBoundary < 0) break;
+        const partBodyEnd = nextBoundary - 2;
+        const headers = body.slice(contentStart, headerEnd).toString("utf8");
+        const disposition = headers.match(/content-disposition:\s*form-data;([^\r\n]*)/i);
+        const nameMatch = disposition && disposition[1].match(/name="([^"]*)"/i);
+        const fileMatch = disposition && disposition[1].match(/filename="([^"]*)"/i);
+        const part = body.slice(headerEnd + 4, partBodyEnd);
+        if (nameMatch && fileMatch) {
+          const typeMatch = headers.match(/content-type:\s*([^\r\n]+)/i);
+          file = {
+            name: fileMatch[1] || "recording.mp3",
+            type: String(typeMatch && typeMatch[1] || "audio/mpeg").trim().toLowerCase(),
+            data: part
+          };
+        } else if (nameMatch) {
+          fields[nameMatch[1]] = part.toString("utf8");
+        }
+        cursor = nextBoundary;
+      }
+      resolve({ fields: fields, file: file });
+    });
+    req.on("error", function (error) {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+  });
+}
+
+function parseDataUrl(value) {
+  const match = String(value || "").match(/^data:([^;,]+)?;base64,([a-z0-9+/=]+)$/i);
+  if (!match) return null;
+  return { type: String(match[1] || "application/octet-stream").toLowerCase(), data: Buffer.from(match[2], "base64") };
+}
+
+function getSpeechEndpoint() {
+  const base = String(process.env.ZHIPU_API_BASE || "https://open.bigmodel.cn/api/paas/v4").replace(/\/+$/, "");
+  return process.env.ZHIPU_ASR_URL || base + "/audio/transcriptions";
+}
+
+async function transcribeAudioBuffer(buffer, type, name) {
+  const apiKey = getZhipuApiKey();
+  if (!apiKey) return null;
+  const form = new FormData();
+  form.append("model", process.env.ZHIPU_ASR_MODEL || "glm-asr-2512");
+  form.append("file", new Blob([buffer], { type: type || "audio/mpeg" }), name || "recording.mp3");
+  const response = await fetchWithRetry(getSpeechEndpoint(), {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + apiKey },
+    body: form
+  }, { timeoutMs: Number(process.env.AI_TRANSCRIBE_TIMEOUT_MS) || 90000, retries: 1 });
+  const raw = await response.text().catch(function () { return ""; });
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch (e) {}
+  if (!response.ok) throw new Error("语音转写服务 " + response.status + (raw ? ": " + raw.slice(0, 180) : ""));
+  const text = String(data.text || data.result || data.transcript || "").trim();
+  if (!text) throw new Error("语音转写服务未返回文字");
+  return text;
 }
 async function getAuthUser(req) {
   const header = req.headers["authorization"] || "";
@@ -2383,6 +2485,57 @@ async function handleApi(req, res, pathname, query) {
   const user = await getAuthUser(req);
   if (!user) return sendJson(res, 401, { message: "请先登录" });
 
+  /* ---- 小程序附件与语音转写 ---- */
+  if (req.method === "GET" && pathname === "/api/uploads/status") {
+    return sendJson(res, 200, {
+      configured: !!getZhipuApiKey(),
+      provider: getZhipuApiKey() ? "zhipu" : "none",
+      maxBytes: 2 * 1024 * 1024
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/uploads") {
+    const upload = await readMultipart(req, 2 * 1024 * 1024);
+    if (!upload.file || !upload.file.data.length) return sendJson(res, 400, { message: "没有收到附件" });
+    const type = ALLOWED_ATTACHMENT_TYPES.has(upload.file.type)
+      ? upload.file.type
+      : (String(upload.file.name).toLowerCase().endsWith(".mp3") ? "audio/mpeg" : "");
+    if (!type) return sendJson(res, 400, { message: "暂不支持该附件类型", errorCode: "INVALID_ATTACHMENT" });
+    const encoded = upload.file.data.toString("base64");
+    const url = "data:" + type + ";base64," + encoded;
+    if (url.length > MAX_ATTACHMENT_URL_LENGTH) {
+      return sendJson(res, 413, { message: "录音文件过大，请控制在 2MB 内", errorCode: "UPLOAD_TOO_LARGE" });
+    }
+    return sendJson(res, 200, {
+      attachment: {
+        name: String(upload.file.name || "附件").slice(0, 80),
+        type: type,
+        size: upload.file.data.length,
+        url: url
+      }
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/teacher/transcribe") {
+    if (user.role !== "teacher" && user.role !== "admin") {
+      return sendJson(res, 403, { message: "仅教师或管理员可使用语音转写" });
+    }
+    if (!getZhipuApiKey()) {
+      return sendJson(res, 503, { message: "服务端未配置语音转写密钥", errorCode: "SPEECH_NOT_CONFIGURED" });
+    }
+    const body = await readBody(req);
+    const parsed = parseDataUrl(body.url);
+    if (!parsed || !parsed.data.length) return sendJson(res, 400, { message: "录音地址无效" });
+    if (parsed.data.length > 2 * 1024 * 1024) return sendJson(res, 413, { message: "录音文件不能超过 2MB" });
+    try {
+      const text = await transcribeAudioBuffer(parsed.data, parsed.type, body.name || "recording.mp3");
+      return sendJson(res, 200, { text: text, provider: "zhipu" });
+    } catch (error) {
+      console.error("语音转写失败：", error.message);
+      return sendJson(res, 502, { message: "语音转写服务暂时不可用，请直接输入文字", errorCode: "SPEECH_PROVIDER_ERROR" });
+    }
+  }
+
   if (req.method === "POST" && pathname === "/api/auth/logout") {
     const token = req.headers["authorization"].slice(7);
     await db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
@@ -2506,6 +2659,55 @@ async function handleApi(req, res, pathname, query) {
         }
         throw error;
       }
+    }
+
+    if (req.method === "DELETE") {
+      const existing = await db.prepare(
+        "SELECT id, account, role FROM users WHERE id = ?"
+      ).get(accountId);
+      if (!existing || !["teacher", "student", "parent"].includes(existing.role)) {
+        return sendJson(res, 404, { message: "账号不存在" });
+      }
+
+      await db.transaction(async function (tx) {
+        const userId = Number(existing.id);
+        const child = existing.role === "student"
+          ? await tx.prepare("SELECT id FROM children WHERE user_id = ?").get(userId)
+          : null;
+
+        if (child) {
+          await tx.prepare(
+            "DELETE FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE child_id = ?)"
+          ).run(child.id);
+          await tx.prepare("DELETE FROM submissions WHERE child_id = ?").run(child.id);
+          await tx.prepare("DELETE FROM tasks WHERE child_id = ?").run(child.id);
+          await tx.prepare("DELETE FROM events WHERE child_id = ?").run(child.id);
+          await tx.prepare("DELETE FROM parent_task_requests WHERE child_id = ?").run(child.id);
+          await tx.prepare("DELETE FROM bindings WHERE child_id = ?").run(child.id);
+          await tx.prepare("DELETE FROM children WHERE id = ?").run(child.id);
+        }
+
+        if (existing.role === "teacher") {
+          await tx.prepare("DELETE FROM teacher_daily_updates WHERE teacher_id = ?").run(userId);
+          await tx.prepare("UPDATE feedback SET teacher_id = NULL WHERE teacher_id = ?").run(userId);
+          await tx.prepare("UPDATE parent_task_requests SET teacher_id = NULL WHERE teacher_id = ?").run(userId);
+          await tx.prepare("UPDATE tasks SET published_by = NULL WHERE published_by = ?").run(userId);
+          await tx.prepare("UPDATE classes SET head_teacher_id = NULL WHERE head_teacher_id = ?").run(userId);
+        }
+
+        await tx.prepare("UPDATE classes SET created_by = NULL WHERE created_by = ?").run(userId);
+        await tx.prepare("DELETE FROM class_members WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM bindings WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM questionnaires WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM engagement_preferences WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM parent_task_requests WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM events WHERE user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM notifications WHERE recipient_user_id = ?").run(userId);
+        await tx.prepare("UPDATE notifications SET sender_user_id = NULL WHERE sender_user_id = ?").run(userId);
+        await tx.prepare("DELETE FROM users WHERE id = ?").run(userId);
+      });
+      return sendJson(res, 200, { ok: true, id: accountId });
     }
 
     if (req.method === "PUT") {

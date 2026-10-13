@@ -13,16 +13,17 @@ services:
     name: wx-homeschool-api
     runtime: node
     plan: free
-    region: singapore
+    # Neon 数据库在 us-east-1（弗吉尼亚），就近选 Ohio 可把每次 SQL 往返降到 ~10ms。
+    # 注意：区域创建后不可修改，选错只能删了重建。
+    region: ohio
     branch: main
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      # 不要手动设 PORT：Render 会自动注入，server.js 已读取 process.env.PORT
       - key: NODE_VERSION
-        value: "22.22.2"
-      - key: PORT
-        value: "3123"
+        value: "22"
       # 以下三项不在仓库里，请在 Render 后台填写
       - key: DATABASE_URL
         sync: false

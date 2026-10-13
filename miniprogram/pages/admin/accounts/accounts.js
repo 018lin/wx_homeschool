@@ -279,5 +279,28 @@ Page({
     });
   },
 
+  onDelete: function () {
+    var self = this;
+    var form = this.data.form || {};
+    if (this.data.mode !== "edit" || !form.id) return;
+    wx.showModal({
+      title: "删除账号",
+      content: "确定删除“" + (form.displayName || form.account) + "”吗？删除后将无法登录，登录会话、绑定关系及相关记录会被清理。",
+      confirmText: "删除",
+      confirmColor: "#b42318",
+      success: function (result) {
+        if (!result.confirm) return;
+        self.setData({ submitting: true });
+        api.deleteAccount(form.id).then(function () {
+          self.setData({ submitting: false, mode: null, form: emptyForm() });
+          wx.showToast({ title: "已删除账号", icon: "success" });
+          self.loadData();
+        }).catch(function () {
+          self.setData({ submitting: false });
+        });
+      }
+    });
+  },
+
   onRetry: function () { this.loadData(); }
 });

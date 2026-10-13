@@ -9,7 +9,7 @@
  *
  * 注意：本机后端连的是 .env.local 里的 Neon 生产库，和线上是同一份数据。
  */
-var REMOTE_BASE = "https://home-school-04zi.onrender.com";
+var REMOTE_BASE = "https://wx-homeschool-1.onrender.com";
 var LOCAL_BASE = "http://localhost:3123";
 
 // 开发版 / 体验版自动走本机后端。想让开发版也连线上，把这里改成 false
@@ -551,6 +551,9 @@ var api = {
   },
   updateAccount: function (id, data) {
     return request("/api/admin/accounts/" + id, { method: "PUT", data: data, loading: "保存中" });
+  },
+  deleteAccount: function (id) {
+    return request("/api/admin/accounts/" + id, { method: "DELETE", loading: "删除中" });
   },
   getAdminTasks: function (limit) {
     return request("/api/admin/tasks", { method: "GET", query: { limit: limit || 100 } });

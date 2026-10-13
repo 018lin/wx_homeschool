@@ -1001,9 +1001,17 @@ engagement_judgment_corrected
   - `404 {"message":"账号不存在"}`（目标不是 teacher/student/parent，或 id 不存在）
   - `409 {"message":"该账号已被注册","errorCode":"ACCOUNT_EXISTS"}`
 - ⚠️ **坑**：路由匹配块只校验了 `req.method === "PUT"`，`PUT /api/admin/accounts`（不带 id）会进入该分支，`accountId = NaN` → `404 账号不存在`。
-- ⚠️ 该路径块**不支持 GET 单条 / DELETE**（没有对应 handler，会落到外层继续匹配，最终 404）。
+- ⚠️ 该路径块**不支持 GET 单条**（没有对应 handler，会落到外层继续匹配，最终 404）。
 
-### 6.5 `GET /api/admin/tasks` —— 全量任务与完成情况
+### 6.5 `DELETE /api/admin/accounts/:id` —— 删除账号
+
+- 仅管理员可调用；目标必须是教师、学生或家长账号，管理员账号不可删除。
+- 删除会使目标账号立即失效，并清理登录会话、绑定关系、班级成员及账号关联的个人记录。
+- 删除学生账号时，同时删除其学生档案、学生专属任务与提交记录；删除教师账号时，已发布任务保留但解除发布者，班级保留但解除负责教师。
+- 成功 `200`：`{ "ok": true, "id": number }`
+- 目标不存在或不是可删除角色 → `404 {"message":"账号不存在"}`
+
+### 6.6 `GET /api/admin/tasks` —— 全量任务与完成情况
 
 - Query：`limit` 默认 100，夹取 1–200
 - 成功 `200`：`{ "tasks": [ … ], "studentCount": number }`
@@ -1031,7 +1039,7 @@ engagement_judgment_corrected
   - 仅 `completed` 时 `content` / `submittedAt` / `subType` 有值，否则为 `""` / `null` / `""`
   - 同一 (task, child) 有多条提交时，**优先取 `submitted` 的那条**
 
-### 6.6 `GET /api/admin/growth-timeline` —— 成长时间线看板
+### 6.7 `GET /api/admin/growth-timeline` —— 成长时间线看板
 
 - Query：
 

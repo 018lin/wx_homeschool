@@ -705,6 +705,7 @@
 - `GET /api/admin/accounts` → `{ teachers[], students[], parents[] }`（前端合并并打上 `role` 标签）
 - `POST /api/admin/accounts` body `{ role, account, password, displayName, phone, email, subject, employeeNo, grade, gender, age, caregiver, interests, parentAccount, relation, familyNote }`
 - `PUT /api/admin/accounts/{id}`（编辑，body 同上，password 可空）
+- `DELETE /api/admin/accounts/{id}`（删除教师/学生/家长账号，管理员账号不可删除）
 - `POST /api/auth/logout`
 
 **交互行为**
@@ -948,6 +949,7 @@ feedback.html / timeline.html (家长看到反馈)
 | `GET /api/admin/accounts` | ●admin |
 | `POST /api/admin/accounts` | ●admin |
 | `PUT /api/admin/accounts/{id}` | ●admin |
+| `DELETE /api/admin/accounts/{id}` | ●admin |
 | `GET /api/admin/tasks?limit=100` | ●admin-tasks |
 | `GET /api/admin/growth-timeline?limit=500` | ●admin-timeline |
 

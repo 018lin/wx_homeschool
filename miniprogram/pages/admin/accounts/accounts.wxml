@@ -202,6 +202,12 @@
     <button class="btn btn-primary btn-block mt-16" bindtap="onSubmit" disabled="{{submitting}}">
       {{submitting ? '保存中…' : '保存'}}
     </button>
+    <button
+      wx:if="{{mode === 'edit'}}"
+      class="btn btn-danger btn-block mt-16"
+      bindtap="onDelete"
+      disabled="{{submitting}}"
+    >删除此账号</button>
   </view>
 </view>
 
