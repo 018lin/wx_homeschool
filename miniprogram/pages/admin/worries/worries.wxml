@@ -12,14 +12,63 @@
     <view class="card" wx:if="{{worries.length}}">
       <view class="card-title">
         <text class="card-title__text">共 {{worries.length}} 条提交</text>
+        <text class="card-title__more">点击任意一条可回复</text>
       </view>
 
-      <view class="wr-item" wx:for="{{worries}}" wx:key="id">
+      <view
+        class="wr-item {{selectedId === item.id ? 'wr-item--active' : ''}}"
+        wx:for="{{worries}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onSelectItem"
+      >
         <view class="between">
           <view class="wr-item__name">{{item.studentName}}<text class="wr-item__grade" wx:if="{{item.grade}}">（{{item.grade}}）</text></view>
           <text class="text-sm text-muted">{{item.timeText}}</text>
         </view>
+        <view class="wr-item__badges">
+          <text class="badge badge-warning" wx:if="{{!item.read}}">未查看</text>
+          <text class="badge badge-gray" wx:else>已查看</text>
+          <text class="badge badge-primary" wx:if="{{item.replyContent}}">{{item.replyRead ? '回复已读' : '回复未读'}}</text>
+        </view>
         <view class="wr-item__content">{{item.content}}</view>
+
+        <!-- 已发送的回复 -->
+        <view class="wr-item__reply" wx:if="{{item.replyContent}}">
+          <view class="wr-item__reply-head">
+            <text>{{item.replyByName}} 的回复</text>
+            <text class="wr-item__reply-time" wx:if="{{item.replyTimeText}}">{{item.replyTimeText}}</text>
+          </view>
+          <view class="wr-item__reply-text">{{item.replyContent}}</view>
+          <view class="wr-item__reply-tip" wx:if="{{selectedId !== item.id}}">再次点击可修改回复</view>
+        </view>
+
+        <!-- 选中后展开回复输入框（catchtap 防止点击输入区误触发选中/关闭） -->
+        <view class="wr-form" wx:if="{{selectedId === item.id}}" catchtap="onFormTap">
+          <view class="field__label">回复 {{item.studentName}}</view>
+          <textarea
+            class="wr-form__textarea"
+            placeholder="写下给学生的回复内容…"
+            placeholder-class="ph"
+            maxlength="{{maxLength}}"
+            value="{{replyText}}"
+            bindinput="onReplyInput"
+            auto-height
+            disable-default-padding
+          />
+          <view class="wr-counter {{replyCount >= maxLength ? 'wr-counter--full' : ''}}">{{replyCount}} / {{maxLength}}</view>
+          <view class="wr-form__actions">
+            <view class="btn btn-gray btn-sm" catchtap="onCancelReply">取消</view>
+            <button
+              class="btn btn-primary btn-sm"
+              catchtap="onSendReply"
+              loading="{{sending}}"
+              disabled="{{sending || !replyText}}"
+            >
+              {{item.replyContent ? '更新回复' : '发送回复'}}
+            </button>
+          </view>
+        </view>
       </view>
     </view>
 

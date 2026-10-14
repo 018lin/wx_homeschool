@@ -447,6 +447,18 @@ var api = {
       loading: "发送中"
     });
   },
+  /** 我的小心事列表（含管理员回复，未读回复数 newReplyCount） */
+  getStudentWorries: function (limit) {
+    return request("/api/student/worries", {
+      method: "GET",
+      query: { limit: limit || 50 },
+      silent: true
+    });
+  },
+  /** 查看过回复后标记为已读（顶部「你有新的回复」提示消失） */
+  readStudentWorryReplies: function () {
+    return request("/api/student/worries/replies/read", { method: "POST", silent: true });
+  },
 
   /* ---- 提交 / 时间线（家长、学生共用） ---- */
   submitWork: function (data) {
@@ -649,6 +661,14 @@ var api = {
   /** 进入详情页后标记为已读 */
   markAdminWorriesRead: function () {
     return request("/api/admin/worries/read", { method: "POST", silent: true });
+  },
+  /** 回复某条学生小心事，回复内容会推送到该学生的「我的小心事」 */
+  replyAdminWorry: function (id, content) {
+    return request("/api/admin/worries/" + id + "/reply", {
+      method: "POST",
+      data: { content: content },
+      loading: "发送中"
+    });
   },
   createClass: function (data) {
     return request("/api/admin/classes", { method: "POST", data: data, loading: "创建中" });

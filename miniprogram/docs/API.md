@@ -2,7 +2,7 @@
 
 > 本文档由 `server.js` 的 `handleApi()`（2256–4423 行）逐行提取，**所有字段名与后端源码完全一致**，未做任何驼峰/下划线统一。
 > 后端：单文件 Express（`server.js`）；数据库：SQLite（`data/app.db`，也兼容 Neon PostgreSQL）。
-> 全文共 **39 个接口**（含 1 个已停用接口）。
+> 全文共 **45 个接口**（含 1 个已停用接口）。
 
 ---
 
@@ -96,6 +96,8 @@ return (role === "parent" || role === "student") && bindings 表存在 (user.id,
 | `GET /api/teacher/parent-task-requests` | — | 无 LIMIT | — | 全量返回 |
 | `POST /api/parent/task-requests`(GET 版) | — | 固定 20 | — | `LIMIT 20` |
 | `GET /api/teacher/global-report` | `local` | — | `local=1` 跳过 AI | |
+| `GET /api/admin/worries` | `limit` | 100 | 1–200 | 同时返回 `newCount`（未读提交数） |
+| `GET /api/student/worries` | `limit` | 50 | 1–100 | 同时返回 `newReplyCount`（未读回复数） |
 | `POST /api/teacher/ai-chat` | `stream` | — | `stream=1` → SSE | |
 
 > **没有 offset / page 参数**，全部是 limit-only。写死 LIMIT 的接口无法翻页。
@@ -223,6 +225,7 @@ engagement_judgment_corrected
 | `notifications` | `id`, `recipient_user_id`, `sender_user_id`, `type`, `title`, `content`, `read_at`, `created_at` |
 | `teacher_daily_updates` | `id`, `teacher_id`, `child_id`, `student_name`, `transcript`, `summary`, `analysis`, `parent_message`, `tags`, `ai_status`, `recipient_count`, `created_at` |
 | `questionnaires` | `id`, `user_id`, `child_id`, `answers`(JSON 字符串), `created_at` |
+| `student_worries` | `id`, `student_user_id`, `child_id`, `student_name`, `grade`, `content`, `read_at`（管理员是否已查看）, `reply_content`, `reply_by`, `reply_by_name`, `replied_at`, `reply_read_at`（学生是否已读回复）, `created_at` |
 
 ---
 
@@ -496,7 +499,7 @@ engagement_judgment_corrected
 
 ---
 
-## 3. 学生端（1 个）
+## 3. 学生端（4 个）
 
 ### 3.1 `GET /api/student/home`
 
@@ -514,6 +517,36 @@ engagement_judgment_corrected
 
 - 无孩子时：`{ child: null, task: null, taskStatus: "none", submission: null, feedback: null }`
 - 副作用：写 `student_task_page_viewed` 事件。
+
+### 3.2 `POST /api/student/worries` —— 提交「我的小心事」
+
+- 权限：student（`403 仅学生账号可提交小心事`）
+- 请求体：`{ content: string }`
+- 校验：空 → `400 先写下你的小心事吧`；> 500 字 → `400 小心事不能超过 500 个字`
+- 成功 `201`：
+
+```json
+{ "ok": true, "worry": { "id": 1, "student_name": "小明", "grade": "三年级", "content": "…", "read_at": null, "created_at": "…" } }
+```
+
+- 行为：`student_name` / `grade` 取 `bindings` 里第一个孩子，取不到则回退 `users.display_name`；`read_at` 初始为 `NULL`（管理员端视为新提交）。
+- 副作用：写 `student_worry_submitted` 事件。
+
+### 3.3 `GET /api/student/worries` —— 我的小心事列表（含管理员回复）
+
+- 权限：student（`403 仅学生账号可查看小心事`）
+- Query：`limit` 默认 50，夹取 1–100
+- 成功 `200`：`{ generatedAt, newReplyCount, total, worries: [...] }`
+- 只返回 `student_user_id = 当前用户` 的记录，`ORDER BY id DESC`
+- 元素字段（下划线，与管理员端同表不同列）：`id`, `content`, `read_at`, `reply_content`, `reply_by_name`, `replied_at`, `reply_read_at`, `created_at`
+- `newReplyCount`：`replied_at IS NOT NULL AND reply_content <> '' AND reply_read_at IS NULL` 的条数，**不受 limit 影响**，小程序端用它决定是否显示顶部「你有新的回复」板块。
+
+### 3.4 `POST /api/student/worries/replies/read` —— 回复全部标记已读
+
+- 权限：student（`403 仅学生账号可查看小心事`）
+- 请求体：无
+- 成功 `200`：`{ "ok": true }`
+- 说明：把本人所有未读回复一次性置为已读（无 id 参数的批量接口）。**建议小程序端在渲染出回复内容后再调用**，这样提示消失时用户已经看过内容。
 
 ---
 
@@ -939,7 +972,7 @@ engagement_judgment_corrected
 
 ---
 
-## 6. 管理员端（6 个）
+## 6. 管理员端（10 个）
 
 > 全部要求 `role === 'admin'`，否则 `403 {"message":"仅管理员账号可访问"}`。
 
@@ -1107,6 +1140,32 @@ engagement_judgment_corrected
 | `recipientCount` | number | **仅 observation 类有** |
 
 - 排序：按 `createdAt` 倒序（按 `+08:00` 解析），最后 `slice(0, limit)`。
+
+### 6.8 `GET /api/admin/worries` —— 学生小心事列表（含未读数与回复）
+
+- 权限：admin（`403 仅管理员账号可访问`）
+- Query：`limit` 默认 100，夹取 1–200
+- 成功 `200`：`{ generatedAt, newCount, total, worries: [...] }`
+- `newCount`：`read_at IS NULL` 的条数（管理员端首页顶部板块据此显示「有 N 条新提交」），**不受 limit 影响**
+- 元素字段：`id`, `student_name`, `grade`, `content`, `read_at`, `reply_content`, `reply_by_name`, `replied_at`, `reply_read_at`, `created_at`
+- ⚠️ 一次拉取所有学生的心事，**没有按学生过滤的参数**。
+
+### 6.9 `POST /api/admin/worries/read` —— 全部标记已读
+
+- 权限：admin（`403 仅管理员账号可访问`）
+- 请求体：无
+- 成功 `200`：`{ "ok": true }`
+- 说明：`WHERE read_at IS NULL` 全量置已读，**无 id 参数**，一次性清空管理员首页的新提交提示。
+
+### 6.10 `POST /api/admin/worries/:id/reply` —— 回复某条小心事
+
+- 路径正则：`/^\/api\/admin\/worries\/(\d+)\/reply$/`
+- 权限：admin（`403 仅管理员账号可回复小心事`）
+- 请求体：`{ content: string }`
+- 校验：空 → `400 先写下要回复的内容吧`；> 500 字 → `400 回复不能超过 500 个字`；id 不存在 → `404 该小心事不存在或已被删除`
+- 成功 `200`：`{ "ok": true, "worry": { "id", "reply_content", "reply_by_name", "replied_at", "reply_read_at" } }`
+- 行为：`UPDATE student_worries SET reply_content = ?, reply_by = ?, reply_by_name = ?, replied_at = now, reply_read_at = NULL`——**再次回复会清空 `reply_read_at`**，学生端会重新出现「你有新的回复」提示（每条只有一条回复，重复回复即覆盖更新，不是多轮会话）。
+- 副作用：写 `student_worry_replied` 事件。
 
 ---
 

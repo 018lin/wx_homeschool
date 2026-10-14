@@ -738,3 +738,79 @@ test("admin can delete a managed account but cannot delete admin accounts", asyn
   });
   assert.equal(result.response.status, 404);
 });
+
+test("admin reply reaches the student's worry list and unread hint clears after reading", async function () {
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "xiaoce", password: "000111" }
+  });
+  assert.equal(result.response.status, 200);
+  const studentToken = result.data.token;
+
+  result = await request("/api/student/worries", {
+    method: "POST",
+    token: studentToken,
+    body: { content: "这次月考没考好，心里有点难过。" }
+  });
+  assert.equal(result.response.status, 201);
+  const worryId = Number(result.data.worry.id);
+
+  // 学生能看到自己的心事，但此时还没有回复
+  result = await request("/api/student/worries", { token: studentToken });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.newReplyCount, 0);
+  assert.equal(result.data.worries[0].id, worryId);
+  assert.equal(result.data.worries[0].reply_content, "");
+
+  // 学生无权替别人回复
+  result = await request("/api/admin/worries/" + worryId + "/reply", {
+    method: "POST",
+    token: studentToken,
+    body: { content: "越权回复" }
+  });
+  assert.equal(result.response.status, 403);
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  const adminToken = result.data.token;
+
+  result = await request("/api/admin/worries/" + worryId + "/reply", {
+    method: "POST",
+    token: adminToken,
+    body: { content: "" }
+  });
+  assert.equal(result.response.status, 400);
+
+  result = await request("/api/admin/worries/" + worryId + "/reply", {
+    method: "POST",
+    token: adminToken,
+    body: { content: "一次考试说明不了什么，老师看到你的努力了，继续加油。" }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.worry.reply_content, "一次考试说明不了什么，老师看到你的努力了，继续加油。");
+
+  // 管理员列表能看到该条回复
+  result = await request("/api/admin/worries", { token: adminToken });
+  const adminRow = result.data.worries.find(function (row) { return Number(row.id) === worryId; });
+  assert.ok(adminRow);
+  assert.equal(adminRow.reply_read_at, null);
+
+  // 学生端出现「你有新的回复」
+  result = await request("/api/student/worries", { token: studentToken });
+  assert.equal(result.data.newReplyCount, 1);
+  assert.equal(result.data.worries[0].reply_content, "一次考试说明不了什么，老师看到你的努力了，继续加油。");
+  assert.equal(result.data.worries[0].reply_read_at, null);
+
+  // 查看后标记已读，再次进入不再提示
+  result = await request("/api/student/worries/replies/read", {
+    method: "POST",
+    token: studentToken
+  });
+  assert.equal(result.response.status, 200);
+
+  result = await request("/api/student/worries", { token: studentToken });
+  assert.equal(result.data.newReplyCount, 0);
+  assert.ok(result.data.worries[0].reply_read_at);
+});

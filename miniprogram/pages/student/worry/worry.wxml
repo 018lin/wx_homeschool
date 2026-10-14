@@ -4,6 +4,15 @@
     <view class="wr-head__sub">有什么心事都可以写在这里，老师会看到你的留言</view>
   </view>
 
+  <!-- 有新回复时置顶提示（无新回复时不显示），参考管理员首页的信息提示板块 -->
+  <view class="card wo-entry" wx:if="{{newReplyCount > 0}}" bindtap="onTapReplyNotice">
+    <view class="wo-entry__main">
+      <view class="wo-entry__title">你有新的回复</view>
+      <view class="wo-entry__text">老师回复了你的 {{newReplyCount}} 条小心事，点击查看</view>
+    </view>
+    <view class="wo-entry__arrow">›</view>
+  </view>
+
   <!-- 已发送成功提示 -->
   <view class="card" wx:if="{{sent}}">
     <view class="wr-sent">
@@ -40,5 +49,45 @@
     >
       {{submitting ? '发送中…' : '确认发送'}}
     </button>
+  </view>
+
+  <!-- 我提交过的心事与对应回复 -->
+  <view class="card" id="worry-list">
+    <view class="card-title">
+      <text class="card-title__text">我提交过的心事</text>
+      <text class="card-title__more" wx:if="{{!loadingList}}">{{list.length}} 条</text>
+    </view>
+
+    <view class="loading-wrap" wx:if="{{loadingList}}">加载中…</view>
+
+    <block wx:else>
+      <view class="wr-item" wx:for="{{list}}" wx:key="id">
+        <view class="between">
+          <text class="text-sm text-muted">我提交于 {{item.timeText}}</text>
+          <text class="badge badge-teal" wx:if="{{item.replyUnread}}">新回复</text>
+          <text class="badge badge-gray" wx:else>等待回复</text>
+        </view>
+        <view class="wr-item__content">{{item.content}}</view>
+
+        <view class="wr-item__reply" wx:if="{{item.replyContent}}">
+          <view class="wr-item__reply-head">
+            <text>{{item.replyByName}} 的回复</text>
+            <text class="wr-item__reply-time" wx:if="{{item.replyTimeText}}">{{item.replyTimeText}}</text>
+          </view>
+          <view class="wr-item__reply-text">{{item.replyContent}}</view>
+        </view>
+        <view class="wr-item__pending" wx:else>老师还没有回复这条小心事</view>
+      </view>
+
+      <view class="wr-empty" wx:if="{{!list.length && !listError}}">
+        <view class="wr-empty__text">你还没有提交过小心事</view>
+        <view class="wr-empty__hint">在上面写下第一条心事，就能在这里看到老师的回复</view>
+      </view>
+
+      <view class="wr-empty" wx:if="{{listError}}">
+        <view class="wr-empty__text">{{listError}}</view>
+        <view class="wr-empty__hint">下拉可重新加载</view>
+      </view>
+    </block>
   </view>
 </view>

@@ -29,7 +29,7 @@ const SERIAL_TABLES = new Set([
   "student_worries"
 ]);
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 function replaceQuestionMarks(sql) {
   let index = 0;
@@ -276,10 +276,17 @@ function postgresSchema() {
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_status ON teacher_daily_updates(status, record_date)",
     "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)",
-    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交
-    "CREATE TABLE IF NOT EXISTS student_worries (id BIGSERIAL PRIMARY KEY, student_user_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交；
+    // reply_content/replied_at 为管理员回复，reply_read_at 为空即学生还没看过这条回复
+    "CREATE TABLE IF NOT EXISTS student_worries (id BIGSERIAL PRIMARY KEY, student_user_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TIMESTAMP, reply_content TEXT NOT NULL DEFAULT '', reply_by BIGINT, reply_by_name TEXT NOT NULL DEFAULT '', replied_at TIMESTAMP, reply_read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
     "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS read_at TIMESTAMP",
-    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS reply_content TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS reply_by BIGINT",
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS reply_by_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP",
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS reply_read_at TIMESTAMP",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
   ].join(";\n") + ";";
 }
 
@@ -318,9 +325,11 @@ function sqliteSchema() {
     // status/record_date 索引不在此处创建：SQLite 的 ALTER TABLE 不支持 IF NOT EXISTS，
     // 本机若存在旧结构的表，必须先由 migration 9 补列再建索引，否则建索引会因缺列失败导致启动崩溃。
     "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)",
-    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交
-    "CREATE TABLE IF NOT EXISTS student_worries (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
-    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
+    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交；
+    // reply_content/replied_at 为管理员回复，reply_read_at 为空即学生还没看过这条回复
+    "CREATE TABLE IF NOT EXISTS student_worries (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, reply_content TEXT NOT NULL DEFAULT '', reply_by INTEGER, reply_by_name TEXT NOT NULL DEFAULT '', replied_at TEXT, reply_read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
   ].join(";\n") + ";";
 }
 
@@ -436,6 +445,20 @@ const MIGRATIONS = [
       "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
     ],
     allowAlreadyApplied: true
+  },
+  {
+    /* 管理员端回复学生小心事：replied_at 有值即已回复，
+     * reply_read_at 为空表示学生端还没看过这条回复（顶部「你有新的回复」提示依据） */
+    version: 11,
+    statements: [
+      "ALTER TABLE student_worries ADD COLUMN reply_content TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE student_worries ADD COLUMN reply_by INTEGER",
+      "ALTER TABLE student_worries ADD COLUMN reply_by_name TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE student_worries ADD COLUMN replied_at TEXT",
+      "ALTER TABLE student_worries ADD COLUMN reply_read_at TEXT",
+      "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
+    ],
+    allowAlreadyApplied: true
   }
 ];
 
@@ -451,7 +474,7 @@ async function applyMigrations(database) {
       // 跳过仅适用于 SQLite 的迁移语句。
       // 注意：Postgres 一条语句报错后整个事务即进入 aborted 状态，后续语句全部被忽略，
       // 因此凡是在 postgresSchema() 里已用 IF NOT EXISTS 声明过的列，其迁移都必须整段跳过。
-      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9, 10].includes(migration.version)
+      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9, 10, 11].includes(migration.version)
         ? []
         : migration.statements;
       for (const statement of statements) {

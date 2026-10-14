@@ -14,6 +14,40 @@
   margin-top: 8rpx;
 }
 
+/* ---------- 顶部：有新回复提示（对齐管理员首页信息提示板块） ---------- */
+.wo-entry {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  border-radius: var(--radius);
+  box-shadow: 0 4rpx 16rpx rgba(15, 40, 80, 0.12);
+}
+
+.wo-entry__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wo-entry__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0.9;
+}
+
+.wo-entry__text {
+  font-size: 26rpx;
+  color: #fff;
+  margin-top: 8rpx;
+}
+
+.wo-entry__arrow {
+  font-size: 40rpx;
+  line-height: 1;
+  color: #fff;
+  padding-left: 16rpx;
+}
+
 .wr-textarea {
   width: 100%;
   min-height: 260rpx;
@@ -60,4 +94,81 @@
   color: var(--text-muted);
   line-height: 1.7;
   margin-top: 8rpx;
+}
+
+/* ---------- 已提交的心事与回复 ---------- */
+.wr-item {
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.wr-item:last-child {
+  border-bottom: none;
+}
+
+.wr-item__content {
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.7;
+  margin-top: 12rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.wr-item__reply {
+  margin-top: 16rpx;
+  background: var(--teal-light);
+  border-radius: 0 14rpx 14rpx 0;
+  border-left: 6rpx solid var(--teal);
+  padding: 18rpx 20rpx;
+}
+
+.wr-item__reply-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 24rpx;
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.wr-item__reply-time {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.wr-item__reply-text {
+  font-size: 27rpx;
+  color: var(--text);
+  line-height: 1.7;
+  margin-top: 10rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.wr-item__pending {
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin-top: 14rpx;
+}
+
+.wr-empty {
+  padding: 60rpx 20rpx 40rpx;
+  text-align: center;
+}
+
+.wr-empty__text {
+  font-size: 28rpx;
+  color: var(--text-muted);
+}
+
+.wr-empty__hint {
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin-top: 12rpx;
+}
+
+.ph {
+  color: #b6c0cd;
 }

@@ -3642,7 +3642,7 @@ async function handleApi(req, res, pathname, query) {
     const limitRaw = Number(query.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 100;
     const rows = await db.prepare(
-      "SELECT id, student_name, grade, content, read_at, created_at " +
+      "SELECT id, student_name, grade, content, read_at, reply_content, reply_by_name, replied_at, reply_read_at, created_at " +
       "FROM student_worries ORDER BY id DESC LIMIT ?"
     ).all(limit);
     const unread = await db.prepare(
@@ -3662,6 +3662,66 @@ async function handleApi(req, res, pathname, query) {
     await db.prepare(
       "UPDATE student_worries SET read_at = datetime('now','localtime') WHERE read_at IS NULL"
     ).run();
+    return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 管理员端：回复某条学生小心事（学生端「我的小心事」可见） ---- */
+  const worryReplyMatch = pathname.match(/^\/api\/admin\/worries\/(\d+)\/reply$/);
+  if (req.method === "POST" && worryReplyMatch) {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可回复小心事" });
+    const worryId = Number(worryReplyMatch[1]);
+    const body = await readBody(req);
+    const content = String(body.content || "").trim();
+    if (!content) return sendJson(res, 400, { message: "先写下要回复的内容吧" });
+    if (content.length > 500) return sendJson(res, 400, { message: "回复不能超过 500 个字" });
+    const target = await db.prepare(
+      "SELECT id, student_user_id, student_name, child_id FROM student_worries WHERE id = ?"
+    ).get(worryId);
+    if (!target) return sendJson(res, 404, { message: "该小心事不存在或已被删除" });
+    // 再次回复时清空 reply_read_at，学生端会重新出现「你有新的回复」提示
+    await db.prepare(
+      "UPDATE student_worries SET reply_content = ?, reply_by = ?, reply_by_name = ?, " +
+      "replied_at = datetime('now','localtime'), reply_read_at = NULL WHERE id = ?"
+    ).run(content, user.id, user.display_name || "管理员", worryId);
+    const saved = await db.prepare(
+      "SELECT id, reply_content, reply_by_name, replied_at, reply_read_at FROM student_worries WHERE id = ?"
+    ).get(worryId);
+    await logEvent(user, "student_worry_replied", target.child_id || null, worryId, {
+      source: "admin_worry",
+      student_user_id: target.student_user_id,
+      length: content.length
+    });
+    return sendJson(res, 200, { ok: true, worry: saved || null });
+  }
+
+  /* ---- 学生端：我的小心事列表（含管理员回复与未读回复数） ---- */
+  if (req.method === "GET" && pathname === "/api/student/worries") {
+    if (user.role !== "student") return sendJson(res, 403, { message: "仅学生账号可查看小心事" });
+    const limitRaw = Number(query.get("limit"));
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 50;
+    const rows = await db.prepare(
+      "SELECT id, content, read_at, reply_content, reply_by_name, replied_at, reply_read_at, created_at " +
+      "FROM student_worries WHERE student_user_id = ? ORDER BY id DESC LIMIT ?"
+    ).all(user.id, limit);
+    const unreadReply = await db.prepare(
+      "SELECT COUNT(*) AS n FROM student_worries WHERE student_user_id = ? " +
+      "AND replied_at IS NOT NULL AND reply_content <> '' AND reply_read_at IS NULL"
+    ).get(user.id);
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      newReplyCount: Number(unreadReply && unreadReply.n || 0),
+      total: Number(rows.length),
+      worries: rows
+    });
+  }
+
+  /* ---- 学生端：查看列表后把回复标记为已读 ---- */
+  if (req.method === "POST" && pathname === "/api/student/worries/replies/read") {
+    if (user.role !== "student") return sendJson(res, 403, { message: "仅学生账号可查看小心事" });
+    await db.prepare(
+      "UPDATE student_worries SET reply_read_at = datetime('now','localtime') " +
+      "WHERE student_user_id = ? AND replied_at IS NOT NULL AND reply_read_at IS NULL"
+    ).run(user.id);
     return sendJson(res, 200, { ok: true });
   }
 

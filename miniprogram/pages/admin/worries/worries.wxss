@@ -7,6 +7,15 @@
   border-bottom: none;
 }
 
+.wr-item--active {
+  padding: 24rpx 20rpx;
+  margin: 0 -20rpx;
+  border-radius: 16rpx;
+  border-bottom: none;
+  background: #f8fbff;
+  box-shadow: inset 0 0 0 2rpx var(--primary-light);
+}
+
 .wr-item__name {
   font-size: 30rpx;
   font-weight: 600;
@@ -19,6 +28,10 @@
   color: var(--text-muted);
 }
 
+.wr-item__badges {
+  margin-top: 10rpx;
+}
+
 .wr-item__content {
   font-size: 28rpx;
   color: #374151;
@@ -26,4 +39,87 @@
   margin-top: 12rpx;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---------- 已发送的回复 ---------- */
+.wr-item__reply {
+  margin-top: 16rpx;
+  background: var(--teal-light);
+  border-radius: 0 14rpx 14rpx 0;
+  border-left: 6rpx solid var(--teal);
+  padding: 18rpx 20rpx;
+}
+
+.wr-item__reply-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 24rpx;
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.wr-item__reply-time {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.wr-item__reply-text {
+  font-size: 27rpx;
+  color: var(--text);
+  line-height: 1.7;
+  margin-top: 10rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.wr-item__reply-tip {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  margin-top: 10rpx;
+}
+
+/* ---------- 回复输入区 ---------- */
+.wr-form {
+  margin-top: 20rpx;
+}
+
+.wr-form__textarea {
+  width: 100%;
+  min-height: 160rpx;
+  box-sizing: border-box;
+  background: #fff;
+  border: 2rpx solid var(--line);
+  border-radius: 14rpx;
+  padding: 20rpx;
+  font-size: 28rpx;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.wr-counter {
+  text-align: right;
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin-top: 8rpx;
+}
+
+.wr-counter--full {
+  color: #b42318;
+}
+
+.wr-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.wr-form__actions .btn {
+  flex: 1;
+}
+
+.ph {
+  color: #b6c0cd;
 }
