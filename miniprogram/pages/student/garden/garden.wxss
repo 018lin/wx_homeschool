@@ -1,0 +1,23 @@
+.gd-intro {
+  padding: 56rpx 24rpx 48rpx;
+  text-align: center;
+}
+
+.gd-intro__icon {
+  font-size: 72rpx;
+  line-height: 1;
+}
+
+.gd-intro__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 20rpx;
+}
+
+.gd-intro__hint {
+  font-size: 26rpx;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin-top: 12rpx;
+}

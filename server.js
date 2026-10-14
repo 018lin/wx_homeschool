@@ -3604,6 +3604,67 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, result);
   }
 
+  /* ---- 学生「我的小心事」：学生提交 → 管理员端查看 ---- */
+  if (req.method === "POST" && pathname === "/api/student/worries") {
+    if (user.role !== "student") return sendJson(res, 403, { message: "仅学生账号可提交小心事" });
+    const body = await readBody(req);
+    const content = String(body.content || "").trim();
+    if (!content) return sendJson(res, 400, { message: "先写下你的小心事吧" });
+    if (content.length > 500) return sendJson(res, 400, { message: "小心事不能超过 500 个字" });
+    const child = await db.prepare(
+      "SELECT c.id, c.name, c.grade FROM children c JOIN bindings b ON b.child_id = c.id " +
+      "WHERE b.user_id = ? ORDER BY b.id LIMIT 1"
+    ).get(user.id);
+    const studentName = (child && child.name) || user.display_name || "";
+    const created = await db.prepare(
+      "INSERT INTO student_worries (student_user_id, child_id, student_name, grade, content) VALUES (?,?,?,?,?)"
+    ).run(user.id, child ? child.id : null, studentName, (child && child.grade) || "", content);
+    await logEvent(user, "student_worry_submitted", child ? child.id : null, null, {
+      source: "student_worry",
+      length: content.length
+    });
+    return sendJson(res, 201, {
+      ok: true,
+      worry: {
+        id: Number(created.lastInsertRowid),
+        student_name: studentName,
+        grade: (child && child.grade) || "",
+        content: content,
+        read_at: null,
+        created_at: new Date().toISOString()
+      }
+    });
+  }
+
+  /* ---- 管理员端：学生小心事列表与未读数 ---- */
+  if (req.method === "GET" && pathname === "/api/admin/worries") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const limitRaw = Number(query.get("limit"));
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 100;
+    const rows = await db.prepare(
+      "SELECT id, student_name, grade, content, read_at, created_at " +
+      "FROM student_worries ORDER BY id DESC LIMIT ?"
+    ).all(limit);
+    const unread = await db.prepare(
+      "SELECT COUNT(*) AS n FROM student_worries WHERE read_at IS NULL"
+    ).get();
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      newCount: Number(unread && unread.n || 0),
+      total: Number(rows.length),
+      worries: rows
+    });
+  }
+
+  /* ---- 管理员端：查看详情后把未读标记为已读 ---- */
+  if (req.method === "POST" && pathname === "/api/admin/worries/read") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    await db.prepare(
+      "UPDATE student_worries SET read_at = datetime('now','localtime') WHERE read_at IS NULL"
+    ).run();
+    return sendJson(res, 200, { ok: true });
+  }
+
   /* ---- 首页聚合数据 ---- */
   if (req.method === "GET" && pathname === "/api/home") {
     if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可访问家庭首页" });

@@ -15,6 +15,8 @@
     "pages/parent/children/children",
     "pages/student/home/home",
     "pages/student/task/task",
+    "pages/student/garden/garden",
+    "pages/student/worry/worry",
     "pages/teacher/workbench/workbench",
     "pages/teacher/publish/publish",
     "pages/teacher/submissions/submissions",
@@ -30,7 +32,8 @@
     "pages/admin/accounts/accounts",
     "pages/admin/classes/classes",
     "pages/admin/tasks/tasks",
-    "pages/admin/timeline/timeline"
+    "pages/admin/timeline/timeline",
+    "pages/admin/worries/worries"
   ],
   "window": {
     "backgroundTextStyle": "dark",

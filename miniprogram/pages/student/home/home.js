@@ -91,5 +91,14 @@ Page({
     wx.navigateTo({
       url: "/pages/student/task/task?taskId=" + t.id + "&childId=" + c.id
     });
+  },
+
+  goGarden: function () {
+    wx.navigateTo({ url: "/pages/student/garden/garden" });
+  },
+
+  /** 右下角悬浮按钮：写下「我的小心事」 */
+  goWorry: function () {
+    wx.navigateTo({ url: "/pages/student/worry/worry" });
   }
 });

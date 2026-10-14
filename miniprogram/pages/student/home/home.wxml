@@ -53,7 +53,21 @@
         <text class="tag" wx:for="{{feedback.tags}}" wx:key="*this">{{item}}</text>
       </view>
     </view>
+
+    <!-- 学习园地入口（内容待上线） -->
+    <view class="card gd-entry" bindtap="goGarden">
+      <view class="flex-1">
+        <view class="gd-entry__title">学习园地</view>
+        <view class="text-sm text-muted mt-8">分享学习成果，和同学互相学习交流</view>
+      </view>
+      <view class="gd-entry__arrow">›</view>
+    </view>
   </block>
+
+  <!-- 右下角悬浮按钮：进入「我的小心事」 -->
+  <view class="st-fab" bindtap="goWorry">
+    <view class="st-fab__plus">+</view>
+  </view>
 </view>
 
 <nav-bar role="student" active="home" />

@@ -1,0 +1,29 @@
+.wr-item {
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.wr-item:last-child {
+  border-bottom: none;
+}
+
+.wr-item__name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wr-item__grade {
+  font-weight: 400;
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+.wr-item__content {
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.7;
+  margin-top: 12rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

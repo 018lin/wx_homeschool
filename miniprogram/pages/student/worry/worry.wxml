@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="wr-head">
+    <view class="wr-head__title">我的小心事</view>
+    <view class="wr-head__sub">有什么心事都可以写在这里，老师会看到你的留言</view>
+  </view>
+
+  <!-- 已发送成功提示 -->
+  <view class="card" wx:if="{{sent}}">
+    <view class="wr-sent">
+      <view class="wr-sent__icon">✅</view>
+      <view class="wr-sent__title">已发送成功</view>
+      <view class="wr-sent__hint">小心事已经送到管理员那里啦{{sentAt ? '（' + sentAt + '）' : ''}}</view>
+      <view class="wr-sent__hint">还想再写一条？直接在下面继续输入</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="field">
+      <view class="field__label">写下你的小心事 <text class="text-danger">*</text></view>
+      <textarea
+        class="wr-textarea"
+        placeholder="例如：今天有点紧张，怕回答不上老师的问题…"
+        placeholder-class="ph"
+        maxlength="{{maxLength}}"
+        value="{{content}}"
+        bindinput="onInput"
+        auto-height
+        disable-default-padding
+      />
+      <view class="wr-counter {{count >= maxLength ? 'wr-counter--full' : ''}}">{{count}} / {{maxLength}}</view>
+    </view>
+
+    <view class="field__hint">提交后内容会推送给管理员，请不要填写敏感的个人信息</view>
+
+    <button
+      class="btn btn-primary btn-block mt-24"
+      bindtap="onSend"
+      loading="{{submitting}}"
+      disabled="{{submitting || !content}}"
+    >
+      {{submitting ? '发送中…' : '确认发送'}}
+    </button>
+  </view>
+</view>

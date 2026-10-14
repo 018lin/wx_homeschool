@@ -24,10 +24,12 @@ const SERIAL_TABLES = new Set([
   "ai_vector_documents",
   // 班级相关：Postgres 下需要 RETURNING id 才能拿到自增 id
   "classes",
-  "class_members"
+  "class_members",
+  // 学生「我的小心事」：Postgres 下需要 RETURNING id 才能拿到自增 id
+  "student_worries"
 ]);
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 function replaceQuestionMarks(sql) {
   let index = 0;
@@ -273,7 +275,11 @@ function postgresSchema() {
     "CREATE INDEX IF NOT EXISTS idx_direct_messages_pair ON direct_messages(sender_user_id, recipient_user_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_status ON teacher_daily_updates(status, record_date)",
-    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
+    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)",
+    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交
+    "CREATE TABLE IF NOT EXISTS student_worries (id BIGSERIAL PRIMARY KEY, student_user_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS read_at TIMESTAMP",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
   ].join(";\n") + ";";
 }
 
@@ -311,7 +317,10 @@ function sqliteSchema() {
     "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_teacher_created ON teacher_daily_updates(teacher_id, created_at)",
     // status/record_date 索引不在此处创建：SQLite 的 ALTER TABLE 不支持 IF NOT EXISTS，
     // 本机若存在旧结构的表，必须先由 migration 9 补列再建索引，否则建索引会因缺列失败导致启动崩溃。
-    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)"
+    "CREATE INDEX IF NOT EXISTS idx_ai_vector_documents_namespace ON ai_vector_documents(namespace, doc_type)",
+    // 学生「我的小心事」：read_at 为空即管理员端未读的新提交
+    "CREATE TABLE IF NOT EXISTS student_worries (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
   ].join(";\n") + ";";
 }
 
@@ -418,6 +427,15 @@ const MIGRATIONS = [
       "CREATE INDEX IF NOT EXISTS idx_teacher_daily_updates_status ON teacher_daily_updates(status, record_date)"
     ],
     allowAlreadyApplied: true
+  },
+  {
+    /* 学生「我的小心事」：read_at 为空表示管理员端还没看过这条提交 */
+    version: 10,
+    statements: [
+      "CREATE TABLE IF NOT EXISTS student_worries (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+      "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)"
+    ],
+    allowAlreadyApplied: true
   }
 ];
 
@@ -433,7 +451,7 @@ async function applyMigrations(database) {
       // 跳过仅适用于 SQLite 的迁移语句。
       // 注意：Postgres 一条语句报错后整个事务即进入 aborted 状态，后续语句全部被忽略，
       // 因此凡是在 postgresSchema() 里已用 IF NOT EXISTS 声明过的列，其迁移都必须整段跳过。
-      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9].includes(migration.version)
+      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9, 10].includes(migration.version)
         ? []
         : migration.statements;
       for (const statement of statements) {

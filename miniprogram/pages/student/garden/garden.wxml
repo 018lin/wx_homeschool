@@ -1,0 +1,17 @@
+<view class="page page-with-nav">
+  <view class="st-head">
+    <view class="st-head__hello">学习园地</view>
+    <view class="st-head__sub">分享学习成果的小天地</view>
+  </view>
+
+  <!-- 内容预留区：后续在此渲染作品、点赞与互评 -->
+  <view class="card">
+    <view class="gd-intro">
+      <view class="gd-intro__icon">🌱</view>
+      <view class="gd-intro__title">这里还在准备中</view>
+      <view class="gd-intro__hint">学习园地即将开放，届时可以在这里展示自己的学习作品，和同学互相学习交流</view>
+    </view>
+  </view>
+</view>
+
+<nav-bar role="student" active="home" />

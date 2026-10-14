@@ -439,6 +439,14 @@ var api = {
   getStudentHome: function () {
     return request("/api/student/home", { method: "GET" });
   },
+  /** 提交「我的小心事」，内容会推送到管理员端 */
+  submitWorry: function (content) {
+    return request("/api/student/worries", {
+      method: "POST",
+      data: { content: content },
+      loading: "发送中"
+    });
+  },
 
   /* ---- 提交 / 时间线（家长、学生共用） ---- */
   submitWork: function (data) {
@@ -629,6 +637,18 @@ var api = {
   /* ---- 管理员端：班级 ---- */
   getAdminClasses: function () {
     return request("/api/admin/classes", { method: "GET" });
+  },
+  /** 学生「我的小心事」列表（含未读条数 newCount） */
+  getAdminWorries: function (limit) {
+    return request("/api/admin/worries", {
+      method: "GET",
+      query: { limit: limit || 100 },
+      silent: true
+    });
+  },
+  /** 进入详情页后标记为已读 */
+  markAdminWorriesRead: function () {
+    return request("/api/admin/worries/read", { method: "POST", silent: true });
   },
   createClass: function (data) {
     return request("/api/admin/classes", { method: "POST", data: data, loading: "创建中" });

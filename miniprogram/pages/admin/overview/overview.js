@@ -12,6 +12,8 @@ Page({
     loading: true,
     stats: null,
     generatedAt: "",
+    // 学生「我的小心事」未读条数，用于首页顶部板块
+    worriesNewCount: 0,
     // 已有班级列表与详情/编辑弹窗
     classes: [],
     classesLoading: true,
@@ -65,6 +67,20 @@ Page({
         if (done) done();
       });
     this.loadClasses();
+    this.loadWorries();
+  },
+
+  /** 顶部板块：学生小心事未读条数（静默失败，不影响首页其他内容） */
+  loadWorries: function () {
+    var self = this;
+    api
+      .getAdminWorries(1)
+      .then(function (res) {
+        self.setData({ worriesNewCount: Number((res && res.newCount) || 0) });
+      })
+      .catch(function () {
+        self.setData({ worriesNewCount: 0 });
+      });
   },
 
   /** 加载已有班级（含教师账号，供弹窗内编辑负责教师） */
@@ -101,6 +117,10 @@ Page({
   },
   goClasses: function () {
     wx.navigateTo({ url: "/pages/admin/classes/classes" });
+  },
+  /** 顶部板块：进入学生小心事详情 */
+  goWorries: function () {
+    wx.navigateTo({ url: "/pages/admin/worries/worries" });
   },
 
   /* ---------- 班级详情弹窗 ---------- */
