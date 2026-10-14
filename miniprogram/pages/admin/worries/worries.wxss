@@ -80,6 +80,32 @@
   margin-top: 10rpx;
 }
 
+/* ---------- 操作行 ---------- */
+.wr-item__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18rpx;
+}
+
+.wr-item__hint {
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
+.wr-item__act {
+  padding: 10rpx 28rpx;
+  border-radius: 999rpx;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.wr-item__act:active {
+  background: #d8e9ff;
+}
+
 /* ---------- 回复输入区 ---------- */
 .wr-form {
   margin-top: 20rpx;

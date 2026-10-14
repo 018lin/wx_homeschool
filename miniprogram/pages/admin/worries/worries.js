@@ -52,15 +52,18 @@ Page({
         var stillExists = rows.some(function (row) {
           return Number(row.id) === Number(selectedId);
         });
+        var activeId = stillExists ? Number(selectedId) : 0;
         self.setData({
           loading: false,
-          selectedId: stillExists ? selectedId : 0,
+          selectedId: activeId,
           replyText: stillExists ? self.data.replyText : "",
           replyCount: stillExists ? self.data.replyText.length : 0,
           worries: rows.map(function (row) {
             var reply = String(row.reply_content || "");
             return {
-              id: row.id,
+              // 后端 id 为 bigint（序列化为字符串），统一转数字，选中态由 selected 字段承载
+              id: Number(row.id),
+              selected: !!activeId && Number(row.id) === activeId,
               studentName: row.student_name || "学生",
               grade: row.grade || "",
               content: row.content || "",
@@ -85,7 +88,7 @@ Page({
       });
   },
 
-  /** 选中某条小心事，展开回复输入框（已回复过则带出原内容便于修改） */
+  /** 选中某条小心事，展开回复输入框（已回复过则带出原内容便于修改）；再次点击同一项取消选中 */
   onSelectItem: function (e) {
     var id = Number(e.currentTarget.dataset.id) || 0;
     if (!id) return;
@@ -97,8 +100,23 @@ Page({
     for (var i = 0; i < this.data.worries.length; i++) {
       if (Number(this.data.worries[i].id) === id) target = this.data.worries[i];
     }
-    var replyText = (target && target.replyContent) || "";
-    this.setData({ selectedId: id, replyText: replyText, replyCount: replyText.length });
+    this.applySelection(id, (target && target.replyContent) || "");
+  },
+
+  /**
+   * 统一维护选中态：把选中标记写在列表项上（item.selected），
+   * 避免在 WXML 里用 id 做相等比较时受后端 bigint 字符串/数字类型影响。
+   */
+  applySelection: function (selectedId, replyText) {
+    var text = replyText || "";
+    this.setData({
+      selectedId: selectedId || 0,
+      replyText: text,
+      replyCount: text.length,
+      worries: this.data.worries.map(function (item) {
+        return Object.assign({}, item, { selected: !!selectedId && Number(item.id) === Number(selectedId) });
+      })
+    });
   },
 
   onCancelReply: function () {
@@ -109,7 +127,7 @@ Page({
   onFormTap: function () {},
 
   closeReply: function () {
-    this.setData({ selectedId: 0, replyText: "", replyCount: 0 });
+    this.applySelection(0, "");
   },
 
   onReplyInput: function (e) {
@@ -138,8 +156,9 @@ Page({
         var saved = (res && res.worry) || {};
         var replyTimeText = util.formatDateTime(saved.replied_at) || util.formatDateTime(new Date().toISOString());
         var list = self.data.worries.map(function (item) {
-          if (Number(item.id) !== Number(id)) return item;
+          if (Number(item.id) !== Number(id)) return Object.assign({}, item, { selected: false });
           return Object.assign({}, item, {
+            selected: false,
             replyContent: saved.reply_content || content,
             replyByName: saved.reply_by_name || item.replyByName,
             replyTimeText: replyTimeText,

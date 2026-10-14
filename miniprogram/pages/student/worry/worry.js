@@ -55,7 +55,8 @@ Page({
           list: rows.map(function (row) {
             var reply = String(row.reply_content || "");
             return {
-              id: row.id,
+              // 后端 id 为 bigint（序列化为字符串），统一转数字，便于后续扩展交互
+              id: Number(row.id),
               content: row.content || "",
               timeText: util.formatDateTime(row.created_at),
               replyContent: reply,

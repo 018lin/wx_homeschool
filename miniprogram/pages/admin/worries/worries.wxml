@@ -16,7 +16,7 @@
       </view>
 
       <view
-        class="wr-item {{selectedId === item.id ? 'wr-item--active' : ''}}"
+        class="wr-item {{item.selected ? 'wr-item--active' : ''}}"
         wx:for="{{worries}}"
         wx:key="id"
         data-id="{{item.id}}"
@@ -40,11 +40,16 @@
             <text class="wr-item__reply-time" wx:if="{{item.replyTimeText}}">{{item.replyTimeText}}</text>
           </view>
           <view class="wr-item__reply-text">{{item.replyContent}}</view>
-          <view class="wr-item__reply-tip" wx:if="{{selectedId !== item.id}}">再次点击可修改回复</view>
+        </view>
+
+        <!-- 操作行：整块区域可点，这里再放一个显式的回复按钮 -->
+        <view class="wr-item__foot" wx:if="{{!item.selected}}">
+          <text class="wr-item__hint">{{item.replyContent ? '点击可修改回复' : '点击这条小心事进行回复'}}</text>
+          <view class="wr-item__act" catchtap="onSelectItem" data-id="{{item.id}}">回复</view>
         </view>
 
         <!-- 选中后展开回复输入框（catchtap 防止点击输入区误触发选中/关闭） -->
-        <view class="wr-form" wx:if="{{selectedId === item.id}}" catchtap="onFormTap">
+        <view class="wr-form" wx:if="{{item.selected}}" catchtap="onFormTap">
           <view class="field__label">回复 {{item.studentName}}</view>
           <textarea
             class="wr-form__textarea"
