@@ -98,6 +98,7 @@
         <view wx:if="{{item.recipients.length}}" class="recipient-tags">
           <text class="recipient-tag" wx:for="{{item.recipients}}" wx:for-item="person" wx:key="userId">{{person.name}}<text wx:if="{{person.childNameText}}" class="recipient-tag__child">{{person.childNameText}}</text></text>
         </view>
+        <view wx:elif="{{item.recipientDetailMissing}}" class="recipient-empty recipient-empty--muted">这条早期记录只保存了推送人数，未保存推送对象明细</view>
         <view wx:else class="recipient-empty">未设置推送对象，请点击「校对推送对象」指定</view>
       </view>
 
@@ -125,7 +126,7 @@
     </view>
   </view>
 
-  <!-- 校对弹层 -->
+  <!-- 校对弹层：层级高于底部导航栏，内容区可滚动，底部按钮常驻可见 -->
   <view class="sheet-mask" wx:if="{{editing}}" bindtap="onEditCancel">
     <view class="sheet" catchtap="noop">
       <view class="sheet__handle"></view>
@@ -147,10 +148,18 @@
             <text class="option-row__meta">{{item.relation}} · {{item.childName}}</text>
           </view>
         </view>
-        <view class="option-empty" wx:if="{{!recipientOptions.length}}">正在加载可推送的家长…</view>
+
+        <view class="option-state" wx:if="{{recipientLoading}}">正在加载可推送的家长…</view>
+        <view class="option-state option-state--error" wx:elif="{{recipientError}}">
+          <text>{{recipientError}}</text>
+          <button class="option-retry" catchtap="onRetryRecipients">重新加载</button>
+        </view>
+        <view class="option-state" wx:elif="{{!recipientOptions.length}}">
+          暂无可推送的家长。请确认家长已绑定孩子，且已在管理员端加入班级。
+        </view>
       </scroll-view>
 
-      <view class="sheet__label">记录摘要</view>
+      <view class="sheet__label sheet__label--first">记录摘要</view>
       <textarea
         class="sheet__input"
         value="{{editing.summary}}"

@@ -395,6 +395,22 @@ async function getTeacherHeadClassId(userId) {
   }
 }
 
+/* 班级内的「学生」判定。管理员组建班级时有两种常见做法：
+ * 1) 直接把学生账号放进班级（class_members.role='student'），孩子的 children.user_id 指向该账号；
+ * 2) 只把家长放进班级，由家长名册反推孩子就是本班学生（家长可能多带一个 siblings 孩子，也算本班学生）。
+ * 只认第 1 种会导致「家长在班级里、孩子不在」时教师看不到任何学生，
+ * 进而 AI 匹配不到推送对象、「校对推送对象」列表为空，因此这里两种情况都认。
+ * 该子句不含占位符，realStudentWhere 的 2 个 demo ? 数量保持不变。 */
+function classMemberScopeSql(alias, idText) {
+  const classList = idText;
+  return "(" + alias + ".user_id IN (" +
+    "SELECT DISTINCT cm.user_id FROM class_members cm " +
+    "WHERE cm.role = 'student' AND cm.class_id IN (" + classList + "))" +
+    " OR EXISTS (SELECT 1 FROM bindings cb JOIN class_members cm ON cm.user_id = cb.user_id " +
+    "JOIN users cu ON cu.id = cb.user_id AND cu.role = 'parent' " +
+    "WHERE cb.child_id = " + alias + ".id AND cm.role = 'parent' AND cm.class_id IN (" + classList + ")))";
+}
+
 // 把「真实学生」过滤与班级作用域合并。保持与 realStudentWhere 相同的占位符数量（2 个 demo ?），
 // 因此原有 .all(...demoParams(2)) 调用无需修改。
 function studentScopeWhere(alias, classIds) {
@@ -404,9 +420,7 @@ function studentScopeWhere(alias, classIds) {
   const ids = classIds.map(function (n) { return Number(n); })
     .filter(function (n) { return Number.isFinite(n); });
   if (!ids.length) return base;
-  return "(" + base + " AND " + alias + ".user_id IN (" +
-    "SELECT DISTINCT cm.user_id FROM class_members cm " +
-    "WHERE cm.role = 'student' AND cm.class_id IN (" + ids.join(",") + ")))";
+  return "(" + base + " AND " + classMemberScopeSql(alias, ids.join(",")) + ")";
 }
 
 /**
@@ -1198,15 +1212,9 @@ async function generateParentConcernPlan(input, child) {
 
 function dailySchoolUpdateFallback(transcript, children) {
   const text = String(transcript || "").trim();
-  const candidates = (children || []).filter(function (child) {
-    return child && child.name;
-  }).sort(function (a, b) {
-    return String(b.name).length - String(a.name).length;
-  });
-  const matched = candidates.find(function (child) {
-    return text.includes(String(child.name));
-  }) || null;
-  const studentName = matched ? String(matched.name) : "学生";
+  /* 与 AI 路径共用同一套姓名归一化与匹配规则，避免没配 AI 密钥时匹配不上 */
+  const matched = matchObservedChild({ studentName: "学生" }, text, children);
+  const studentName = matched ? String(matched.name).trim() : "学生";
   const normalized = text.replace(/^今天[，,、\s]*/, "").trim();
   const summary = normalized
     ? (matched && !normalized.includes(studentName) ? studentName + "今天在学校" + normalized : normalized)
@@ -1277,6 +1285,48 @@ const DAILY_UPDATE_DRAFT = "draft";
 const DAILY_UPDATE_SENT = "sent";
 const DAILY_UPDATE_AUTO_SENT = "auto_sent";
 const MAX_DAILY_AUTO_SEND_BATCH = 200;
+
+/* 姓名归一化：去掉空白与常见标点、全角转半角、去掉「同学/小朋友」等称呼后缀。
+ * 语音转写常把「小测」写成「小 测」「小测同学」，不做归一化就会匹配不上导致推送对象为空。 */
+function normalizeStudentName(value) {
+  let text = String(value == null ? "" : value);
+  /* 全角字母数字/标点 → 半角 */
+  text = text.replace(/[\uFF01-\uFF5E]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  });
+  text = text.replace(/[\s\u3000]+/g, "");
+  text = text.replace(/[·・．.、,，。!！?？:：;；"'“”‘’()（）[\]【】]/g, "");
+  return text;
+}
+
+function stripStudentHonorific(value) {
+  return String(value || "").replace(/(的)?(同学|小朋友|孩子|学生)$/u, "");
+}
+
+/* 从口述文本 + AI 整理结果里认出是哪个学生。
+ * 评分规则：AI 直接给出名单内的姓名权重最高；口述中出现姓名次之；姓名越长越具体，避免「小测」抢占「小测试」。 */
+function matchObservedChild(update, transcript, children) {
+  const list = (children || []).filter(function (child) {
+    return child && String(child.name || "").trim();
+  });
+  if (!list.length) return null;
+  const aiName = normalizeStudentName(stripStudentHonorific(update && update.studentName));
+  const haystack = normalizeStudentName(String(transcript || "") + " " + String((update && update.summary) || ""));
+  const aiIsGeneric = !aiName || aiName === "学生" || aiName === "全班" || aiName === "孩子";
+  let best = null;
+  list.forEach(function (child) {
+    const rawName = String(child.name).trim();
+    const full = normalizeStudentName(rawName);
+    const bare = normalizeStudentName(stripStudentHonorific(rawName));
+    if (!full) return;
+    let score = 0;
+    if (!aiIsGeneric && (aiName === full || (bare && aiName === bare))) score += 100 + full.length;
+    if (haystack.indexOf(full) >= 0) score += 50 + full.length;
+    if (bare && bare !== full && haystack.indexOf(bare) >= 0) score += 20 + bare.length;
+    if (score > 0 && (!best || score > best.score)) best = { child: child, score: score, name: rawName };
+  });
+  return best ? best.child : null;
+}
 
 function pad2(value) {
   return String(value).length >= 2 ? String(value) : "0" + value;
@@ -4297,19 +4347,22 @@ async function handleApi(req, res, pathname, query) {
 
     const children = await getTeacherVisibleChildren(user);
     const update = await generateDailySchoolUpdate(transcript, children);
-    const resolvedChild = children.find(function (child) {
-      return child && child.name && (
-        String(child.name).trim() === update.studentName ||
-        transcript.includes(String(child.name).trim())
-      );
-    }) || null;
-    if (resolvedChild) update.studentName = resolvedChild.name;
+    /* 认人：优先用 AI 整理出的姓名，再用口述原文做归一化模糊匹配（容忍「小 测」「小测同学」等写法） */
+    const resolvedChild = matchObservedChild(update, transcript, children);
+    if (resolvedChild) update.studentName = String(resolvedChild.name).trim();
 
     /* AI 判定的默认推送对象：能识别到学生就只推给该学生家长，否则推给全部可见家长 */
     let recipientIds = [];
+    let recipientSource = "none";
     if (resolvedChild) {
       recipientIds = await resolveChildParentIds(resolvedChild.id);
-    } else {
+      recipientSource = "ai-student";
+      /* 匹配到学生但该生没有任何家长绑定时，回退到全部可见家长，避免推送对象为空 */
+      if (!recipientIds.length) {
+        recipientSource = "ai-student-no-parent";
+      }
+    }
+    if (!recipientIds.length) {
       const options = await resolveVisibleParentOptions(user);
       const seen = new Set();
       recipientIds = options.filter(function (item) {
@@ -4317,12 +4370,16 @@ async function handleApi(req, res, pathname, query) {
         seen.add(item.userId);
         return true;
       }).map(function (item) { return item.userId; });
+      if (recipientSource !== "ai-student-no-parent") {
+        recipientSource = recipientIds.length ? "ai-all-visible" : "none";
+      }
     }
     /* 教师本次已手动指定推送对象时，以教师选择为准 */
     const requestedRecipients = normalizeIdList(body.recipientIds);
     if (requestedRecipients.length) {
       const allowed = new Set((await resolveVisibleParentOptions(user)).map(function (item) { return item.userId; }));
       recipientIds = requestedRecipients.filter(function (id) { return allowed.has(id); });
+      recipientSource = "teacher";
     }
 
     const parentMessage = update.parentMessage || update.summary;
@@ -4369,6 +4426,11 @@ async function handleApi(req, res, pathname, query) {
         is_draft: true
       },
       recipientCount: recipientIds.length,
+      /* 推送对象来源：ai-student=按学生家长匹配，ai-all-visible=未认出学生、推给全部可见家长，
+       * ai-student-no-parent=认出学生但没绑家长，teacher=教师手动指定，none=暂无可推送家长 */
+      recipientSource: recipientSource,
+      matchedChildId: resolvedChild ? Number(resolvedChild.id) : null,
+      visibleChildCount: children.length,
       autoSendTime: dailyAutoSendConfig().text
     });
   }

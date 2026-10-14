@@ -702,6 +702,82 @@ test("admin creates classes and teacher scope stays inside its own class", async
   assert.equal(result.data.task.title, "分班班级任务A");
 });
 
+test("parent-only class roster still yields AI recipients and a校对 list", async function () {
+  /* 复现线上故障：班级里只放了「教师 + 家长」，孩子是家长填问卷建的（children.user_id 为空、
+   * 也没有学生账号），旧逻辑按 children.user_id 过滤导致教师看不到任何学生，
+   * 于是 AI 匹配不到推送家长、「校对推送对象」列表恒为空。 */
+  const stamp = Date.now();
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  const adminToken = result.data.token;
+
+  const teacherAccount = "roster_teacher_" + stamp;
+  const parentAccount = "roster_parent_" + stamp;
+  const teacher = await createAccount(adminToken, { role: "teacher", account: teacherAccount, password: "123456", displayName: "名册教师" });
+  const parent = await createAccount(adminToken, { role: "parent", account: parentAccount, password: "123456", displayName: "名册家长" });
+
+  // 家长填问卷建孩子（children.user_id 为空，与线上数据一致）
+  result = await request("/api/auth/login", { method: "POST", body: { account: parentAccount, password: "123456" } });
+  const parentToken = result.data.token;
+  result = await request("/api/questionnaire", {
+    method: "POST",
+    token: parentToken,
+    body: {
+      childName: "名册小明", gender: "男", age: 8, caregiver: ["爸爸"],
+      timeAvailable: "适中", taskPreference: "低负担", interests: ["阅读"], grade: "二年级"
+    }
+  });
+  assert.equal(result.response.status, 200);
+  const rosterChildId = Number(result.data.child.id);
+
+  // 班级只登记「教师 + 家长」，不登记学生账号
+  result = await request("/api/admin/classes", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      name: "名册班" + stamp, grade: "二年级",
+      headTeacherId: Number(teacher.id), teacherIds: [Number(teacher.id)],
+      studentIds: [], parentIds: [Number(parent.id)]
+    }
+  });
+  assert.equal(result.response.status, 201);
+
+  result = await request("/api/auth/login", { method: "POST", body: { account: teacherAccount, password: "123456" } });
+  const rosterTeacherToken = result.data.token;
+
+  // 关键回归：只登记家长的班级，教师仍应看到该家长的孩子
+  result = await request("/api/teacher/students", { token: rosterTeacherToken });
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.data.students.map(function (item) { return item.name; }), ["名册小明"]);
+
+  // 「校对推送对象」应返回该家长，而不是空列表
+  result = await request("/api/teacher/daily-update-recipients", { token: rosterTeacherToken });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.data.options.length >= 1, "可推送家长不应为空");
+  assert.ok(result.data.options.some(function (item) { return Number(item.childId) === rosterChildId; }));
+
+  // AI 自动识别：口述里带空格与「同学」称呼也应匹配到该学生并自动带上家长
+  result = await request("/api/teacher/daily-updates", {
+    method: "POST",
+    token: rosterTeacherToken,
+    body: { transcript: "今天名册 小 明同学主动帮老师整理了图书角。" }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.recipientSource, "ai-student", "应按学生家长匹配推送对象");
+  assert.equal(Number(result.data.matchedChildId), rosterChildId);
+  assert.ok(result.data.recipientCount >= 1, "AI 应自动设置推送家长");
+  assert.ok(result.data.update.recipients.length >= 1);
+  assert.ok(result.data.update.recipients.some(function (item) { return item.name === "名册家长"; }));
+
+  // 清理：这条草稿不留在库里影响其他用例
+  await request("/api/teacher/daily-updates/" + Number(result.data.update.id), {
+    method: "DELETE",
+    token: rosterTeacherToken
+  });
+});
+
 test("admin can delete a managed account but cannot delete admin accounts", async function () {
   let result = await request("/api/auth/login", {
     method: "POST",

@@ -34,8 +34,32 @@ function mapUpdate(item) {
     recipientText: recipients.length
       ? recipients.map(function (person) { return person.name + (person.childNameText ? "（" + person.childNameText + "）" : ""); }).join("、")
       : "未设置推送对象",
+    /* 早期记录只存了推送人数、没存推送对象明细，这里标记出来，避免出现「8 位家长」却没有名字的错位 */
+    recipientDetailMissing: !recipients.length && !(item.recipient_ids || []).length && Number(item.recipient_count || 0) > 0,
     aiStatus: item.ai_status === "ai" ? "AI 已整理" : "本地已整理"
   };
+}
+
+/* 把后端返回的推送对象来源翻译成教师能看懂的提示，
+ * 区分「按学生家长自动匹配」「没认出学生推给全部可见家长」「认出学生但没绑家长」「暂无可推送家长」。 */
+function describeRecipientMatch(source, draft) {
+  var prefix = "已加入待校对清单";
+  if (source === "teacher") {
+    return prefix + "，推送对象以您指定为准：" + draft.recipientText;
+  }
+  if (source === "ai-all-visible") {
+    return prefix + "，未从口述中认出学生姓名，已暂推给全部可见家长（" +
+      draft.recipientCount + " 位），请「校对推送对象」确认";
+  }
+  if (source === "ai-student-no-parent") {
+    return draft.recipientCount
+      ? prefix + "，认出学生但未绑定家长，已暂推给全部可见家长（" + draft.recipientCount + " 位），请「校对推送对象」确认"
+      : prefix + "，认出学生但该学生没有绑定家长，请「校对推送对象」指定";
+  }
+  if (source === "none" || !draft.recipientCount) {
+    return prefix + "，未匹配到家长，请点击「校对推送对象」指定";
+  }
+  return prefix + "，AI 已按学生匹配，将推送给：" + draft.recipientText;
 }
 
 Page({
@@ -61,6 +85,8 @@ Page({
     /* 编辑弹层 */
     editing: null,
     recipientOptions: [],
+    recipientLoading: false,
+    recipientError: "",
     saving: false
   },
 
@@ -223,22 +249,22 @@ Page({
     if (this.data.recording || this.data.transcribing || this.data.creating) return;
     this.setData({ creating: true, statusTone: "processing", statusText: "AI 正在整理，并匹配要通知的家长…" });
     api.createDailyUpdate({ transcript: transcript }).then(function (res) {
-      var draft = mapUpdate(((res && res.update) || {}));
+      var payload = res || {};
+      var draft = mapUpdate(payload.update || {});
+      var source = payload.recipientSource || "";
       self.setData({
         creating: false,
         transcript: "",
         charCount: 0,
-        statusTone: "success",
-        statusText: draft.recipientCount
-          ? "已加入待校对清单，将推送给：" + draft.recipientText
-          : "已加入待校对清单，但未匹配到家长，请点击「校对推送对象」指定"
+        statusTone: source === "none" ? "error" : "success",
+        statusText: describeRecipientMatch(source, draft)
       });
       self.loadList();
-      if (draft.recipientCount) {
-        setTimeout(function () {
-          wx.showToast({ title: "已加入待校对清单", icon: "none" });
-        }, 400);
-      }
+      wx.showToast({
+        title: source === "none" ? "未匹配到家长，请校对推送对象" : "已加入待校对清单",
+        icon: "none",
+        duration: 2500
+      });
     }).catch(function (error) {
       self.setData({
         creating: false,
@@ -256,7 +282,6 @@ Page({
       if (this.data.drafts[i].id === id) target = this.data.drafts[i];
     }
     if (!target) return;
-    var self = this;
     var selected = target.recipients.map(function (person) { return person.userId; });
     this.setData({
       editing: {
@@ -268,9 +293,20 @@ Page({
         selectedCount: selected.length
       },
       recipientOptions: [],
+      recipientLoading: true,
+      recipientError: "",
       saving: false
     });
+    this.loadRecipientOptions(selected);
+  },
+
+  /* 拉取可推送家长清单。失败/空结果都要给出明确状态，不能让弹窗一直停在「正在加载」。 */
+  loadRecipientOptions: function (selected) {
+    var self = this;
+    var checkedIds = (selected || []).map(Number);
+    this.setData({ recipientLoading: true, recipientError: "" });
     api.getDailyUpdateRecipients().then(function (res) {
+      var seen = {};
       var options = ((res && res.options) || []).map(function (item) {
         var userId = Number(item.userId);
         return {
@@ -279,25 +315,39 @@ Page({
           relation: item.relation || "家长",
           childId: Number(item.childId),
           childName: item.childName || "学生",
-          checked: selected.indexOf(userId) >= 0
+          checked: checkedIds.indexOf(userId) >= 0
         };
-      });
-      /* 同一家长可能绑定多个孩子，这里按家长去重，避免重复勾选 */
-      var seen = {};
-      var unique = [];
-      options.forEach(function (item) {
-        if (seen[item.userId]) return;
+      }).filter(function (item) {
+        /* 同一家长可能绑定多个孩子，这里按家长去重，避免重复勾选 */
+        if (seen[item.userId]) return false;
         seen[item.userId] = true;
-        unique.push(item);
+        return true;
       });
-      self.setData({ recipientOptions: unique });
-    }).catch(function () {
-      self.setData({ recipientOptions: [] });
+      /* 弹窗已关闭时不再回写，避免把状态写到下一个弹窗上 */
+      if (!self.data.editing) return;
+      self.setData({ recipientOptions: options, recipientLoading: false, recipientError: "" });
+    }).catch(function (error) {
+      if (!self.data.editing) return;
+      var message = (error && error.message) || "可推送家长加载失败";
+      var outdated = error && (error.status === 404 || String(message).indexOf("接口不存在") >= 0);
+      self.setData({
+        recipientOptions: [],
+        recipientLoading: false,
+        recipientError: outdated
+          ? "线上后端尚未更新该接口，请稍后重试或先联系管理员"
+          : message
+      });
     });
   },
 
+  onRetryRecipients: function () {
+    var editing = this.data.editing;
+    if (!editing) return;
+    this.loadRecipientOptions(editing.selected || []);
+  },
+
   onEditCancel: function () {
-    this.setData({ editing: null, recipientOptions: [], saving: false });
+    this.setData({ editing: null, recipientOptions: [], recipientLoading: false, recipientError: "", saving: false });
   },
 
   onToggleRecipient: function (e) {
@@ -345,7 +395,7 @@ Page({
       parentMessage: parentMessage,
       recipientIds: editing.selected || []
     }).then(function (res) {
-      self.setData({ editing: null, recipientOptions: [], saving: false, statusTone: "success", statusText: "校对内容已保存" });
+      self.setData({ editing: null, recipientOptions: [], recipientLoading: false, recipientError: "", saving: false, statusTone: "success", statusText: "校对内容已保存" });
       var updated = mapUpdate(((res && res.update) || {}));
       var drafts = self.data.drafts.map(function (item) {
         return item.id === updated.id ? updated : item;

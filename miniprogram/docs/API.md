@@ -539,7 +539,7 @@ engagement_judgment_corrected
 - 成功 `200`：`{ generatedAt, newReplyCount, total, worries: [...] }`
 - 只返回 `student_user_id = 当前用户` 的记录，`ORDER BY id DESC`
 - 元素字段（下划线，与管理员端同表不同列）：`id`, `content`, `read_at`, `reply_content`, `reply_by_name`, `replied_at`, `reply_read_at`, `created_at`
-- `newReplyCount`：`replied_at IS NOT NULL AND reply_content <> '' AND reply_read_at IS NULL` 的条数，**不受 limit 影响**，小程序端用它决定是否显示顶部「你有新的回复」板块。
+- `newReplyCount`：`replied_at IS NOT NULL AND reply_content <> '' AND reply_read_at IS NULL` 的条数，**不受 limit 影响**，学生端首页（`pages/student/home`）用它渲染顶部信息提示模块（`limit=1` 只取计数）；进入「我的小心事」看到回复后调用 `POST /api/student/worries/replies/read` 标记已读，首页提示随之消失。
 
 ### 3.4 `POST /api/student/worries/replies/read` —— 回复全部标记已读
 
@@ -689,11 +689,24 @@ engagement_judgment_corrected
 | `update.tags` | string | 逗号连接，最多 4 个 |
 | `update.ai_status` | string | `ai` / `fallback` |
 | `update.recipient_count` | number | |
-| `update.created_at` | string | ISO 8601（`new Date().toISOString()`，与库里 `localtime` 格式不同） |
+| `update.recipient_ids` | number[] | AI 判定的推送家长 user id |
+| `update.recipients` | Array\<`{userId, name, relation, childNames, childNameText}`\> | 推送对象明细，用于清单上标注「会推送给谁」 |
+| `update.created_at` | string | 北京时间 `YYYY-MM-DD HH:MM:SS` |
 | `recipientCount` | number | |
+| `recipientSource` | string | `ai-student` 按学生家长匹配 / `ai-all-visible` 未认出学生推给全部可见家长 / `ai-student-no-parent` 认出学生但未绑家长 / `teacher` 教师手动指定 / `none` 暂无可推送家长 |
+| `matchedChildId` | number \| null | 匹配到的学生 id |
+| `visibleChildCount` | number | 教师可见学生数，为 `0` 时 AI 必然匹配不到家长 |
 
 - 行为：识别到学生 → 只推给该学生的非 demo 家长；未识别 → 推给所有非 demo 家长。通知 `type = "teacher_daily_update"`。
-- ⚠️ `update.created_at` 是 ISO（带 `Z`），列表接口返回的是 `YYYY-MM-DD HH:MM:SS`，**格式不一致**。
+- **推送对象为空的最常见原因**：教师所属班级里只有家长、而孩子没有对应学生账号（`children.user_id` 为空）。
+  班级作用域现按「学生账号在班级内」**或**「孩子的家长在班级内」两种情况取并集，教师即可看到这些孩子并自动匹配推送家长。
+
+### 5.3.1 `GET /api/teacher/daily-update-recipients` —— 可推送家长清单
+
+- 成功 `200`：`{ "options": [ { userId, name, relation, childId, childName } ] }`
+- 数据来源：教师可见学生（`getTeacherVisibleChildren`）对应的非 demo 家长，按 `childId, userId` 排序。
+- 同一家长绑定多个孩子会出现多条，前端按 `userId` 去重。
+- 返回空数组说明该教师可见学生为 `0`，需检查班级成员（管理员端「班级管理」里把家长加入班级即可）。
 
 ### 5.4 `POST /api/teacher/ai-chat` —— 教师 AI 助手
 
