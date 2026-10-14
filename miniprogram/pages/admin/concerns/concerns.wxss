@@ -1,0 +1,103 @@
+.cc-item {
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.cc-item:last-child {
+  border-bottom: none;
+}
+
+.cc-item__who {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cc-item__grade {
+  font-weight: 400;
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+.cc-item__title {
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.cc-item__badges {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cc-item__badges .tag {
+  margin-bottom: 0;
+}
+
+.cc-item__badges .badge {
+  margin-left: 12rpx;
+}
+
+.cc-item__label {
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.cc-item__body {
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: #374151;
+  line-height: 1.7;
+  background: #f8fbff;
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cc-item__extra {
+  margin-top: 10rpx;
+  font-size: 25rpx;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.cc-item__extra-key {
+  color: var(--text-muted);
+}
+
+/* ---------- 老师处理结果 ---------- */
+.cc-item__reply {
+  margin-top: 16rpx;
+  background: var(--teal-light);
+  border-radius: 0 14rpx 14rpx 0;
+  border-left: 6rpx solid var(--teal);
+  padding: 16rpx 20rpx;
+}
+
+.cc-item__reply-head {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--teal);
+}
+
+.cc-item__reply-text {
+  margin-top: 8rpx;
+  font-size: 27rpx;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cc-item__foot {
+  margin-top: 16rpx;
+  font-size: 23rpx;
+  color: var(--text-muted);
+  text-align: right;
+}

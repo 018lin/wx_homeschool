@@ -14,6 +14,8 @@ Page({
     generatedAt: "",
     // 学生「我的小心事」未读条数，用于首页顶部板块
     worriesNewCount: 0,
+    // 家长「成长关注」未读条数，用于首页顶部板块
+    concernsNewCount: 0,
     // 已有班级列表与详情/编辑弹窗
     classes: [],
     classesLoading: true,
@@ -68,6 +70,7 @@ Page({
       });
     this.loadClasses();
     this.loadWorries();
+    this.loadConcerns();
   },
 
   /** 顶部板块：学生小心事未读条数（静默失败，不影响首页其他内容） */
@@ -80,6 +83,19 @@ Page({
       })
       .catch(function () {
         self.setData({ worriesNewCount: 0 });
+      });
+  },
+
+  /** 顶部板块：家长成长关注未读条数（静默失败，不影响首页其他内容） */
+  loadConcerns: function () {
+    var self = this;
+    api
+      .getAdminParentTaskRequests(1)
+      .then(function (res) {
+        self.setData({ concernsNewCount: Number((res && res.newCount) || 0) });
+      })
+      .catch(function () {
+        self.setData({ concernsNewCount: 0 });
       });
   },
 
@@ -121,6 +137,10 @@ Page({
   /** 顶部板块：进入学生小心事详情 */
   goWorries: function () {
     wx.navigateTo({ url: "/pages/admin/worries/worries" });
+  },
+  /** 顶部板块：进入家长成长关注详情 */
+  goConcerns: function () {
+    wx.navigateTo({ url: "/pages/admin/concerns/concerns" });
   },
 
   /* ---------- 班级详情弹窗 ---------- */

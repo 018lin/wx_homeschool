@@ -44,8 +44,7 @@ Page({
     api
       .getTeacherTaskRequests()
       .then(function (res) {
-        var list = (res && res.requests) || [];
-        var all = list.map(function (r) {
+        var list = (res && res.requests) || [];        var all = list.map(function (r) {
           var meta = util.requestStatusMeta(r.status);
           return {
             id: r.id,
@@ -75,6 +74,10 @@ Page({
         });
         self.setData({ loading: false, all: all, reviewId: null, comment: "", title: "" });
         self.applyFilter();
+        // 打开列表即视为已阅，回到工作台时顶部提示板块恢复为「暂无新的提交」
+        if (Number((res && res.newCount) || 0) > 0) {
+          api.readTeacherTaskRequests().catch(function () {});
+        }
         if (done) done();
       })
       .catch(function () {

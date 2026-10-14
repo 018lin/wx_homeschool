@@ -180,6 +180,54 @@ page {
   color: var(--primary);
 }
 
+/* ---------- 信息提示板块（置顶通知，如管理员首页新提交、学生首页新回复） ---------- */
+.wo-entry {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24rpx;
+}
+
+.wo-entry--active {
+  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+}
+
+.wo-entry__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wo-entry__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wo-entry__text {
+  font-size: 26rpx;
+  color: var(--text-muted);
+  margin-top: 8rpx;
+}
+
+.wo-entry--active .wo-entry__title,
+.wo-entry--active .wo-entry__text {
+  color: #fff;
+}
+
+.wo-entry--active .wo-entry__title {
+  opacity: 0.85;
+}
+
+.wo-entry__arrow {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 36rpx;
+  color: var(--text-muted);
+}
+
+.wo-entry--active .wo-entry__arrow {
+  color: #fff;
+}
+
 /* ---------- 文字 ---------- */
 .title-lg { font-size: 40rpx; font-weight: 700; color: var(--text); }
 .title { font-size: 32rpx; font-weight: 600; color: var(--text); }

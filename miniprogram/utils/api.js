@@ -523,8 +523,16 @@ var api = {
   getGlobalReport: function () {
     return request("/api/teacher/global-report", { method: "GET", silent: true });
   },
-  getTeacherTaskRequests: function (status) {
-    return request("/api/teacher/parent-task-requests", { method: "GET", query: { status: status } });
+  /** 家长成长关注列表；newCount 为尚未查看的新提交推送数（工作台顶部板块用） */
+  getTeacherTaskRequests: function (status, limit) {
+    return request("/api/teacher/parent-task-requests", {
+      method: "GET",
+      query: { status: status, limit: limit }
+    });
+  },
+  /** 查看过成长关注后标记推送为已读 */
+  readTeacherTaskRequests: function () {
+    return request("/api/teacher/parent-task-requests/read", { method: "POST", silent: true });
   },
   reviewTaskRequest: function (data) {
     return request("/api/teacher/parent-task-requests/review", {
@@ -672,6 +680,18 @@ var api = {
   },
   createClass: function (data) {
     return request("/api/admin/classes", { method: "POST", data: data, loading: "创建中" });
+  },
+  /** 家长成长关注列表（含未读推送数 newCount，家长提交后自动同步到管理员端） */
+  getAdminParentTaskRequests: function (limit) {
+    return request("/api/admin/parent-task-requests", {
+      method: "GET",
+      query: { limit: limit || 100 },
+      silent: true
+    });
+  },
+  /** 进入成长关注列表后把推送标记为已读 */
+  markAdminParentTaskRequestsRead: function () {
+    return request("/api/admin/parent-task-requests/read", { method: "POST", silent: true });
   },
   /** 编辑班级：更新基本信息，并按名单增删成员 */
   updateClass: function (id, data) {

@@ -8,7 +8,10 @@ Page({
     loading: true,
     task: null,
     weekStart: "",
-    recent: []
+    recent: [],
+    // 家长「成长关注」未读条数，用于顶部提示板块
+    concernsNewCount: 0,
+    concernNoticeText: "暂无新的提交"
   },
 
   onShow: function () {
@@ -69,6 +72,25 @@ Page({
         self.setData({ loading: false });
         if (done) done();
       });
+
+    this.loadConcerns();
+  },
+
+  /** 顶部板块：家长成长关注未读条数（静默失败，不影响工作台其他内容） */
+  loadConcerns: function () {
+    var self = this;
+    api
+      .getTeacherTaskRequests("pending", 1)
+      .then(function (res) {
+        var count = Number((res && res.newCount) || 0);
+        self.setData({
+          concernsNewCount: count,
+          concernNoticeText: count ? "有" + count + "条新提交" : "暂无新的提交"
+        });
+      })
+      .catch(function () {
+        self.setData({ concernsNewCount: 0, concernNoticeText: "暂无新的提交" });
+      });
   },
 
   goPublish: function () {
@@ -79,5 +101,9 @@ Page({
   },
   goDaily: function () {
     wx.navigateTo({ url: "/pages/teacher/daily/daily" });
+  },
+  /** 顶部板块：进入家长成长关注审核 */
+  goConcerns: function () {
+    wx.navigateTo({ url: "/pages/teacher/requests/requests" });
   }
 });

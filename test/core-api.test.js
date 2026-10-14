@@ -119,9 +119,13 @@ test("core parent and teacher workflow remains compatible", async function () {
   assert.ok(result.data.token);
   parentToken = result.data.token;
 
+  // 首次登录不再强制填写学生档案，needQuestionnaire 恒为 false，可直接进入系统
   result = await request("/api/home", { token: parentToken });
   assert.equal(result.response.status, 200);
-  assert.equal(result.data.needQuestionnaire, true);
+  assert.equal(result.data.needQuestionnaire, false);
+  assert.equal(result.data.children.length, 0);
+  assert.equal(result.data.child, null);
+  assert.equal(result.data.hasProfile, false);
 
   result = await request("/api/questionnaire", {
     method: "POST",
@@ -141,6 +145,11 @@ test("core parent and teacher workflow remains compatible", async function () {
   assert.equal(result.response.status, 200);
   childId = Number(result.data.child.id);
   assert.ok(childId);
+
+  // 家长主动填写（可选）后，档案标记为已完善
+  result = await request("/api/home?childId=" + childId, { token: parentToken });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.hasProfile, true);
 
   result = await request("/api/auth/login", {
     method: "POST",
@@ -889,4 +898,125 @@ test("admin reply reaches the student's worry list and unread hint clears after 
   result = await request("/api/student/worries", { token: studentToken });
   assert.equal(result.data.newReplyCount, 0);
   assert.ok(result.data.worries[0].reply_read_at);
+});
+
+test("parent concern submission notifies the class teacher and clears after reading", async function () {
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  assert.equal(result.response.status, 200);
+  const adminToken = result.data.token;
+
+  const stamp = Date.now();
+  result = await request("/api/admin/accounts", {
+    method: "POST",
+    token: adminToken,
+    body: { role: "teacher", account: "concern_teacher_" + stamp, password: "123456", displayName: "推送老师" }
+  });
+  assert.equal(result.response.status, 201);
+  const pushedTeacherId = Number(result.data.id);
+
+  result = await request("/api/admin/accounts", {
+    method: "POST",
+    token: adminToken,
+    body: { role: "parent", account: "concern_parent_" + stamp, password: "123456", displayName: "推送家长" }
+  });
+  assert.equal(result.response.status, 201);
+  const concernParentId = Number(result.data.id);
+
+  const concernParentAccount = "concern_parent_" + stamp;
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: concernParentAccount, password: "123456" }
+  });
+  assert.equal(result.response.status, 200);
+  const concernParentToken = result.data.token;
+
+  result = await request("/api/questionnaire", {
+    method: "POST",
+    token: concernParentToken,
+    body: {
+      childName: "推送小禾",
+      gender: "女",
+      age: 11,
+      caregiver: ["妈妈"],
+      timeAvailable: "适中",
+      taskPreference: "低负担",
+      interests: ["阅读"],
+      familyNote: "",
+      grade: "五年级"
+    }
+  });
+  assert.equal(result.response.status, 200);
+  const concernChildId = Number(result.data.child.id);
+
+  // 家长入班（线上常见形态：只有家长在班级名单里），教师据此负责该学生
+  result = await request("/api/admin/classes", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      name: "推送验证班" + stamp,
+      grade: "五年级",
+      headTeacherId: pushedTeacherId,
+      teacherIds: [],
+      studentIds: [],
+      parentIds: [concernParentId]
+    }
+  });
+  assert.ok([200, 201].includes(result.response.status));
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "concern_teacher_" + stamp, password: "123456" }
+  });
+  assert.equal(result.response.status, 200);
+  const pushedTeacherToken = result.data.token;
+
+  // 提交前：工作台顶部提示为空
+  result = await request("/api/teacher/parent-task-requests?status=pending&limit=1", { token: pushedTeacherToken });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.newCount, 0);
+
+  result = await request("/api/parent/task-requests", {
+    method: "POST",
+    token: concernParentToken,
+    body: {
+      childId: concernChildId,
+      category: "情绪社交",
+      observedBehavior: "写作业遇到困难时容易着急，不太愿意说出来。",
+      context: "晚上写作业时",
+      frequency: "每周三四次",
+      parentExpectation: "希望孩子能先说出困难"
+    }
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.data.pushedTo >= 1, "提交后至少要推送给负责教师");
+  const concernId = Number(result.data.request.id);
+
+  const notifyRow = await app.db.prepare(
+    "SELECT type, read_at FROM notifications WHERE recipient_user_id = ? AND type = 'parent_concern_submitted' ORDER BY id DESC LIMIT 1"
+  ).get(pushedTeacherId);
+  assert.ok(notifyRow, "教师应收到成长关注推送");
+  assert.equal(notifyRow.read_at, null);
+
+  // 教师工作台首屏出现「有新的提交」，且列表能拿到这条成长关注
+  result = await request("/api/teacher/parent-task-requests?status=pending&limit=1", { token: pushedTeacherToken });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.newCount, 1);
+  assert.equal(Number(result.data.requests[0].id), concernId);
+  assert.equal(result.data.requests[0].child_name, "推送小禾");
+  assert.equal(result.data.requests[0].parent_name, "推送家长");
+
+  // 管理员端同样会收到同一条提交的推送
+  result = await request("/api/admin/parent-task-requests", { token: adminToken });
+  assert.equal(result.response.status, 200);
+  assert.ok(Number(result.data.newCount) >= 1);
+
+  // 进入列表后标记已读，回到工作台恢复为「暂无新的提交」
+  result = await request("/api/teacher/parent-task-requests/read", { method: "POST", token: pushedTeacherToken });
+  assert.equal(result.response.status, 200);
+  result = await request("/api/teacher/parent-task-requests?status=pending&limit=1", { token: pushedTeacherToken });
+  assert.equal(result.data.newCount, 0);
+  assert.ok(result.data.requests.some(function (item) { return Number(item.id) === concernId; }), "已读只影响提示，不隐藏待处理条目");
 });

@@ -1,4 +1,13 @@
 <view class="page page-with-nav">
+  <!-- 家长「成长关注」新提交提示：置顶展示，加载期间也保留位置 -->
+  <view class="card wo-entry {{concernsNewCount ? 'wo-entry--active' : ''}}" bindtap="goConcerns">
+    <view class="wo-entry__main">
+      <view class="wo-entry__title">家长成长关注</view>
+      <view class="wo-entry__text">{{loading ? '加载中…' : concernNoticeText}}</view>
+    </view>
+    <view class="wo-entry__arrow">›</view>
+  </view>
+
   <!-- 主视觉：一句话记录学生活动 -->
   <view class="daily-feature" bindtap="goDaily">
     <view class="daily-feature__eyebrow">✦ 今日校园观察</view>

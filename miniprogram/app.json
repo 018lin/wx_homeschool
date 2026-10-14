@@ -33,7 +33,8 @@
     "pages/admin/classes/classes",
     "pages/admin/tasks/tasks",
     "pages/admin/timeline/timeline",
-    "pages/admin/worries/worries"
+    "pages/admin/worries/worries",
+    "pages/admin/concerns/concerns"
   ],
   "window": {
     "backgroundTextStyle": "dark",

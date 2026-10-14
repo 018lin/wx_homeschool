@@ -505,6 +505,149 @@ async function findClassTaskForChild(weekStart, childId) {
   ).get(weekStart);
 }
 
+/**
+ * 家长成长关注的推送类型：家长提交后同步通知「孩子的负责教师 + 全部管理员」，
+ * 教师端/管理员端首页据此展示顶部新提交提示，查看后置read_at 消除提示。
+ */
+const CONCERN_NOTIFICATION_TYPE = "parent_concern_submitted";
+
+/**
+ * 推送接收人：与教师端能看到的范围保持一致（见 studentScopeWhere），否则会出现
+ * 「教师在列表里能看到这条成长关注，工作台却一直显示暂无新的提交」。
+ * - 孩子/家长所在班级的教师；
+ * - 未分班的教师（未分班时教师端本就能看到全部学生）；
+ * - 班级数据缺失时兜底推送给全部教师；
+ * - 全部管理员（去重，并排除提交人自己）。
+ */
+async function getParentConcernRecipientIds(childId, parentId) {
+  const classIds = [];
+  const pushClass = function (rows) {
+    (rows || []).forEach(function (row) {
+      const id = Number(row.class_id);
+      if (Number.isFinite(id) && classIds.indexOf(id) < 0) classIds.push(id);
+    });
+  };
+  // 孩子所在班级
+  try {
+    pushClass(await db.prepare(
+      "SELECT cm.class_id FROM class_members cm JOIN children c ON c.user_id = cm.user_id " +
+      "WHERE cm.role = 'student' AND c.id = ?"
+    ).all(childId));
+  } catch (error) {
+    console.warn("读取孩子所在班级失败：", error.message);
+  }
+  // 家长所在班级（部分数据只给家长分班）
+  try {
+    pushClass(await db.prepare(
+      "SELECT class_id FROM class_members WHERE user_id = ? AND role = 'parent'"
+    ).all(parentId));
+  } catch (error) {
+    console.warn("读取家长所在班级失败：", error.message);
+  }
+
+  const ids = [];
+  const pushUser = function (rows) {
+    (rows || []).forEach(function (row) {
+      const id = Number(row.user_id !== undefined ? row.user_id : row.id);
+      if (Number.isFinite(id) && id > 0 && ids.indexOf(id) < 0) ids.push(id);
+    });
+  };
+
+  let teacherRows = [];
+  if (classIds.length) {
+    const holders = classIds.map(function () { return "?"; }).join(",");
+    teacherRows = await db.prepare(
+      "SELECT DISTINCT cm.user_id FROM class_members cm JOIN users u ON u.id = cm.user_id " +
+      "WHERE cm.class_id IN (" + holders + ") AND cm.role = 'teacher'"
+    ).all(...classIds);
+    // 未分班的教师同样能在教师端看到全部学生，因此也要推送，避免「列表可见但无提示」
+    teacherRows = teacherRows.concat(await db.prepare(
+      "SELECT u.id AS user_id FROM users u WHERE u.role = 'teacher' AND NOT EXISTS (" +
+      "SELECT 1 FROM class_members cm WHERE cm.user_id = u.id AND cm.role = 'teacher')"
+    ).all());
+  } else {
+    // 孩子与家长都没有分班数据时兜底推送给全部教师（此时教师端可见全部学生）
+    teacherRows = await db.prepare("SELECT id AS user_id FROM users WHERE role = 'teacher'").all();
+  }
+  pushUser(teacherRows);
+  pushUser(await db.prepare("SELECT id AS user_id FROM users WHERE role = 'admin'").all());
+  return ids.filter(function (id) { return id !== Number(parentId); });
+}
+
+// 家长提交成长关注 → 同步推送到教师端与管理员端
+async function notifyParentConcernSubmitted(payload) {
+  const childName = String(payload.childName || "孩子");
+  const grade = String(payload.grade || "").trim();
+  const category = String(payload.category || "").trim();
+  const behavior = String(payload.behavior || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const title = "家长提交了新的成长关注";
+  const head = childName + (grade ? "（" + grade + "）" : "") + (category ? " · " + category : "");
+  const content = (head ? head + "：" : "") + (behavior || "家长提交了一条成长关注") + "，请及时跟进。";
+  const recipientIds = await getParentConcernRecipientIds(payload.childId, payload.parentId);
+  await Promise.all(recipientIds.map(function (recipientId) {
+    return db.prepare(
+      "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+    ).run(recipientId, payload.parentId || null, CONCERN_NOTIFICATION_TYPE, title, content);
+  }));
+  return recipientIds.length;
+}
+
+// 未读推送条数（教师端 / 管理员端顶部板块）
+async function countParentConcernNotifications(userId) {
+  const row = await db.prepare(
+    "SELECT COUNT(*) AS n FROM notifications WHERE recipient_user_id = ? " +
+    "AND type = ? AND read_at IS NULL"
+  ).get(userId, CONCERN_NOTIFICATION_TYPE);
+  return Number(row && row.n || 0);
+}
+
+/**
+ * 历史数据自愈：升级前的成长关注没有推送记录（当时后端还没有这段逻辑），
+ * 会让教师端一直显示「暂无新的提交」。这里在真正读取列表前补建一次推送：
+ * 只处理仍然待处理、且没有任何推送记录的近期提交，每个进程只跑一次，失败允许下次重试。
+ */
+let parentConcernBackfillDone = false;
+async function backfillParentConcernNotifications() {
+  if (parentConcernBackfillDone) return;
+  parentConcernBackfillDone = true;
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const sinceText = since.getFullYear() + "-" +
+      String(since.getMonth() + 1).padStart(2, "0") + "-" +
+      String(since.getDate()).padStart(2, "0") + " 00:00:00";
+    const rows = await db.prepare(
+      "SELECT r.id, r.child_id, r.user_id, r.concern_category, r.observed_behavior, r.created_at, " +
+      "c.name AS child_name, c.grade " +
+      "FROM parent_task_requests r JOIN children c ON c.id = r.child_id " +
+      "WHERE r.status = 'pending' AND r.created_at >= ? AND NOT EXISTS (" +
+      "SELECT 1 FROM notifications n WHERE n.type = ? AND n.sender_user_id = r.user_id " +
+      "AND n.created_at >= r.created_at) ORDER BY r.id DESC LIMIT 50"
+    ).all(sinceText, CONCERN_NOTIFICATION_TYPE);
+    for (const row of rows) {
+      await notifyParentConcernSubmitted({
+        childId: row.child_id,
+        parentId: row.user_id,
+        childName: row.child_name,
+        grade: row.grade,
+        category: row.concern_category,
+        behavior: row.observed_behavior
+      });
+    }
+  } catch (error) {
+    parentConcernBackfillDone = false;
+    console.warn("成长关注推送补建失败：", error.message);
+  }
+}
+
+// 查看详情后标记为已读
+async function markParentConcernNotificationsRead(userId) {
+  await db.prepare(
+    "UPDATE notifications SET read_at = datetime('now','localtime') " +
+    "WHERE recipient_user_id = ? AND type = ? AND read_at IS NULL"
+  ).run(userId, CONCERN_NOTIFICATION_TYPE);
+}
+
 async function getTeacherVisibleChildren(user) {
   const classIds = user && user.role === "teacher" ? await getTeacherClassIds(user.id) : [];
   return await db.prepare(
@@ -611,6 +754,15 @@ async function getEngagementPreference(userId, childId) {
     "SELECT enabled FROM engagement_preferences WHERE user_id = ? AND child_id = ?"
   ).get(userId, childId);
   return !row || Number(row.enabled) !== 0;
+}
+
+// 判断孩子是否已填写档案关键字段（仅用于前端「可完善档案」提示，不阻断任何流程）
+function childHasProfile(child) {
+  if (!child) return false;
+  return !!(String(child.gender || "").trim()
+    && Number(child.age) > 0
+    && String(child.caregiver || "").trim()
+    && String(child.interests || "").trim());
 }
 
 function pickJsonObject(text) {
@@ -3792,13 +3944,14 @@ async function handleApi(req, res, pathname, query) {
     const result = { children, child, task: null, taskStatus: "none", submission: null,
                      feedback: null, unreadCount: 0, timeline: { taskCount: 0, workCount: 0 }, parentTaskRequest: null,
                      needQuestionnaire: false, engagement: null, engagementEnabled: true,
-                     selectedChildInvalid: selectedChildInvalid };
+                     hasProfile: false, selectedChildInvalid: selectedChildInvalid };
     if (!child) {
-      // 首次登录的家长（无孩子且未填问卷）→ 前端跳转问卷页
-      const qFilled = await db.prepare("SELECT id FROM questionnaires WHERE user_id = ?").get(user.id);
-      result.needQuestionnaire = user.role === "parent" && !qFilled;
+      // 家长首次登录不再强制填写学生档案，直接进入系统。
+      // needQuestionnaire 恒为 false，仅为兼容旧版客户端保留该字段。
+      // hasProfile 表示当前孩子是否已完善档案（仅作展示提示，不阻断任何流程）。
       return sendJson(res, 200, result);
     }
+    result.hasProfile = await childHasProfile(child);
     result.engagementEnabled = await getEngagementPreference(user.id, child.id);
     result.engagement = result.engagementEnabled ? await getParentEngagement(user.id, child.id) : null;
 
@@ -3960,6 +4113,21 @@ async function handleApi(req, res, pathname, query) {
     } catch (error) {
       console.warn("家长定制任务索引失败：", error.message);
     }
+    // 同步推送：教师端（孩子的负责教师）与管理员端首页会出现「家长成长关注」新提交提示
+    let pushedCount = 0;
+    try {
+      pushedCount = await notifyParentConcernSubmitted({
+        childId: childId,
+        parentId: user.id,
+        parentName: user.display_name || "家长",
+        childName: (child && child.name) || "孩子",
+        grade: (child && child.grade) || "",
+        category: category,
+        behavior: observedBehavior
+      });
+    } catch (error) {
+      console.warn("成长关注推送失败：", error.message);
+    }
     const request = await db.prepare(
       "SELECT id, title, concern_category, observed_behavior, duration, status, teacher_comment, task_id, created_at, reviewed_at, ai_status " +
       "FROM parent_task_requests WHERE id = ?"
@@ -3968,6 +4136,7 @@ async function handleApi(req, res, pathname, query) {
       ok: true,
       request: request,
       aiStatus: aiResult.status,
+      pushedTo: pushedCount,
       message: aiResult.status === "ai" ? "已提交，AI 已生成方案，等待老师审核" : "已提交，当前使用基础方案，等待老师审核",
       vectorIndexed: !!(vector && vector.indexed)
     });
@@ -4661,7 +4830,53 @@ async function handleApi(req, res, pathname, query) {
     if (["pending", "approved", "rejected"].includes(status)) {
       rows = rows.filter(function (row) { return row.status === status; });
     }
-    return sendJson(res, 200, { requests: rows });
+    const total = rows.length;
+    const limitRaw = Number(query.get("limit"));
+    if (Number.isFinite(limitRaw) && limitRaw > 0) rows = rows.slice(0, limitRaw);
+    // 历史提交补建推送后再统计，保证升级后教师端立刻能看到待处理提示
+    await backfillParentConcernNotifications();
+    // 家长新提交的成长关注推送（未读条数，用于工作台顶部板块）
+    const newCount = await countParentConcernNotifications(user.id);
+    return sendJson(res, 200, { requests: rows, newCount: newCount, total: total });
+  }
+
+  /* ---- 教师端：查看成长关注后把推送标记为已读（顶部提示消失） ---- */
+  if (req.method === "POST" && pathname === "/api/teacher/parent-task-requests/read") {
+    if (user.role !== "teacher") return sendJson(res, 403, { message: "仅教师账号可访问" });
+    await markParentConcernNotificationsRead(user.id);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 管理员端：家长成长关注列表与未读推送数 ---- */
+  if (req.method === "GET" && pathname === "/api/admin/parent-task-requests") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const limitRaw = Number(query.get("limit"));
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 100;
+    const rows = await db.prepare(
+      "SELECT r.id, r.child_id, r.user_id, r.title, r.concern_category, r.observed_behavior, r.context, " +
+      "r.frequency, r.impact, r.parent_expectation, r.family_constraints, r.duration, r.status, " +
+      "r.teacher_comment, r.task_id, r.created_at, r.reviewed_at, " +
+      "c.name AS child_name, c.grade, u.display_name AS parent_name, t.title AS task_title " +
+      "FROM parent_task_requests r JOIN children c ON c.id = r.child_id " +
+      "JOIN users u ON u.id = r.user_id " +
+      "LEFT JOIN tasks t ON t.id = r.task_id " +
+      "ORDER BY r.id DESC LIMIT ?"
+    ).all(limit);
+    await backfillParentConcernNotifications();
+    const newCount = await countParentConcernNotifications(user.id);
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      newCount: newCount,
+      total: rows.length,
+      requests: rows
+    });
+  }
+
+  /* ---- 管理员端：查看成长关注后把推送标记为已读 ---- */
+  if (req.method === "POST" && pathname === "/api/admin/parent-task-requests/read") {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    await markParentConcernNotificationsRead(user.id);
+    return sendJson(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && pathname === "/api/teacher/parent-task-requests/review") {

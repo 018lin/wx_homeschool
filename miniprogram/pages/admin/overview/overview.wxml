@@ -10,6 +10,15 @@
     <view class="wo-entry__arrow">›</view>
   </view>
 
+  <!-- 家长「成长关注」新提交提示：置顶展示，加载期间也保留位置 -->
+  <view class="card wo-entry {{concernsNewCount ? 'wo-entry--active' : ''}}" bindtap="goConcerns">
+    <view class="wo-entry__main">
+      <view class="wo-entry__title">家长成长关注</view>
+      <view class="wo-entry__text">{{loading ? '加载中…' : (concernsNewCount ? '有' + concernsNewCount + '条新提交' : '暂无新的提交')}}</view>
+    </view>
+    <view class="wo-entry__arrow">›</view>
+  </view>
+
   <block wx:if="{{!loading}}">
     <view class="card" wx:if="{{stats}}">
       <view class="stat-grid">
