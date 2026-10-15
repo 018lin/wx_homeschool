@@ -379,6 +379,14 @@ var api = {
       silent: true
     });
   },
+  /** 自助修改密码：{ oldPassword, newPassword, confirmPassword }（管理员账号会被后端 403 拒绝） */
+  changePassword: function (data) {
+    return request("/api/me/password", {
+      method: "PUT",
+      data: data || {},
+      silent: true
+    });
+  },
 
   /* ---- 埋点（失败静默） ---- */
   track: function (eventType, payload) {

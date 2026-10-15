@@ -55,6 +55,25 @@ function compressFallback(filePath) {
   });
 }
 
+/** 新密码规则：6-64 位，且必须同时包含字母和数字 */
+function checkNewPassword(f) {
+  if (!f.oldPassword) return { ok: false, error: "请输入原密码" };
+  if (!f.newPassword) return { ok: false, error: "请输入新密码" };
+  if (f.newPassword.length < 6) return { ok: false, error: "新密码至少 6 位" };
+  if (f.newPassword.length > 64) return { ok: false, error: "新密码不能超过 64 位" };
+  if (!/[A-Za-z]/.test(f.newPassword) || !/[0-9]/.test(f.newPassword)) {
+    return { ok: false, error: "新密码需同时包含字母和数字" };
+  }
+  if (!f.confirmPassword) return { ok: false, error: "请再次输入新密码" };
+  if (f.confirmPassword !== f.newPassword) return { ok: false, error: "两次输入的新密码不一致" };
+  if (f.newPassword === f.oldPassword) return { ok: false, error: "新密码不能与原密码相同" };
+  return { ok: true, error: "" };
+}
+
+function emptyPwdForm() {
+  return { oldPassword: "", newPassword: "", confirmPassword: "" };
+}
+
 function readAsBase64(filePath) {
   return new Promise(function (resolve, reject) {
     wx.getFileSystemManager().readFile({
@@ -75,8 +94,14 @@ Page({
     uploading: false,
     roleLabel: "",
     roleColor: "#0057b8",
+    isAdmin: false,
     agreementVisible: false,
-    agreementDoc: "user-agreement"
+    agreementDoc: "user-agreement",
+    pwdModalVisible: false,
+    pwdSubmitting: false,
+    pwdForm: { oldPassword: "", newPassword: "", confirmPassword: "" },
+    showPwd: { old: false, new: false, confirm: false },
+    pwdError: ""
   },
 
   onShow: function () {
@@ -94,7 +119,8 @@ Page({
       avatarImage: custom ? avatar.resolve(user, true) : meta.avatar,
       hasCustomAvatar: custom,
       roleLabel: meta.label,
-      roleColor: meta.color
+      roleColor: meta.color,
+      isAdmin: user.role === "admin"
     });
     this.syncAvatar();
   },
@@ -218,6 +244,95 @@ Page({
     });
     api.updateMyAvatar("").catch(function () {});
     wx.showToast({ title: "已恢复默认头像", icon: "success" });
+  },
+
+  /* ================= 修改密码 ================= */
+
+  noop: function () {},
+
+  onOpenPassword: function () {
+    if (this.data.isAdmin) {
+      wx.showToast({ title: "管理员账号不支持在此修改密码", icon: "none", duration: 2500 });
+      return;
+    }
+    this.setData({
+      pwdModalVisible: true,
+      pwdSubmitting: false,
+      pwdForm: emptyPwdForm(),
+      showPwd: { old: false, new: false, confirm: false },
+      pwdError: ""
+    });
+  },
+
+  onClosePassword: function () {
+    if (this.data.pwdSubmitting) return;
+    this.setData({
+      pwdModalVisible: false,
+      pwdForm: emptyPwdForm(),
+      showPwd: { old: false, new: false, confirm: false },
+      pwdError: ""
+    });
+  },
+
+  onPwdInput: function (e) {
+    var key = e.currentTarget.dataset.key;
+    var form = this.data.pwdForm;
+    form[key] = e.detail.value || "";
+    // 只在用户已开始填写时提示，避免一打开就飘红
+    var check = checkNewPassword(form);
+    var showError = !check.ok && (form.oldPassword || form.newPassword || form.confirmPassword);
+    this.setData({
+      pwdForm: form,
+      pwdError: showError ? check.error : ""
+    });
+  },
+
+  onTogglePwd: function (e) {
+    var key = e.currentTarget.dataset.key;
+    var showPwd = this.data.showPwd;
+    showPwd[key] = !showPwd[key];
+    this.setData({ showPwd: showPwd });
+  },
+
+  onSubmitPassword: function () {
+    var self = this;
+    if (this.data.pwdSubmitting) return;
+    var form = this.data.pwdForm;
+    var check = checkNewPassword(form);
+    if (!check.ok) {
+      this.setData({ pwdError: check.error });
+      wx.showToast({ title: check.error, icon: "none", duration: 2500 });
+      return;
+    }
+    this.setData({ pwdSubmitting: true, pwdError: "" });
+    wx.showLoading({ title: "提交中", mask: true });
+    api
+      .changePassword({
+        oldPassword: form.oldPassword,
+        newPassword: form.newPassword,
+        confirmPassword: form.confirmPassword
+      })
+      .then(function () {
+        wx.hideLoading();
+        self.setData({
+          pwdSubmitting: false,
+          pwdModalVisible: false,
+          pwdForm: emptyPwdForm(),
+          showPwd: { old: false, new: false, confirm: false },
+          pwdError: ""
+        });
+        wx.showToast({ title: "密码修改成功，请重新登录", icon: "none", duration: 2000 });
+        setTimeout(function () {
+          app.clearSession();
+          wx.reLaunch({ url: "/pages/login/login" });
+        }, 1200);
+      })
+      .catch(function (error) {
+        wx.hideLoading();
+        var msg = (error && error.message) || "密码修改失败，请稍后重试";
+        self.setData({ pwdSubmitting: false, pwdError: msg });
+        wx.showToast({ title: msg, icon: "none", duration: 2500 });
+      });
   },
 
   /** 查看协议全文：登录后仍可随时查阅，无需重新阅读才能登录 */

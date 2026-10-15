@@ -113,3 +113,32 @@
   color: var(--text-placeholder);
   align-self: center;
 }
+
+/* 修改密码：密码输入行 + 明文切换 */
+.pwd-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.pwd-row__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pwd-row__eye {
+  flex-shrink: 0;
+  padding: 0 8rpx;
+  font-size: var(--fs-base);
+  color: var(--primary);
+}
+
+.pwd-row__eye:active {
+  opacity: 0.6;
+}
+
+.pwd-tip {
+  margin-top: 10rpx;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}

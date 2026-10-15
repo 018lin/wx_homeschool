@@ -54,6 +54,31 @@ function verifyPassword(password, stored) {
   const check = crypto.scryptSync(password, salt, 32).toString("hex");
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(check, "hex"));
 }
+/** 新密码复杂度：长度 6-64，且必须同时包含字母和数字 */
+function isStrongPassword(password) {
+  const p = String(password || "");
+  return p.length >= 6 && p.length <= 64 && /[A-Za-z]/.test(p) && /[0-9]/.test(p);
+}
+/** 自助改密：原密码错误尝试限流（同一账号 5 分钟内最多 10 次） */
+const PASSWORD_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
+const PASSWORD_ATTEMPT_MAX = 10;
+const passwordAttempts = new Map();
+function checkPasswordAttempts(userId) {
+  const key = String(userId);
+  const now = Date.now();
+  const list = (passwordAttempts.get(key) || []).filter(function (t) { return now - t < PASSWORD_ATTEMPT_WINDOW_MS; });
+  passwordAttempts.set(key, list);
+  return list.length < PASSWORD_ATTEMPT_MAX;
+}
+function recordPasswordAttempt(userId) {
+  const key = String(userId);
+  const list = passwordAttempts.get(key) || [];
+  list.push(Date.now());
+  passwordAttempts.set(key, list);
+}
+function clearPasswordAttempts(userId) {
+  passwordAttempts.delete(String(userId));
+}
 function mondayOf(d) {
   const dt = new Date(d);
   const wd = dt.getDay() === 0 ? 7 : dt.getDay();
@@ -3249,6 +3274,41 @@ async function handleApi(req, res, pathname, query) {
     }
     await db.prepare("UPDATE users SET avatar_url = ? WHERE id = ?").run(url, user.id);
     return sendJson(res, 200, { user: Object.assign(publicUser(user), { avatarUrl: url }) });
+  }
+
+  /* ---- 自助修改密码：教师 / 学生 / 家长可用；管理员不可在此修改自己的密码 ---- */
+  if ((req.method === "PUT" || req.method === "POST") && pathname === "/api/me/password") {
+    if (user.role === "admin") {
+      return sendJson(res, 403, { message: "管理员账号不支持在此修改密码，请联系超级管理员或在管理后台修改", errorCode: "ADMIN_PASSWORD_CHANGE_DENIED" });
+    }
+    const body = await readBody(req);
+    const oldPassword = String(body.oldPassword || "");
+    const newPassword = String(body.newPassword || "");
+    const confirmPassword = String(body.confirmPassword || "");
+    if (!oldPassword) return sendJson(res, 400, { message: "请输入原密码" });
+    if (!newPassword) return sendJson(res, 400, { message: "请输入新密码" });
+    if (newPassword.length < 6 || newPassword.length > 64) return sendJson(res, 400, { message: "新密码至少 6 位" });
+    if (!isStrongPassword(newPassword)) return sendJson(res, 400, { message: "新密码需同时包含字母和数字" });
+    if (!confirmPassword) return sendJson(res, 400, { message: "请再次输入新密码" });
+    if (confirmPassword !== newPassword) return sendJson(res, 400, { message: "两次输入的新密码不一致" });
+    if (newPassword === oldPassword) return sendJson(res, 400, { message: "新密码不能与原密码相同" });
+
+    // 原密码错误次数限流（记录发生在校验密码之前，避免暴力破解）
+    if (!checkPasswordAttempts(user.id)) {
+      return sendJson(res, 429, { message: "原密码错误次数过多，请 5 分钟后再试", errorCode: "TOO_MANY_ATTEMPTS" });
+    }
+
+    const me = await db.prepare("SELECT id, password_hash FROM users WHERE id = ?").get(user.id);
+    if (!me) return sendJson(res, 404, { message: "账号不存在" });
+    if (!verifyPassword(oldPassword, me.password_hash)) {
+      recordPasswordAttempt(user.id);
+      return sendJson(res, 400, { message: "原密码错误", errorCode: "OLD_PASSWORD_WRONG" });
+    }
+    clearPasswordAttempts(user.id);
+    await db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(newPassword), user.id);
+    // 改密后踢掉该账号所有登录态，强制重新登录
+    await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+    return sendJson(res, 200, { ok: true, relogin: true, message: "密码修改成功，请重新登录" });
   }
 
   /* ---- 信息交流：所有登录角色均可一对一收发站内私信 ---- */

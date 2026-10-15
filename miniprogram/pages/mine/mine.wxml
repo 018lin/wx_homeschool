@@ -20,6 +20,19 @@
         <view class="list-item__desc">{{roleLabel}}账号，由学校统一创建</view>
       </view>
     </view>
+    <view class="list-item" wx:if="{{!isAdmin}}" bindtap="onOpenPassword" hover-class="list-item--hover">
+      <view class="list-item__main">
+        <view class="list-item__title">修改密码</view>
+        <view class="list-item__desc">定期更换密码可提升账号安全</view>
+      </view>
+      <view class="list-item__arrow">›</view>
+    </view>
+    <view class="list-item" wx:if="{{isAdmin}}">
+      <view class="list-item__main">
+        <view class="list-item__title">修改密码</view>
+        <view class="list-item__desc">管理员账号不支持在此修改密码</view>
+      </view>
+    </view>
     <view class="list-item" bindtap="onOpenAgreement" data-doc="user-agreement" hover-class="list-item--hover">
       <view class="list-item__main">
         <view class="list-item__title">用户协议</view>
@@ -41,6 +54,81 @@
   <view class="mine-foot">
     <view>凌田家校 · 家校共育系统</view>
     <view class="mine-foot__sub">小程序版</view>
+  </view>
+</view>
+
+<!-- 修改密码弹窗
+ * ⚠️ 必须放在 .page.page--hero 容器「外面」：
+ * .page--hero 有 position:relative + z-index:2 会生成堆叠上下文，
+ * 导致底部固定导航栏盖住 .modal-foot 的按钮。 -->
+<view class="modal-mask" wx:if="{{pwdModalVisible}}" catchtap="onClosePassword" catchtouchmove="noop">
+  <view class="modal-sheet" catchtap="noop">
+    <view class="modal-head">
+      <text class="modal-head__title">修改密码</text>
+      <text class="modal-head__close" bindtap="onClosePassword">取消</text>
+    </view>
+
+    <scroll-view scroll-y class="modal-body">
+      <view class="field">
+        <view class="field__label">原密码</view>
+        <view class="pwd-row">
+          <input
+            class="field__input pwd-row__input"
+            password="{{!showPwd.old}}"
+            value="{{pwdForm.oldPassword}}"
+            placeholder="请输入原密码"
+            placeholder-class="ph"
+            maxlength="64"
+            bindinput="onPwdInput"
+            data-key="oldPassword"
+          />
+          <text class="pwd-row__eye" bindtap="onTogglePwd" data-key="old">{{showPwd.old ? '隐藏' : '显示'}}</text>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="field__label">新密码</view>
+        <view class="pwd-row">
+          <input
+            class="field__input pwd-row__input"
+            password="{{!showPwd.new}}"
+            value="{{pwdForm.newPassword}}"
+            placeholder="至少 6 位，需同时包含字母和数字"
+            placeholder-class="ph"
+            maxlength="64"
+            bindinput="onPwdInput"
+            data-key="newPassword"
+          />
+          <text class="pwd-row__eye" bindtap="onTogglePwd" data-key="new">{{showPwd.new ? '隐藏' : '显示'}}</text>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="field__label">确认新密码</view>
+        <view class="pwd-row">
+          <input
+            class="field__input pwd-row__input"
+            password="{{!showPwd.confirm}}"
+            value="{{pwdForm.confirmPassword}}"
+            placeholder="请再次输入新密码"
+            placeholder-class="ph"
+            maxlength="64"
+            bindinput="onPwdInput"
+            data-key="confirmPassword"
+          />
+          <text class="pwd-row__eye" bindtap="onTogglePwd" data-key="confirm">{{showPwd.confirm ? '隐藏' : '显示'}}</text>
+        </view>
+        <view class="pwd-tip" wx:if="{{pwdError}}">{{pwdError}}</view>
+      </view>
+
+      <view class="field__hint">新密码长度不少于 6 位，且必须同时包含字母和数字；修改成功后需要重新登录。</view>
+    </scroll-view>
+
+    <view class="modal-foot">
+      <button class="btn btn-primary btn-block" bindtap="onSubmitPassword" disabled="{{pwdSubmitting}}">
+        {{pwdSubmitting ? '提交中…' : '确认修改'}}
+      </button>
+    </view>
   </view>
 </view>
 
