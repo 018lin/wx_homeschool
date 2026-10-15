@@ -65,7 +65,12 @@ Page({
     api
       .getTeacherStudents()
       .then(function (res) {
-        var list = (res && res.students) || [];
+        // 后端（Postgres/SQLite）返回的 id 可能是字符串，而 childId 来自
+        // Number(options.childId) 是数字；不归一化会让下面的严格比较定位失败，
+        // picker 仍显示「全班学生」，点一键生成时却带着 draft 的 childId 去请求。
+        var list = ((res && res.students) || []).map(function (s) {
+          return Object.assign({}, s, { id: Number(s.id) });
+        });
         var names = ["全班学生"].concat(
           list.map(function (s) {
             return s.name + (s.grade ? " · " + s.grade : "");
@@ -73,9 +78,10 @@ Page({
         );
         // 若带入了 childId，定位到对应选项
         var idx = 0;
-        if (self.data.childId) {
+        var wantId = Number(self.data.childId) || 0;
+        if (wantId) {
           for (var i = 0; i < list.length; i++) {
-            if (list[i].id === self.data.childId) {
+            if (list[i].id === wantId) {
               idx = i + 1;
               break;
             }
@@ -89,7 +95,7 @@ Page({
   onPickStudent: function (e) {
     var idx = Number(e.detail.value);
     var childId = idx === 0 ? null : this.data.students[idx - 1].id;
-    this.setData({ studentIndex: idx, childId: childId });
+    this.setData({ studentIndex: idx, childId: childId || null });
   },
 
   pickType: function (e) {
@@ -109,17 +115,23 @@ Page({
 
   onGenerateTask: function () {
     var self = this;
-    var childId = this.data.childId;
+    var childId = Number(this.data.childId) || 0;
     if (this.data.generating) return;
     if (!childId) {
-      wx.showToast({ title: "请先选择具体学生", icon: "none" });
+      // 一键生成只能针对具体学生（AI 需要单个学生档案）。这里明确告知，
+      // 避免教师以为「按钮坏了 / AI 不可用」。
+      wx.showToast({ title: "请先在上方选择具体学生", icon: "none", duration: 2000 });
+      return;
+    }
+    if (!this.data.students.length) {
+      wx.showToast({ title: "暂无可选学生，请先在班级中绑定学生", icon: "none", duration: 2500 });
       return;
     }
 
     this.setData({ generating: true });
     api.generatePersonalTask(childId).then(function (res) {
       var suggestions = (res && res.suggestions) || [];
-      var generated = suggestions.filter(function (item) { return item && item.aiGenerated; })[0] || suggestions[1] || suggestions[0];
+      var generated = suggestions.filter(function (item) { return item && item.aiGenerated; })[0] || suggestions[0];
       if (!generated) {
         wx.showToast({ title: "暂时没有生成结果，请稍后重试", icon: "none" });
         return;
@@ -133,7 +145,12 @@ Page({
         duration: Number(generated.duration) || self.data.duration,
         type: generated.type || self.data.type
       });
-      wx.showToast({ title: generated.aiGenerated ? "AI 任务已生成" : "个性任务已生成", icon: "success" });
+      // 区分「真AI 生成」与「AI 不可用时的本地兜底」，避免教师误以为用上了 AI。
+      wx.showToast({
+        title: generated.aiGenerated ? "AI 任务已生成" : "AI 暂不可用，已用本地规则生成",
+        icon: "none",
+        duration: 2500
+      });
     }).catch(function () {
       // 请求层已展示具体错误，这里只负责恢复按钮状态。
     }).then(function () {
@@ -149,7 +166,7 @@ Page({
       return;
     }
 
-    var isPersonal = !!d.childId;
+    var isPersonal = !!Number(d.childId);
     var tip = isPersonal
       ? "将为学生「" + (d.students[d.studentIndex - 1] || {}).name + "」发布个性化任务"
       : "将发布/更新本周全班任务（同一周重复发布会覆盖原任务）";

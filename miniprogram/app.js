@@ -115,8 +115,21 @@ App({
 
 /*
  * 所有页面都在 onShow 进入业务逻辑前执行权限检查，并统一记录停留时长。
- * 角色按路由推导；教师 AI 是管理员明确允许访问的只读页面，学生档案仅教师可进。
+ * 角色按路由推导；下列教师端页面管理员同样可进入：
+ * - pages/teacher/ai/**      AI 洞察与AI 报告（只读）
+ * - pages/teacher/publish    一键生成个性任务 / 发布任务
+ * - pages/teacher/suggestion AI 任务建议与重新生成
+ * 管理员账号在管理员工作台点「AI 洞察」或教师端任务发布入口时，若被守卫拦回
+ * 管理员工作台，会表现为「AI 页能聊，但一键生成任务点不动/进不去」。
+ * 后端 /api/teacher/* 对 admin 同样放行（见 server.js 的角色门禁），前后端保持一致。
  */
+var ADMIN_ALLOWED_TEACHER_ROUTES = {
+  "pages/teacher/ai/ai": true,
+  "pages/teacher/ai/report/report": true,
+  "pages/teacher/publish/publish": true,
+  "pages/teacher/suggestion/suggestion": true
+};
+
 (function installPageGuard() {
   if (typeof Page !== "function" || Page.__homeSchoolGuarded) return;
   var nativePage = Page;
@@ -141,7 +154,7 @@ App({
       var roles = null;
       if (route.indexOf("pages/parent/") === 0) roles = ["parent"];
       else if (route.indexOf("pages/student/") === 0) roles = ["student"];
-      else if (route === "pages/teacher/ai/ai" || route === "pages/teacher/ai/report/report") roles = ["teacher", "admin"];
+      else if (ADMIN_ALLOWED_TEACHER_ROUTES[route]) roles = ["teacher", "admin"];
       else if (route.indexOf("pages/teacher/") === 0) roles = ["teacher"];
       else if (route.indexOf("pages/admin/") === 0) roles = ["admin"];
       else if (route !== "pages/login/login") roles = [];

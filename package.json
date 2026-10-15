@@ -8,6 +8,10 @@
     "test": "node --test",
     "check": "node --check server.js && node --check database.js && node --check js/api.js && node --check js/login.js && node --check js/teacher-page.js && node --check js/teacher-daily.js",
     "check:mp": "node scripts/check-mp.js",
+    "verify:ai": "node scripts/verify-ai-fix.js",
+    "verify:guard": "node scripts/verify-guard.js",
+    "verify:embedding": "node scripts/verify-embedding.js",
+    "sim:publish": "node scripts/sim-publish-real.js",
     "daily:auto-send": "node --experimental-sqlite scripts/auto-send-daily-updates.js",
     "migrate:neon": "node --experimental-sqlite scripts/migrate-sqlite-to-neon.js"
   },

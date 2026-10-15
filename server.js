@@ -259,6 +259,10 @@ async function isBoundChild(userId, childId) {
 }
 async function canAccessChild(user, childId) {
   if (!childId) return false;
+  // 管理员拥有全局只读与教学管理权限：/api/teacher/* 已在路由层放行 admin，
+  // 若这里再把 admin 判为无权，会导致管理员点「一键生成个性任务」后发布时返回
+  // 404「学生不存在」，而同一个管理员在 AI 洞察页却能正常对话。
+  if (user.role === "admin") return true;
   if (user.role === "teacher") {
     const child = await db.prepare("SELECT id FROM children WHERE id = ?").get(childId);
     if (!child) return false;
@@ -901,7 +905,12 @@ function getZhipuEndpoint(kind) {
 
 async function requestZhipuEmbeddings(texts) {
   const apiKey = getZhipuApiKey();
-  if (!apiKey || !texts.length) return [];
+  // 智谱 embeddings 对空字符串/纯空白输入直接返回 400「API 调用参数有误」，
+  // 一条脏数据就会让整批（含同批其他文档）失败，必须先过滤。
+  const list = (texts || [])
+    .map(function (text) { return String(text == null ? "" : text).trim(); })
+    .filter(function (text) { return text.length > 0; });
+  if (!apiKey || !list.length) return [];
   const response = await fetchWithRetry(getZhipuEndpoint("embedding"), {
     method: "POST",
     headers: {
@@ -910,7 +919,7 @@ async function requestZhipuEmbeddings(texts) {
     },
     body: JSON.stringify({
       model: getZhipuEmbeddingModel(),
-      input: texts
+      input: list
     })
   }, { timeoutMs: Number(process.env.AI_EMBEDDING_TIMEOUT_MS) || 30000, retries: 1 });
   if (!response.ok) {
@@ -918,9 +927,12 @@ async function requestZhipuEmbeddings(texts) {
     throw new Error("智谱 Embedding API " + response.status + (text ? ": " + text.slice(0, 160) : ""));
   }
   const data = await response.json();
-  return (data.data || []).sort(function (a, b) {
+  const items = (data.data || []).slice().sort(function (a, b) {
     return Number(a.index || 0) - Number(b.index || 0);
-  }).map(function (item) {
+  });
+  // 调用方按传入顺序取结果；过滤掉空串后顺序会变，这里把结果与过滤后的输入一一对应，
+  // 由调用方通过 index 语义取用（保持与过滤前相同的相对顺序）。
+  return items.map(function (item) {
     return Array.isArray(item.embedding) ? item.embedding : [];
   });
 }
@@ -2453,7 +2465,11 @@ async function syncTeacherVectorIndex() {
   let embeddedCount = 0;
   if (apiKey) {
     for (let i = 0; i < toEmbed.length; i += 24) {
-      const batch = toEmbed.slice(i, i + 24);
+      // 空内容不送去 embedding：智谱对空串返回 400，会让整批（连同同批正常文档）一起失败。
+      const batch = toEmbed.slice(i, i + 24).filter(function (doc) {
+        return String(doc.content || "").trim().length > 0;
+      });
+      if (!batch.length) continue;
       try {
         const vectors = await requestZhipuEmbeddings(batch.map(function (doc) { return doc.content; }));
         for (let index = 0; index < batch.length; index++) {

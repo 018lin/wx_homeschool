@@ -485,7 +485,9 @@ var api = {
     return request("/api/teacher/students", { method: "GET" });
   },
   getStudentSuggestions: function (childId) {
-    return request("/api/teacher/student-suggestions", { method: "GET", query: { childId: childId }, loading: "生成建议" });
+    // 该接口服务端会同步调用大模型，实测 5~10s，Render 免费实例冷启动可再叠加 15s，
+    // 沿用默认 30s 容易在真机被判定 timeout，表现为「AI 一键生成无响应」。
+    return request("/api/teacher/student-suggestions", { method: "GET", query: { childId: childId }, loading: "生成建议", timeout: 60000, retry: false });
   },
   regenerateStudentSuggestions: function (childId, note) {
     return request("/api/teacher/student-suggestions/regenerate", {
@@ -494,12 +496,15 @@ var api = {
       loading: "AI 正在整理并生成",
       timeout: 60000
     });
-  },
-  generatePersonalTask: function (childId) {
+  },  generatePersonalTask: function (childId) {
     return request("/api/teacher/student-suggestions", {
       method: "GET",
       query: { childId: childId },
-      loading: "AI 生成中"
+      loading: "AI 生成中",
+      timeout: 60000,
+      // 关闭 GET 自动重试：AI 生成本身耗时 5~10s，一次 500 重试会让用户等近 2 分钟。
+      // 真正的失败由服务端兜底成「本地规则兜底」建议，不会丢结果。
+      retry: false
     });
   },
   getSubmissionDetail: function (id) {
@@ -509,7 +514,8 @@ var api = {
     return request("/api/teacher/submissions/ai-feedback", {
       method: "POST",
       data: { submissionId: submissionId },
-      loading: "AI 生成中"
+      loading: "AI 生成中",
+      timeout: 60000
     });
   },
   saveFeedback: function (submissionId, comment, tags) {
