@@ -3367,24 +3367,36 @@ async function handleApi(req, res, pathname, query) {
   /* ---- 管理员全局概览 ---- */
   if (req.method === "GET" && pathname === "/api/admin/overview") {
     if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    // ⚠️ 口径铁律：「账号概览」三张卡片（教师/学生/家长）必须与「账号管理」页
+    // /api/admin/accounts 完全一致，即全部统计 users 表里的账号数。
+    // 历史 bug：这里的学生数曾统计 children 表（学生档案），而账号管理页统计
+    // users.role='student'（学生账号）。家长端 /api/children 绑定孩子、以及演示
+    // 种子数据都只建 children 不建 users，于是同一个「学生数」在两个页面差出一大截
+    // （线上实测 16 vs 3）。改为账号口径后与同卡片的教师/家长、账号管理页三方对齐。
     const teachers = await db.prepare(
       "SELECT id, account, display_name, created_at FROM users WHERE role = 'teacher' ORDER BY id DESC"
     ).all();
-    const students = await db.prepare(
+    // 学生档案（含 user_id 为空的纯档案），仅供 web 端渲染「学生档案」列表
+    const children = await db.prepare(
       "SELECT c.id, c.name, c.grade, c.created_at, " +
       "(SELECT COUNT(*) FROM bindings b WHERE b.child_id = c.id) AS parent_count " +
       "FROM children c ORDER BY c.id DESC"
     ).all();
+    const studentAccountCount = await db.prepare(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'student'"
+    ).get();
     const parentCount = await db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'parent'").get();
     return sendJson(res, 200, {
       generatedAt: new Date().toISOString(),
       stats: {
         teacherCount: teachers.length,
-        studentCount: students.length,
-        parentCount: Number(parentCount && parentCount.n || 0)
+        studentCount: Number(studentAccountCount && studentAccountCount.n || 0),
+        parentCount: Number(parentCount && parentCount.n || 0),
+        // 档案口径的学生数，与上面的账号口径 studentCount 是两回事，别混用
+        profileCount: children.length
       },
       teachers: teachers,
-      students: students.map(function (row) {
+      students: children.map(function (row) {
         return Object.assign({}, row, { parent_count: Number(row.parent_count || 0) });
       })
     });
