@@ -1,4 +1,11 @@
-<view class="page page-with-nav">
+<app-header title="成长时间线" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
+  <!-- 任务 / 时间线 分段切换：底部导航「任务」入口合并了这两项 -->
+  <view class="segment mode-segment">
+    <view class="segment__item" bindtap="goTasks">任务</view>
+    <view class="segment__item active">时间线</view>
+  </view>
+
   <view class="card">
     <view class="filter-grid">
     <view class="field filter-field">
@@ -110,4 +117,4 @@
   </view>
 </view>
 
-<nav-bar role="admin" active="timeline" />
+<nav-bar role="admin" active="tasks" />

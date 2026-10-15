@@ -1,4 +1,5 @@
 <view class="chat-page">
+  <app-header title="AI 洞察" sub="" mode="back" variant="flat" />
   <!-- 顶部操作栏 -->
   <view class="chat-topbar">
     <view class="chat-topbar__hint">结合本班作业、点评与观察记录作答</view>

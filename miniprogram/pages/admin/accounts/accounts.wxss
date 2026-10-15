@@ -1,44 +1,38 @@
 .ac-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .ac-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .ac-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 6rpx;
 }
 
 .title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
-.field__textarea--sm {
-  min-height: 140rpx;
-}
 .search-box { margin-bottom: 12rpx; padding: 0 2rpx; }
-.search-box__input { height: 82rpx; padding: 0 24rpx; border: 2rpx solid #e1e8f0; border-radius: 14rpx; background: #fff; font-size: 27rpx; }
-.result-count { margin-bottom: 18rpx; color: #8795a7; font-size: 23rpx; text-align: right; }
+.search-box__input { height: 82rpx; padding: 0 24rpx; border: 2rpx solid var(--line); border-radius: var(--radius-md); background: var(--white); font-size: var(--fs-md); }
+.result-count { margin-bottom: 18rpx; color: var(--text-muted); font-size: var(--fs-sm); text-align: right; }
 
-/* 表单弹窗（底部弹层） */
-.modal-mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, .5); z-index: 1000; display: flex; align-items: flex-end; }
-.modal-sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; display: flex; flex-direction: column; overflow: hidden; }
-.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 28rpx 30rpx 22rpx; border-bottom: 2rpx solid #e1e8f0; }
-.modal-head__title { font-size: 32rpx; font-weight: 600; color: #1f2937; }
-.modal-head__close { font-size: 26rpx; color: #8795a7; padding: 8rpx 0 8rpx 24rpx; }
-.modal-body { max-height: 62vh; padding: 10rpx 30rpx 30rpx; box-sizing: border-box; }
-.modal-foot { padding: 20rpx 30rpx calc(20rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid #e1e8f0; background: #fff; }
+/* 表单弹窗（底部弹层）
+ * .modal-mask / .modal-sheet / .modal-head / .modal-body / .modal-foot
+ * 已统一到 app.wxss 全局定义，此处不再重复声明。 */
+
+/* .field__textarea--sm 统一到 app.wxss（min-height: 140rpx） */

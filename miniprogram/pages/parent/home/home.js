@@ -6,30 +6,12 @@ var util = require("../../../utils/util.js");
 Page({
   data: {
     loading: true,
-    greeting: "你好",
-    userName: "",
-    todayText: "",
     children: [],
     currentChildId: null,
     task: null,
     feedback: null,
-    timeline: { taskCount: 0, workCount: 0 },
-    engagement: null,
     parentTaskRequest: null,
-    unreadCount: 0
-  },
-
-  onLoad: function () {
-    var user = app.globalData.user || {};
-    var hour = new Date().getHours();
-    var greeting = hour < 6 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
-    var d = new Date();
-    var week = ["日", "一", "二", "三", "四", "五", "六"][d.getDay()];
-    this.setData({
-      greeting: greeting,
-      userName: user.displayName || "家长",
-      todayText: d.getMonth() + 1 + "月" + d.getDate() + "日 · 周" + week
-    });
+    profileIncomplete: false
   },
 
   onShow: function () {
@@ -58,12 +40,6 @@ Page({
         self.setData({ loading: false });
         if (!res) return;
 
-        // 首次登录且无孩子 → 引导填写问卷
-        if (res.needQuestionnaire) {
-          wx.redirectTo({ url: "/pages/parent/questionnaire/questionnaire" });
-          return;
-        }
-
         var child = res.child || {};
         if (child && child.id) {
           app.setChildId(child.id);
@@ -73,21 +49,23 @@ Page({
           return { id: c.id, name: c.name, grade: c.grade || "" };
         });
 
+        var request = self.buildRequest(res.parentTaskRequest);
         self.setData({
           children: children,
           currentChildId: child.id || null,
+          // 学生档案已改为「可选完善」，此处仅作提示，不再强制跳转
+          profileIncomplete: !!child.id && res.hasProfile === false,
           task: self.buildTask(res.task, res.taskStatus),
           feedback: self.buildFeedback(res.feedback),
-          timeline: res.timeline || { taskCount: 0, workCount: 0 },
-          engagement: self.buildEngagement(res.engagement),
-          parentTaskRequest: self.buildRequest(res.parentTaskRequest),
-          unreadCount: Number(res.unreadCount || 0)
+          parentTaskRequest: request
         });
 
-        api.track("task_card_viewed", {
-          childId: child.id,
-          taskId: res.task && res.task.id
-        });
+        if (child.id) {
+          api.track("task_card_viewed", {
+            childId: child.id,
+            taskId: res.task && res.task.id
+          });
+        }
       })
       .catch(function (err) {
         self.setData({ loading: false });
@@ -130,34 +108,18 @@ Page({
     };
   },
 
-  buildEngagement: function (eng) {
-    if (!eng) return null;
-    return {
-      score: eng.score || 0,
-      level: eng.level || "",
-      recommendation: eng.recommendation || "",
-      color: util.engagementColor(eng.status)
-    };
-  },
-
   buildRequest: function (req) {
     if (!req) return null;
     var meta = util.requestStatusMeta(req.status);
     return {
       id: req.id,
       title: req.title || "成长关注",
+      taskTitle: req.task_title || "",
       teacher_comment: req.teacher_comment || "",
       statusText: meta.text,
       statusColor: meta.color,
       statusBg: meta.bg
     };
-  },
-
-  onSwitchChild: function (e) {
-    var id = e.currentTarget.dataset.id;
-    if (id === this.data.currentChildId) return;
-    app.setChildId(id);
-    this.loadData();
   },
 
   goTask: function () {
@@ -176,15 +138,11 @@ Page({
     wx.navigateTo({ url: "/pages/parent/concern/concern?childId=" + this.data.currentChildId });
   },
 
-  goEngagement: function () {
-    wx.navigateTo({ url: "/pages/parent/engagement/engagement?childId=" + this.data.currentChildId });
-  },
-
-  goNotifications: function () {
-    wx.navigateTo({ url: "/pages/parent/notifications/notifications" });
-  },
-
   goChildren: function () {
     wx.navigateTo({ url: "/pages/parent/children/children" });
+  },
+
+  goQuestionnaire: function () {
+    wx.navigateTo({ url: "/pages/parent/questionnaire/questionnaire" });
   }
 });

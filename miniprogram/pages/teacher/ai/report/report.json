@@ -1,5 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "AI 数据看板",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "backgroundColorTop": "#6FB8EE"
 }

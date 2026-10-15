@@ -473,8 +473,47 @@ test("core parent and teacher workflow remains compatible", async function () {
   result = await request("/api/parent/notifications?limit=20", { token: parentToken });
   assert.equal(result.response.status, 200);
   assert.ok(result.data.notifications.some(function (item) {
-    return item.type === "parent_task_request" && item.title === "老师已为孩子准备定制任务";
+    return item.type === "parent_task_request" && item.title === "老师已根据你的反馈生成定制任务";
   }));
+
+  /* 边界回归：家长只提交反馈，不带任何任务字段时，
+   * 正式任务必须由 AI 任务草案生成，绝不能直接拿家长原话当任务内容。 */
+  result = await request("/api/parent/task-requests", {
+    method: "POST",
+    token: parentToken,
+    body: {
+      childId,
+      category: "规则习惯",
+      observedBehavior: "晚饭时经常要先看平板才肯开始吃，常常要提醒好几遍。",
+      context: "每天 18 点左右。",
+      frequency: "几乎每天",
+      parentExpectation: "希望他自己能记得先吃饭。"
+    }
+  });
+  assert.equal(result.response.status, 200);
+  const draftRequestId = Number(result.data.request.id);
+  assert.ok(draftRequestId);
+
+  result = await request("/api/teacher/parent-task-requests/review", {
+    method: "POST",
+    token: teacherToken,
+    body: { requestId: draftRequestId, status: "approved", teacherComment: "按 AI 草案实施，先试一周。" }
+  });
+  assert.equal(result.response.status, 200, "不带任务字段时应能用 AI 草案确认实施");
+  assert.ok(Number(result.data.taskId));
+
+  result = await request("/api/parent/task-requests?childId=" + childId, { token: parentToken });
+  assert.equal(result.response.status, 200);
+  const draftRequest = (result.data.requests || []).find(function (item) {
+    return Number(item.id) === draftRequestId;
+  });
+  assert.ok(draftRequest, "确认实施后反馈应关联已生成的任务");
+  assert.ok(draftRequest.task_title, "确认实施后应生成定制任务并可推送给家长端");
+  assert.equal(
+    String(draftRequest.task_title),
+    "亲子观察：一起理解这件事",
+    "任务标题应来自 AI 任务草案，而不是家长的反馈标题"
+  );
 });
 
 test("18:00 auto-send delivers leftover drafts exactly once", async function () {

@@ -1,4 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "学生小心事",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
 }

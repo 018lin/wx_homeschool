@@ -1,0 +1,7 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "任务详情",
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
+}

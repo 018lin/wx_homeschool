@@ -14,7 +14,7 @@ Page({
     filters: [
       { key: "all", label: "全部" },
       { key: "pending", label: "待回复" },
-      { key: "approved", label: "已采纳" },
+      { key: "approved", label: "已处理" },
       { key: "rejected", label: "未采纳" }
     ],
     all: [],

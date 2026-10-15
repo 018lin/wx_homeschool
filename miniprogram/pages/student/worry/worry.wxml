@@ -1,17 +1,7 @@
-<view class="page">
-  <view class="wr-head">
-    <view class="wr-head__title">我的小心事</view>
-    <view class="wr-head__sub">有什么心事都可以写在这里，老师会看到你的留言</view>
-  </view>
+<app-header title="我的小心事" sub="" mode="back" variant="hero" />
+<view class="page page--hero">
 
-  <!-- 有新回复时置顶提示（无新回复时不显示），参考管理员首页的信息提示板块 -->
-  <view class="card wo-entry" wx:if="{{newReplyCount > 0}}" bindtap="onTapReplyNotice">
-    <view class="wo-entry__main">
-      <view class="wo-entry__title">你有新的回复</view>
-      <view class="wo-entry__text">老师回复了你的 {{newReplyCount}} 条小心事，点击查看</view>
-    </view>
-    <view class="wo-entry__arrow">›</view>
-  </view>
+  <!-- 说明：老师回复的信息提示模块统一放在学生端首页顶部（pages/student/home），此处不再重复展示 -->
 
   <!-- 已发送成功提示 -->
   <view class="card" wx:if="{{sent}}">
@@ -39,7 +29,7 @@
       <view class="wr-counter {{count >= maxLength ? 'wr-counter--full' : ''}}">{{count}} / {{maxLength}}</view>
     </view>
 
-    <view class="field__hint">提交后内容会推送给管理员，请不要填写敏感的个人信息</view>
+    <view class="field__hint">提交内容其他人不可见 我们将对你的信息保密</view>
 
     <button
       class="btn btn-primary btn-block mt-24"

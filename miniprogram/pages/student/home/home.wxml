@@ -1,7 +1,12 @@
-<view class="page page-with-nav">
-  <view class="st-head">
-    <view class="st-head__hello">你好，{{child ? child.name : '同学'}}</view>
-    <view class="st-head__sub">{{child && child.grade ? child.grade : '我的本周任务'}}</view>
+<app-header title="我的任务" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
+  <!-- 老师回复小心事后的信息提示模块：置顶展示，加载期间也保留位置 -->
+  <view class="card wo-entry {{newReplyCount ? 'wo-entry--active' : ''}}" bindtap="goWorry">
+    <view class="wo-entry__main">
+      <view class="wo-entry__title">我的小心事</view>
+      <view class="wo-entry__text">{{worryNoticeText}}</view>
+    </view>
+    <view class="wo-entry__arrow">›</view>
   </view>
 
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
@@ -9,10 +14,14 @@
   <block wx:if="{{!loading}}">
     <view class="card" wx:if="{{task}}">
       <view class="between mb-16">
-        <text class="badge" style="background:{{statusBg}};color:{{statusColor}}">{{statusText}}</text>
+        <view class="align-center">
+          <text class="badge" style="background:{{statusBg}};color:{{statusColor}}">{{statusText}}</text>
+          <text class="badge badge-primary ml" wx:if="{{isCustomTask}}">老师定制</text>
+        </view>
         <text class="text-sm text-muted" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
       </view>
       <view class="task-title">{{task.title}}</view>
+      <view class="field__hint mt-8" wx:if="{{customTaskNotice}}">{{customTaskNotice}}</view>
       <view class="task-meta mt-16">
         <text class="tag" wx:if="{{task.task_type}}">{{task.task_type}}</text>
         <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
@@ -37,7 +46,7 @@
 
     <view class="card" wx:else>
       <view class="empty">
-        <view class="empty__icon">📚</view>
+        
         <view class="empty__text">本周还没有任务</view>
         <view class="empty__hint">老师发布任务后就能看到啦</view>
       </view>

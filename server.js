@@ -722,7 +722,7 @@ async function getParentEngagement(userId, childId) {
   if (count.timeline_viewed) evidence.push("回看成长档案 " + count.timeline_viewed + " 次");
   if (count.submission_submitted) evidence.push("完成提交 " + count.submission_submitted + " 次");
   if (count.teacher_contact_started) evidence.push("发起沟通 " + count.teacher_contact_started + " 次");
-  if (count.parent_task_request_submitted) evidence.push("提交自主定制任务 " + count.parent_task_request_submitted + " 次");
+  if (count.parent_task_request_submitted) evidence.push("提交成长关注反馈 " + count.parent_task_request_submitted + " 次");
   if (!evidence.length && touchpoints) evidence.push("接触过 " + touchpoints + " 次家校信息");
 
   let recommendation = "继续提供简短、可直接行动的信息";
@@ -1129,10 +1129,11 @@ function studentSuggestionDuration(answers, student) {
   return Math.max(5, Math.min(60, duration));
 }
 
-function studentSuggestionFallback(student, answers, history, behavior) {
+function studentSuggestionFallback(student, answers, history, behavior, teacherNote) {
   const interests = String(student.interests || answers.interests || "").split(/[，,]/).map(function (item) {
     return item.trim();
   }).filter(Boolean);
+  const note = String(teacherNote || "").trim();
   const focus = interests[0] || "日常生活";
   const duration = studentSuggestionDuration(answers, student);
   const behaviorCount = behavior && behavior.events ? behavior.events : 0;
@@ -1141,7 +1142,8 @@ function studentSuggestionFallback(student, answers, history, behavior) {
     title: "数据反馈：" + focus + "亲子观察",
     type: "观察探究",
     duration: duration,
-    goal: "结合孩子的兴趣和家庭节奏完成一次低负担观察，帮助教师获得可持续调整任务的过程反馈",
+    goal: "结合孩子的兴趣和家庭节奏完成一次低负担观察，帮助教师获得可持续调整任务的过程反馈" +
+      (note ? "，并回应教师补充的情况：" + note.slice(0, 60) : ""),
     steps: "1. 围绕「" + focus + "」选择一个家里或身边的观察对象\n" +
       "2. 和孩子一起观察 " + duration + " 分钟，记录一个具体发现\n" +
       "3. 请孩子说说最感兴趣或最困难的地方\n" +
@@ -1150,6 +1152,7 @@ function studentSuggestionFallback(student, answers, history, behavior) {
     submitHint: "提交一张过程照片或两三句话的观察记录",
     rationale: "根据学生兴趣「" + focus + "」、已完成 " + completedCount + " 个任务" +
       (behaviorCount ? "和近30天 " + behaviorCount + " 次站内行为" : "及当前可见档案") +
+      (note ? "，以及教师补充的学生情况" : "") +
       "生成的本地兜底建议，适合先用一次轻量任务验证反馈。",
     source: "ai",
     aiGenerated: false,
@@ -1181,8 +1184,9 @@ function normalizeStudentAiSuggestion(raw, fallback, answers, student) {
   };
 }
 
-async function generateStudentAiSuggestion(student, answers, history, behavior, fallback) {
+async function generateStudentAiSuggestion(student, answers, history, behavior, fallback, teacherNote) {
   if (!getInteractionApiKey()) return fallback;
+  const note = String(teacherNote || "").trim().slice(0, 800);
   const profile = {
     grade: student.grade || "未填写",
     gender: student.gender || "未填写",
@@ -1208,6 +1212,13 @@ async function generateStudentAiSuggestion(student, answers, history, behavior, 
     activeDays: behavior.activeDays || 0,
     counts: behavior.counts || {}
   };
+  // 教师口述优先：先把口语描述整理成结构化要点，再据此设计任务。
+  const noteInstruction = note
+    ? "\n\n【教师补充的学生情况（最高优先级，必须先在心里整理成结构化要点，再据此设计任务）】\n" +
+      note + "\n整理要求：1. 先提炼这段描述中的可执行信息（近期状态、困难点、可用材料、可陪伴时间、注意事项）；" +
+      "2. 忽略口语寒暄和重复表述，不要原样复述；3. 若描述与档案数据冲突，以教师描述为准，并在 rationale 中说明你采用了哪一条；" +
+      "4. 任务必须能在 1 周内、由家长在家低成本完成；5. 不要把教师未提及的信息当成事实。"
+    : "";
   const messages = [
     {
       role: "system",
@@ -1215,9 +1226,12 @@ async function generateStudentAiSuggestion(student, answers, history, behavior, 
     },
     {
       role: "user",
-      content: "请生成一张与现有模板不同的 AI 个性化任务建议。返回格式必须是 {\"title\":\"任务标题\",\"type\":\"阅读|习惯养成|学科应用|情绪社交|家务实践|运动健身|观察探究\",\"duration\":20,\"goal\":\"任务目标\",\"steps\":\"每行一个步骤\",\"dialogueTips\":\"对话提示\",\"submitHint\":\"提交要求\",\"rationale\":\"说明使用了哪些学生数据\"}。要求：1. 时长适配家庭可用时间和任务偏好；2. 必须结合兴趣、陪伴人或历史记录中的至少两项信息；3. 步骤不超过4步，材料尽量容易获得；4. 不要虚构没有提供的事实；5. 行为埋点只能用于判断参与节奏，不可推断家长态度；6. 数据不足时明确写出“证据有限”，仍给出可执行的低风险任务。\n\n学生档案：" + JSON.stringify(profile) +
+      content: (note ? "请先依据教师补充的学生情况重新设计一张 AI 个性化任务建议，必须明显回应这些补充信息。" :
+        "请生成一张与现有模板不同的 AI 个性化任务建议。") +
+        "返回格式必须是 {\"title\":\"任务标题\",\"type\":\"阅读|习惯养成|学科应用|情绪社交|家务实践|运动健身|观察探究\",\"duration\":20,\"goal\":\"任务目标\",\"steps\":\"每行一个步骤\",\"dialogueTips\":\"对话提示\",\"submitHint\":\"提交要求\",\"rationale\":\"说明使用了哪些学生数据\"}。要求：1. 时长适配家庭可用时间和任务偏好；2. 必须结合兴趣、陪伴人或历史记录中的至少两项信息；3. 步骤不超过4步，材料尽量容易获得；4. 不要虚构没有提供的事实；5. 行为埋点只能用于判断参与节奏，不可推断家长态度；6. 数据不足时明确写出“证据有限”，仍给出可执行的低风险任务。\n\n学生档案：" + JSON.stringify(profile) +
         "\n历史任务与提交：" + JSON.stringify(historyData) +
-        "\n近30天行为摘要：" + JSON.stringify(behaviorData)
+        "\n近30天行为摘要：" + JSON.stringify(behaviorData) +
+        noteInstruction
     }
   ];
   try {
@@ -1228,6 +1242,181 @@ async function generateStudentAiSuggestion(student, answers, history, behavior, 
     return fallback;
   }
 }
+
+/**
+ * 生成单个学生的个性化任务建议（当前只返回一条 AI 建议）。
+ * @param {object} user 当前教师/管理员用户
+ * @param {number} childId 学生 ID
+ * @param {string} teacherNote 教师口述的学生情况补充描述（为空时仅依据档案与行为数据）
+ * @returns {Promise<object>} 响应体；出错时返回 { error, status }
+ */
+async function buildStudentSuggestions(user, childId, teacherNote) {
+  teacherNote = String(teacherNote || "").trim().slice(0, 800);
+  const classIds = await getTeacherClassIds(user.id);
+  const student = await db.prepare(
+    "SELECT c.*, q.answers AS q_answers FROM children c " +
+    latestQuestionnaireJoin() +
+    "WHERE c.id = ? AND " + studentScopeWhere("c", classIds)
+  ).get(childId, ...demoParams(2));
+  if (!student) return { error: "学生不存在", status: 404 };
+
+  let answers = {};
+  try { answers = JSON.parse(student.q_answers || "{}"); } catch (e) {}
+  const timeAvailable = answers.timeAvailable || "";
+  const taskPreference = answers.taskPreference || "";
+
+  // 历史提交：只把正式提交计入完成记录，并把少量过程文本提供给 AI。
+  const history = await db.prepare(
+    "SELECT s.status, s.content, s.created_at, t.title AS task_title, t.task_type " +
+    "FROM submissions s JOIN tasks t ON t.id = s.task_id " +
+    "WHERE s.child_id = ? AND s.status = 'submitted' ORDER BY s.id DESC LIMIT 100"
+  ).all(childId);
+  const completedTypes = [...new Set(history.map(h => h.task_type))];
+  const totalCompleted = history.length;
+
+  // 近 30 天行为只用于识别参与节奏，不用于判断家长态度。
+  const behaviorSince = new Date();
+  behaviorSince.setDate(behaviorSince.getDate() - 30);
+  const behaviorSinceText = behaviorSince.getFullYear() + "-" +
+    String(behaviorSince.getMonth() + 1).padStart(2, "0") + "-" +
+    String(behaviorSince.getDate()).padStart(2, "0") + " 00:00:00";
+  const behaviorRows = await db.prepare(
+    "SELECT event_type, created_at FROM events WHERE child_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT " + MAX_BEHAVIOR_ROWS
+  ).all(childId, behaviorSinceText);
+  const behavior = { events: behaviorRows.length, activeDays: 0, counts: {} };
+  const activeDays = new Set();
+  behaviorRows.forEach(function (row) {
+    const type = row.event_type || "unknown";
+    behavior.counts[type] = (behavior.counts[type] || 0) + 1;
+    activeDays.add(String(row.created_at || "").slice(0, 10));
+  });
+  behavior.activeDays = activeDays.size;
+
+  // 兴趣 → 任务类型
+  const interestMap = {
+    "阅读": "阅读", "绘本": "阅读", "书": "阅读", "故事": "阅读",
+    "运动": "运动健身", "足球": "运动健身", "跳绳": "运动健身", "跑步": "运动健身", "游泳": "运动健身", "篮球": "运动健身", "羽毛球": "运动健身",
+    "画画": "观察探究", "绘画": "观察探究", "手工": "学科应用", "折纸": "学科应用", "艺术": "观察探究",
+    "做饭": "家务实践", "家务": "家务实践", "整理": "家务实践", "烹饪": "家务实践",
+    "朋友": "情绪社交", "社交": "情绪社交", "聊天": "情绪社交",
+    "科学": "观察探究", "实验": "观察探究", "自然": "观察探究", "植物": "观察探究", "动物": "观察探究",
+    "数学": "学科应用", "英语": "学科应用", "语文": "学科应用", "写字": "学科应用",
+    "音乐": "情绪社交", "唱歌": "情绪社交", "乐器": "情绪社交"
+  };
+
+  // 任务模板库
+  const taskTemplates = {
+    "阅读": [
+      { title: "亲子共读：绘本角色扮演", goal: "通过角色扮演深化阅读理解，培养表达能力", steps: "1. 选择一本孩子喜欢的绘本\n2. 分配角色，家长和孩子各演一个\n3. 一起读故事，到对话部分就表演出来\n4. 结束后聊聊最喜欢哪个角色", dialogueTips: "「你觉得这个故事里，如果你是主角会怎么做？」", submitHint: "拍照或录一段表演视频" },
+      { title: "家庭阅读角：共读20分钟", goal: "营造家庭阅读氛围，培养日常阅读习惯", steps: "1. 和孩子一起选一个家里的角落布置阅读角\n2. 各自选一本想读的书\n3. 一起安静阅读20分钟\n4. 分享各自读到的有趣内容", dialogueTips: "「你读到的这段，最让你惊讶的是什么？」", submitHint: "拍一张阅读角照片，写一句感受" }
+    ],
+    "运动健身": [
+      { title: "亲子运动挑战：一起跳绳", goal: "通过运动增进亲子默契，锻炼身体协调性", steps: "1. 准备一根跳绳\n2. 家长先示范，孩子计数\n3. 换孩子跳，家长计数鼓励\n4. 尝试一起跳10个", dialogueTips: "「你觉得一起跳绳和一个人跳有什么不同？」", submitHint: "拍一段跳绳视频或写感受" },
+      { title: "家庭趣味运动会", goal: "在运动中体验合作与竞争的平衡", steps: "1. 设计3个小项目（如夹球跑、投准、接力）\n2. 家长和孩子轮流比赛\n3. 互相计时和加油\n4. 一起复盘哪个最有趣", dialogueTips: "「你觉得赢的感觉和输的感觉有什么不同？」", submitHint: "拍照片或写一段运动感受" }
+    ],
+    "观察探究": [
+      { title: "家庭观察实验：种一颗豆子", goal: "培养观察记录能力与生命责任感", steps: "1. 一起泡豆子\n2. 每天观察并记录变化\n3. 周末一起画出成长图\n4. 讨论植物生长的条件", dialogueTips: "「你觉得它明天会有什么变化？为什么？」", submitHint: "拍照或文字记录观察发现" },
+      { title: "自然探索：小区里的秘密", goal: "培养观察力与科学探究兴趣", steps: "1. 带孩子去小区或附近散步\n2. 寻找3种不同的植物或昆虫\n3. 拍照并讨论它们的特点\n4. 回家一起查资料了解", dialogueTips: "「你觉得这个小虫子为什么生活在这里？」", submitHint: "拍照记录并写一句发现" }
+    ],
+    "情绪社交": [
+      { title: "情绪卡片：画出今天的心情", goal: "帮助孩子认识和表达情绪", steps: "1. 准备纸和彩笔\n2. 各自画出今天的心情\n3. 互相分享画的内容\n4. 讨论为什么会有这种感受", dialogueTips: "「今天最开心的事是什么？最难过的呢？」", submitHint: "拍照心情卡片或写感受" },
+      { title: "角色互换：今天我来当大人", goal: "培养换位思考能力和同理心", steps: "1. 设定一个生活场景（如做决定）\n2. 孩子扮演大人角色\n3. 家长扮演孩子\n4. 结束后讨论感受", dialogueTips: "「当大人的感觉怎么样？和想象中一样吗？」", submitHint: "录一段对话或写感受" }
+    ],
+    "家务实践": [
+      { title: "今天我当家：一起做一顿饭", goal: "培养生活技能和家庭责任感", steps: "1. 一起决定做什么菜\n2. 分工准备食材\n3. 一起完成烹饪\n4. 一起收拾厨房", dialogueTips: "「你觉得做饭最难的是哪一步？」", submitHint: "拍照或写感受" },
+      { title: "整理小能手：给房间大变身", goal: "培养整理收纳习惯和审美", steps: "1. 选一个区域（书桌/衣柜）\n2. 一起分类物品\n3. 决定保留和丢弃\n4. 重新布置", dialogueTips: "「你觉得整理后和整理前有什么不同？」", submitHint: "拍整理前后的对比照" }
+    ],
+    "学科应用": [
+      { title: "生活中的数学：超市小账本", goal: "将数学知识应用到真实生活场景", steps: "1. 去超市前一起列购物清单\n2. 给孩子一个预算\n3. 孩子负责计算价格\n4. 结账时核对", dialogueTips: "「你觉得为什么同样的东西不同牌子价格不同？」", submitHint: "拍购物小票或写计算过程" },
+      { title: "创意写作：给物品写自传", goal: "培养观察力、想象力和写作能力", steps: "1. 选一件家里的物品\n2. 以物品的视角写一段自传\n3. 家长也写一篇\n4. 互相朗读", dialogueTips: "「如果你是这件物品，你最想说什么？」", submitHint: "写一段文字或拍照" }
+    ],
+    "习惯养成": [
+      { title: "21天习惯养成打卡", goal: "通过持续打卡培养好习惯", steps: "1. 和孩子一起选一个想养成的小习惯\n2. 制作打卡表格\n3. 每天完成后打卡\n4. 周末一起回顾", dialogueTips: "「坚持了这几天，你感觉自己有什么变化？」", submitHint: "拍打卡表或写感受" },
+      { title: "早睡早起挑战周", goal: "培养健康作息习惯", steps: "1. 和孩子约定每天睡觉和起床时间\n2. 制作作息表\n3. 每天记录是否达标\n4. 周末统计达成率", dialogueTips: "「你觉得早睡后第二天感觉怎么样？」", submitHint: "拍作息表或写感受" }
+    ]
+  };
+
+  const interests = (student.interests || "").split(",").filter(Boolean).map(s => s.trim());
+  const suggestedTypes = [];
+  const usedTypes = new Set();
+
+  // 基于兴趣匹配
+  interests.forEach(function (interest) {
+    Object.keys(interestMap).forEach(function (key) {
+      if (interest.includes(key) || key.includes(interest)) {
+        var type = interestMap[key];
+        if (!usedTypes.has(type)) { suggestedTypes.push(type); usedTypes.add(type); }
+      }
+    });
+  });
+  // 补充未做过的类型
+  var allTypes = ["阅读", "运动健身", "观察探究", "情绪社交", "家务实践", "学科应用", "习惯养成"];
+  allTypes.forEach(function (type) {
+    if (!usedTypes.has(type) && !completedTypes.includes(type)) {
+      suggestedTypes.push(type); usedTypes.add(type);
+    }
+  });
+  // 至少保留一个模板类型；第二张卡由 AI 单独生成。
+  allTypes.forEach(function (type) {
+    if (suggestedTypes.length < 1 && !usedTypes.has(type)) {
+      suggestedTypes.push(type); usedTypes.add(type);
+    }
+  });
+
+  // 陪伴人 & 时长调整
+  var isGrandparent = student.caregiver && ["奶奶", "爷爷", "外婆", "外公", "祖辈"].some(function (g) {
+    return student.caregiver.includes(g);
+  });
+  var baseDuration = studentSuggestionDuration(answers, student);
+
+  var suggestions = suggestedTypes.slice(0, 1).map(function (type) {
+    var templates = taskTemplates[type] || taskTemplates["阅读"];
+    var tpl = templates[0];
+    var reasons = [];
+    var matchedInterests = interests.filter(function (i) {
+      return Object.keys(interestMap).some(function (key) {
+        return (i.includes(key) || key.includes(i)) && interestMap[key] === type;
+      });
+    });
+    if (matchedInterests.length > 0) reasons.push("基于孩子对「" + matchedInterests.join("、") + "」的兴趣");
+    if (student.caregiver) {
+      if (isGrandparent) reasons.push("考虑到祖辈带养，选用步骤简单、材料易得的方案");
+      else reasons.push("配合「" + student.caregiver + "」的陪伴方式");
+    }
+    if (timeAvailable) reasons.push("适配家庭可用时间（" + timeAvailable + "）");
+    if (taskPreference) reasons.push("尊重家长期望的亲子任务特征（" + taskPreference + "）");
+    if (completedTypes.includes(type)) reasons.push("孩子已参与过此类任务，建议尝试进阶版本");
+    else reasons.push("丰富孩子尚未体验的任务类型");
+
+    return {
+      title: tpl.title, type: type,
+      duration: isGrandparent ? Math.min(baseDuration, 15) : baseDuration,
+      goal: tpl.goal, steps: tpl.steps, dialogueTips: tpl.dialogueTips,
+      submitHint: tpl.submitHint, rationale: reasons.join("；"),
+      source: "template", aiGenerated: false, aiStatus: "规则模板"
+    };
+  });
+
+  const templateSuggestion = suggestions[0] || null;
+  const aiFallback = studentSuggestionFallback(student, answers, history, behavior, teacherNote);
+  const aiSuggestion = await generateStudentAiSuggestion(student, answers, history, behavior, aiFallback, teacherNote);
+  // 只保留 AI 建议（教师端页面已不再展示规则推荐卡片）
+  suggestions = [aiSuggestion];
+
+  return {
+    student: {
+      id: student.id, name: student.name, grade: student.grade,
+      gender: student.gender, age: student.age, caregiver: student.caregiver,
+      interests: student.interests, familyNote: student.family_note || "",
+      timeAvailable: timeAvailable,
+      taskPreference: taskPreference
+    },
+    suggestions: suggestions,
+    aiMeta: { generated: !!aiSuggestion.aiGenerated, status: aiSuggestion.aiStatus },
+    history: { totalCompleted: totalCompleted, completedTypes: completedTypes }
+  };
+}
+
 
 function concernNeedsProfessionalReview(input) {
   const text = [
@@ -1299,6 +1488,34 @@ function normalizeConcernPlan(raw, fallback, input) {
     },
     followUp: String(raw.followUp || fallback.followUp).slice(0, 500)
   };
+}
+
+/**
+ * 从 ai_plan（JSON 字符串或对象）中取出 AI 任务草案，作为教师"确认实施"时的默认值。
+ * 边界：家长只提交反馈，正式定制任务必须以 AI 草案为基底、由教师确认，绝不直接使用家长原话。
+ */
+function parseAiTaskDraft(aiPlanRaw) {
+  let plan = aiPlanRaw;
+  if (typeof plan === "string") {
+    try { plan = JSON.parse(plan || "{}"); } catch (e) { plan = null; }
+  }
+  if (!plan || typeof plan !== "object") return null;
+  const task = plan.task && typeof plan.task === "object" ? plan.task : {};
+  const draft = {
+    title: String(task.title || "").trim().slice(0, 80),
+    goal: String(task.goal || "").trim().slice(0, 180),
+    steps: String(task.steps || "").trim().slice(0, 3000),
+    dialogueTips: String(task.dialogueTips || "").trim().slice(0, 200),
+    submitHint: String(task.submitHint || "").trim().slice(0, 200),
+    type: String(task.type || "").trim().slice(0, 40),
+    difficulty: ["简单", "普通", "进阶"].includes(String(task.difficulty || "")) ? String(task.difficulty) : "普通",
+    duration: Math.max(0, Math.min(90, Number(task.duration) || 0)),
+    materials: String(task.materials || "").trim().slice(0, 160),
+    fallbackPlan: String(task.fallbackPlan || "").trim().slice(0, 240)
+  };
+  // 只有标题与步骤都存在，才算一份可用的 AI 任务草案
+  if (!draft.title || !draft.steps) return null;
+  return draft;
 }
 
 async function generateParentConcernPlan(input, child) {
@@ -1842,13 +2059,13 @@ function buildParentTaskRequestDocument(row) {
     docKey: "parent_task_request:" + row.id,
     docType: "parent_task_request",
     refId: String(row.id),
-    title: "家长自主定制任务：" + (row.child_name || "学生") + " · " + (row.title || "本周想做的事"),
+    title: "家长成长关注反馈：" + (row.child_name || "学生") + " · " + (row.title || "近期成长关注"),
     content: [
-      "家长提交了本周自主定制任务提议。",
+      "家长提交了一条成长关注反馈（描述孩子需要支持之处），等待教师确认是否生成定制任务。",
       "学生：" + (row.child_name || "未填写") + "；年级：" + (row.grade || "未填写") + "；家长：" + (row.parent_name || "家长") + "。",
-      "提议标题：" + (row.title || "未填写") + "；预计时长：" + (row.duration || 20) + "分钟。",
-      "家长想和孩子一起做：" + String(row.description || "").slice(0, 3000),
-      "家长期待目标：" + (row.goal || "未填写") + "。",
+      "反馈标题：" + (row.title || "未填写") + "；家长希望单次互动时长：" + (row.duration || 20) + "分钟。",
+      "家长观察到的情况：" + String(row.observed_behavior || row.description || "").slice(0, 3000),
+      "家长希望得到的支持：" + (row.parent_expectation || row.goal || "未填写") + "。",
       "关注方向：" + (row.concern_category || "未填写") + "；观察到的行为：" + (row.observed_behavior || row.description || "未填写") + "。",
       row.context ? "发生场景：" + row.context + "。" : "发生场景：未填写。",
       row.frequency ? "出现频率：" + row.frequency + "。" : "出现频率：未填写。",
@@ -1917,7 +2134,7 @@ async function upsertParentTaskRequestVector(requestId) {
     ).run(JSON.stringify(vector), getZhipuEmbeddingModel(), doc.docKey);
     return { indexed: true, embedded: true };
   } catch (e) {
-    console.warn("家长定制任务向量化失败，将由下次索引重试：", e.message);
+    console.warn("成长关注反馈向量化失败，将由下次索引重试：", e.message);
     return { indexed: true, embedded: false, error: e.message };
   }
 }
@@ -1930,7 +2147,7 @@ const BEHAVIOR_TYPE_NAMES = {
   timeline_viewed: "回看成长档案",
   submission_drafted: "起草提交",
   submission_submitted: "完成提交",
-  parent_task_request_submitted: "提交自主定制任务",
+  parent_task_request_submitted: "提交成长关注反馈",
   teacher_contact_started: "发起沟通",
   page_dwell: "页面停留",
   questionnaire_viewed: "查看问卷"
@@ -2005,7 +2222,7 @@ async function buildTeacherKnowledgeDocuments() {
     content: [
       "班级总体情况。",
       "已发布任务总数：" + tasks.length + " 项，其中定制任务 " + customTaskCount + " 项。",
-      "家长自主定制任务提议总数：" + parentTaskRequests.length + " 条，其中待审核 " + pendingParentTaskCount + " 条。",
+      "家长成长关注反馈总数：" + parentTaskRequests.length + " 条，其中待教师处理 " + pendingParentTaskCount + " 条。",
       "本周发布任务：" + currentTaskCount + " 项。",
       "本周已有 " + currentChildIds.size + " 位学生与家长完成任务，共提交 " + currentSubmissions.length + " 份。",
       "本周待点评提交 " + pendingFeedback + " 份。",
@@ -2464,7 +2681,7 @@ function buildTeacherChatMessages(question, history, docs) {
   return [
     {
       role: "system",
-      content: "你是家校共育系统的教师端 AI 助手。请只根据提供的班级资料回答，可以做明确标注为推测的合理推理。回答用中文，先给结论，再给依据和建议。不能把站内行为直接说成家长是否关心，也不要公开比较学生。若资料不足，直接说明证据不足并告诉老师还需要什么数据。涉及学生时可以使用资料中的学生姓名和家长称呼，但不要输出家长账号、密码或无关隐私。资料中会包含家长近30天站内行为埋点统计与时间戳明细（登录系统、查看、浏览、起草、提交、发起沟通、自主定制任务等），以及家长自主定制任务提议和教师审核结果；这些可用于回答哪个家长在什么时候登录过、参与节奏、任务意愿、任务设计和沟通时机类问题，但绝不能据此断言家长是否关心孩子。"
+      content: "你是家校共育系统的教师端 AI 助手。请只根据提供的班级资料回答，可以做明确标注为推测的合理推理。回答用中文，先给结论，再给依据和建议。不能把站内行为直接说成家长是否关心，也不要公开比较学生。若资料不足，直接说明证据不足并告诉老师还需要什么数据。涉及学生时可以使用资料中的学生姓名和家长称呼，但不要输出家长账号、密码或无关隐私。资料中会包含家长近30天站内行为埋点统计与时间戳明细（登录系统、查看、浏览、起草、提交、发起沟通、提交成长关注反馈等），以及家长成长关注反馈内容和教师处理结果；这些可用于回答哪个家长在什么时候登录过、参与节奏、反馈意愿、反馈内容和沟通时机类问题，但绝不能据此断言家长是否关心孩子。"
     },
     { role: "system", content: "检索到的班级资料：\n" + context },
     ...safeHistory,
@@ -3645,6 +3862,87 @@ async function handleApi(req, res, pathname, query) {
     return sendJson(res, 200, { tasks: taskRows, studentCount: children.length });
   }
 
+  /* ---- 管理员端：单个任务详情（含完成度与逐人明细） ----
+   * 任务看板点击卡片后跳转此页；完成度口径与 /api/admin/tasks 保持一致。 */
+  const adminTaskDetailMatch = pathname.match(/^\/api\/admin\/tasks\/(\d+)$/);
+  if (req.method === "GET" && adminTaskDetailMatch) {
+    if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
+    const taskId = Number(adminTaskDetailMatch[1]);
+    const task = await db.prepare(
+      "SELECT t.id, t.title, t.task_type, t.week_start, t.created_at, t.duration, t.child_id, " +
+      "t.goal, t.steps, t.dialogue_tips, t.submit_hint, t.materials, t.fallback_plan, t.difficulty, " +
+      "c.name AS child_name, u.display_name AS publisher_name " +
+      "FROM tasks t LEFT JOIN children c ON c.id = t.child_id " +
+      "LEFT JOIN users u ON u.id = t.published_by WHERE t.id = ?"
+    ).get(taskId);
+    if (!task) return sendJson(res, 404, { message: "任务不存在或已被删除" });
+
+    const children = await db.prepare(
+      "SELECT id, name, grade FROM children ORDER BY id"
+    ).all();
+    const submissions = await db.prepare(
+      "SELECT s.child_id, s.status, s.content, s.sub_type, s.created_at " +
+      "FROM submissions s WHERE s.task_id = ? ORDER BY s.id DESC"
+    ).all(taskId);
+    // 与列表接口一致：同一学生有多条提交时，优先取「已提交」，其次最新一条
+    const latestByChild = {};
+    submissions.forEach(function (submission) {
+      const childId = Number(submission.child_id);
+      const current = latestByChild[childId];
+      if (!current || (submission.status === "submitted" && current.status !== "submitted")) {
+        latestByChild[childId] = submission;
+      }
+    });
+
+    const childById = {};
+    children.forEach(function (child) { childById[Number(child.id)] = child; });
+    const targetChildren = task.child_id
+      ? (childById[Number(task.child_id)] ? [childById[Number(task.child_id)]] : [])
+      : children;
+    const details = targetChildren.map(function (child) {
+      const submission = latestByChild[Number(child.id)];
+      const status = submission && submission.status === "submitted"
+        ? "completed" : submission && submission.status === "draft" ? "draft" : "not_started";
+      return {
+        studentId: child.id,
+        studentName: child.name,
+        grade: child.grade,
+        status: status,
+        content: submission && submission.status === "submitted" ? submission.content : "",
+        submittedAt: submission && submission.status === "submitted" ? submission.created_at : null,
+        subType: submission && submission.status === "submitted" ? submission.sub_type : ""
+      };
+    });
+    const completedCount = details.filter(function (row) { return row.status === "completed"; }).length;
+    const draftCount = details.filter(function (row) { return row.status === "draft"; }).length;
+
+    return sendJson(res, 200, {
+      task: {
+        id: task.id,
+        title: task.title,
+        type: task.task_type,
+        weekStart: task.week_start,
+        createdAt: task.created_at,
+        duration: task.duration,
+        difficulty: task.difficulty,
+        goal: task.goal,
+        steps: task.steps,
+        dialogueTips: task.dialogue_tips,
+        submitHint: task.submit_hint,
+        materials: task.materials,
+        fallbackPlan: task.fallback_plan,
+        scope: task.child_id ? "个性化任务" : "全班任务",
+        studentName: task.child_name || "全班学生",
+        publisherName: task.publisher_name || "教师",
+        targetCount: details.length,
+        completedCount: completedCount,
+        draftCount: draftCount,
+        completionRate: details.length ? Math.round(completedCount / details.length * 100) : 0,
+        details: details
+      }
+    });
+  }
+
   /* ---- 管理员成长时间线看板 ---- */
   if (req.method === "GET" && pathname === "/api/admin/growth-timeline") {
     if (user.role !== "admin") return sendJson(res, 403, { message: "仅管理员账号可访问" });
@@ -3802,6 +4100,10 @@ async function handleApi(req, res, pathname, query) {
       result.taskStatus = taskStatus;
       result.submission = submission || null;
     }
+    // 教师依据家长反馈生成的定制任务会 child_id 定向到本学生，学生端据此明确标识"专属定制任务"
+    result.isCustomTask = !!(result.task && result.task.child_id != null);
+    result.customTaskNotice = result.isCustomTask
+      ? "老师根据家长反馈为你定制了本周任务，一起加油吧" : "";
     await logEvent(user, "student_task_page_viewed", child.id, result.task && result.task.id, { source: "student_home" });
     return sendJson(res, 200, result);
   }
@@ -4001,8 +4303,10 @@ async function handleApi(req, res, pathname, query) {
     ).get(child.id).n;
 
     result.parentTaskRequest = await db.prepare(
-      "SELECT id, title, description, goal, duration, status, teacher_comment, task_id, created_at, reviewed_at " +
-      "FROM parent_task_requests WHERE user_id = ? AND child_id = ? ORDER BY id DESC LIMIT 1"
+      "SELECT r.id, r.title, r.description, r.goal, r.duration, r.status, r.teacher_comment, r.task_id, " +
+      "r.created_at, r.reviewed_at, t.title AS task_title " +
+      "FROM parent_task_requests r LEFT JOIN tasks t ON t.id = r.task_id " +
+      "WHERE r.user_id = ? AND r.child_id = ? ORDER BY r.id DESC LIMIT 1"
     ).get(user.id, child.id) || null;
 
     return sendJson(res, 200, result);
@@ -4064,7 +4368,7 @@ async function handleApi(req, res, pathname, query) {
   }
 
   if (req.method === "POST" && pathname === "/api/parent/task-requests") {
-    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可提交自主任务" });
+    if (user.role !== "parent") return sendJson(res, 403, { message: "仅家长账号可提交成长关注反馈" });
     const body = await readBody(req);
     const childId = Number(body.childId);
     if (!childId || !(await canAccessChild(user, childId))) return sendJson(res, 403, { message: "无权访问该孩子信息" });
@@ -4111,7 +4415,7 @@ async function handleApi(req, res, pathname, query) {
     try {
       vector = await upsertParentTaskRequestVector(id);
     } catch (error) {
-      console.warn("家长定制任务索引失败：", error.message);
+      console.warn("成长关注反馈索引失败：", error.message);
     }
     // 同步推送：教师端（孩子的负责教师）与管理员端首页会出现「家长成长关注」新提交提示
     let pushedCount = 0;
@@ -4137,7 +4441,9 @@ async function handleApi(req, res, pathname, query) {
       request: request,
       aiStatus: aiResult.status,
       pushedTo: pushedCount,
-      message: aiResult.status === "ai" ? "已提交，AI 已生成方案，等待老师审核" : "已提交，当前使用基础方案，等待老师审核",
+      message: aiResult.status === "ai"
+        ? "已提交给老师，AI 已整理任务草案，等待老师确认后生成定制任务"
+        : "已提交给老师，等待老师确认后生成定制任务",
       vectorIndexed: !!(vector && vector.indexed)
     });
   }
@@ -4887,37 +5193,49 @@ async function handleApi(req, res, pathname, query) {
       return sendJson(res, 400, { message: "请选择同意实施或拒绝" });
     }
     const request = await getParentTaskRequestRow(requestId);
-    if (!request) return sendJson(res, 404, { message: "家长定制任务不存在" });
+    if (!request) return sendJson(res, 404, { message: "成长关注反馈不存在" });
 
     const comment = String(body.teacherComment || body.comment || "").trim().slice(0, 500);
     if (decision === "rejected" && !comment) return sendJson(res, 400, { message: "拒绝时请填写评价或原因" });
-    let taskId = request.task_id || null;
+
+    // 正式定制任务必须以「AI 总结并生成的任务草案」为基底，由教师确认/微调后再创建；
+    // 家长提交的是反馈，绝不允许把家长原话直接当作任务内容。
+    const draft = parseAiTaskDraft(request.ai_plan);
+    if (decision === "approved") {
+      const stepsPreview = String(body.steps || (draft && draft.steps) || "").trim();
+      if (!stepsPreview) return sendJson(res, 400, { message: "该反馈还没有可用的 AI 任务草案，请先完善任务步骤" });
+    }
+
+    let reviewResult = { taskId: request.task_id || null, taskTitle: "", taskGoal: "" };
     try {
-      taskId = await db.transaction(async function (tx) {
+      reviewResult = await db.transaction(async function (tx) {
         const current = await tx.prepare(
           "SELECT id, status, task_id FROM parent_task_requests WHERE id = ?"
         ).get(requestId);
-        if (!current) throw new ApiError(404, "家长定制任务不存在", "REQUEST_NOT_FOUND");
+        if (!current) throw new ApiError(404, "成长关注反馈不存在", "REQUEST_NOT_FOUND");
         if (current.status !== "pending") {
-          throw new ApiError(409, "该家长定制任务已经审核过", "REQUEST_ALREADY_REVIEWED");
+          throw new ApiError(409, "该成长关注反馈已经处理过", "REQUEST_ALREADY_REVIEWED");
         }
 
         let createdTaskId = current.task_id || null;
+        let taskTitle = "";
+        let taskGoal = "";
         if (decision === "approved") {
-          const title = String(body.title || request.title || "家长自主定制任务").trim().slice(0, 80);
-          const goal = String(body.goal || request.goal || "结合家庭意愿开展一次亲子共育活动").trim().slice(0, 180);
-          const steps = String(body.steps || request.description || "").trim().slice(0, 3000);
-          const dialogueTips = String(body.dialogueTips || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？").trim().slice(0, 200);
-          const submitHint = String(body.submitHint || "可提交照片、文字记录或一段亲子对话").trim().slice(0, 200);
-          const duration = Math.max(5, Math.min(90, Number(body.duration) || Number(request.duration) || 20));
-          const type = String(body.type || "家务实践").trim().slice(0, 40);
-          const difficulty = ["简单", "普通", "进阶"].includes(body.difficulty) ? body.difficulty : "普通";
-          const materials = String(body.materials || "按家庭实际准备").trim().slice(0, 160);
-          const fallbackPlan = String(body.fallbackPlan || "时间有限时可缩短步骤，只保留一次共同完成和一次交流").trim().slice(0, 240);
+          taskTitle = String(body.title || (draft && draft.title) || "老师为你定制的成长任务").trim().slice(0, 80);
+          taskGoal = String(body.goal || (draft && draft.goal) || "围绕家长反馈的具体情境，帮助孩子完成一次可观察的练习").trim().slice(0, 180);
+          const steps = String(body.steps || (draft && draft.steps) || "").trim().slice(0, 3000);
+          const dialogueTips = String(body.dialogueTips || (draft && draft.dialogueTips) || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？").trim().slice(0, 200);
+          const submitHint = String(body.submitHint || (draft && draft.submitHint) || "可提交照片、文字记录或一段亲子对话").trim().slice(0, 200);
+          const duration = Math.max(5, Math.min(90, Number(body.duration) || (draft && draft.duration) || 20));
+          const type = String(body.type || (draft && draft.type) || "习惯养成").trim().slice(0, 40);
+          const difficulty = ["简单", "普通", "进阶"].includes(body.difficulty)
+            ? body.difficulty : ((draft && draft.difficulty) || "普通");
+          const materials = String(body.materials || (draft && draft.materials) || "按家庭实际准备").trim().slice(0, 160);
+          const fallbackPlan = String(body.fallbackPlan || (draft && draft.fallbackPlan) || "时间有限时可缩短步骤，只保留一次共同完成和一次交流").trim().slice(0, 240);
           createdTaskId = await tx.prepare(
             "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id, difficulty, materials, fallback_plan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
           ).run(
-            title, goal, steps, dialogueTips, submitHint, duration, type, mondayOf(new Date()), user.id,
+            taskTitle, taskGoal, steps, dialogueTips, submitHint, duration, type, mondayOf(new Date()), user.id,
             request.child_id, difficulty, materials, fallbackPlan
           ).lastInsertRowid;
         }
@@ -4925,8 +5243,8 @@ async function handleApi(req, res, pathname, query) {
         const result = await tx.prepare(
           "UPDATE parent_task_requests SET status=?, teacher_id=?, teacher_comment=?, task_id=?, reviewed_at=datetime('now','localtime') WHERE id=? AND status='pending'"
         ).run(decision, user.id, comment, createdTaskId, requestId);
-        if (!result.changes) throw new ApiError(409, "该家长定制任务已经审核过", "REQUEST_ALREADY_REVIEWED");
-        return createdTaskId;
+        if (!result.changes) throw new ApiError(409, "该成长关注反馈已经处理过", "REQUEST_ALREADY_REVIEWED");
+        return { taskId: createdTaskId, taskTitle: taskTitle, taskGoal: taskGoal };
       });
     } catch (error) {
       if (error && error.code === "REQUEST_ALREADY_REVIEWED") {
@@ -4934,27 +5252,48 @@ async function handleApi(req, res, pathname, query) {
       }
       throw error;
     }
-    const parentRequestOwner = await db.prepare(
+
+    // ---- 推送：家长端始终收到处理结果；确认实施时额外推送学生端 ----
+    const feedbackLabel = request.concern_category ? "「" + request.concern_category + "」" : "";
+    const childName = request.child_name || "孩子";
+    const owner = await db.prepare(
       "SELECT user_id, child_id FROM parent_task_requests WHERE id = ?"
     ).get(requestId);
-    if (parentRequestOwner) {
-      const notificationTitle = decision === "approved"
-        ? "老师已为孩子准备定制任务"
-        : "老师已回复你的成长关注";
-      const notificationContent = decision === "approved"
-        ? "老师已根据你提交的情况调整了一份定制任务：" + (String(body.title || request.title || "本周成长任务").trim()) + "。"
-        : "老师暂未采用这次关注内容，老师回复：" + (comment || "请查看教师端反馈。");
+    const approved = decision === "approved" && !!reviewResult.taskTitle;
+    if (owner) {
+      const parentTitle = approved ? "老师已根据你的反馈生成定制任务" : "老师已回复你的成长关注";
+      const parentContent = approved
+        ? "老师结合你反馈的" + feedbackLabel + "成长关注，为" + childName +
+          "定制了任务《" + reviewResult.taskTitle + "》，已同步到孩子的任务列表。"
+        : "老师暂未采用这次反馈内容，老师回复：" + (comment || "请查看教师端反馈。");
       await db.prepare(
         "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
-      ).run(parentRequestOwner.user_id, user.id, "parent_task_request", notificationTitle, notificationContent);
+      ).run(owner.user_id, user.id, "parent_task_request", parentTitle, parentContent);
+    }
+    if (approved) {
+      // 学生端：把同一条定制任务通知到「孩子对应的学生账号」
+      const studentRows = await db.prepare(
+        "SELECT b.user_id FROM bindings b JOIN users u ON u.id = b.user_id " +
+        "WHERE b.child_id = ? AND u.role = 'student'"
+      ).all(request.child_id);
+      for (const student of studentRows) {
+        await db.prepare(
+          "INSERT INTO notifications (recipient_user_id, sender_user_id, type, title, content) VALUES (?,?,?,?,?)"
+        ).run(
+          student.user_id, user.id, "student_custom_task",
+          "老师为你定制了新的成长任务",
+          "老师根据家长的反馈为你定制了任务《" + reviewResult.taskTitle + "》：" +
+            (reviewResult.taskGoal || "一起来看看怎么做吧") + "，去任务页查看吧。"
+        );
+      }
     }
     let vector = null;
     try {
       vector = await upsertParentTaskRequestVector(requestId);
     } catch (error) {
-      console.warn("家长定制任务审核索引失败：", error.message);
+      console.warn("成长关注反馈审核索引失败：", error.message);
     }
-    return sendJson(res, 200, { ok: true, taskId: taskId || null, vectorIndexed: !!(vector && vector.indexed) });
+    return sendJson(res, 200, { ok: true, taskId: reviewResult.taskId || null, vectorIndexed: !!(vector && vector.indexed) });
   }
 
   if (req.method === "GET" && pathname === "/api/teacher/students") {
@@ -5622,174 +5961,28 @@ async function handleApi(req, res, pathname, query) {
     });
   }
 
-  /* ---- 个性化任务建议：一个规则模板 + 一个学生级 AI 建议 ---- */
+  /* ---- 个性化任务建议 GET：默认生成（规则模板 + 学生级 AI 建议）---- */
   if (req.method === "GET" && pathname === "/api/teacher/student-suggestions") {
     const childId = query.get("childId") ? Number(query.get("childId")) : null;
     if (!childId) return sendJson(res, 400, { message: "缺少 childId" });
-    const classIds = await getTeacherClassIds(user.id);
-
-    const student = await db.prepare(
-      "SELECT c.*, q.answers AS q_answers FROM children c " +
-      latestQuestionnaireJoin() +
-      "WHERE c.id = ? AND " + studentScopeWhere("c", classIds)
-    ).get(childId, ...demoParams(2));
-    if (!student) return sendJson(res, 404, { message: "学生不存在" });
-
-    let answers = {};
-    try { answers = JSON.parse(student.q_answers || "{}"); } catch (e) {}
-    const timeAvailable = answers.timeAvailable || "";
-    const taskPreference = answers.taskPreference || "";
-
-    // 历史提交：只把正式提交计入完成记录，并把少量过程文本提供给 AI。
-    const history = await db.prepare(
-      "SELECT s.status, s.content, s.created_at, t.title AS task_title, t.task_type " +
-      "FROM submissions s JOIN tasks t ON t.id = s.task_id " +
-      "WHERE s.child_id = ? AND s.status = 'submitted' ORDER BY s.id DESC LIMIT 100"
-    ).all(childId);
-    const completedTypes = [...new Set(history.map(h => h.task_type))];
-    const totalCompleted = history.length;
-
-    // 近 30 天行为只用于识别参与节奏，不用于判断家长态度。
-    const behaviorSince = new Date();
-    behaviorSince.setDate(behaviorSince.getDate() - 30);
-    const behaviorSinceText = behaviorSince.getFullYear() + "-" +
-      String(behaviorSince.getMonth() + 1).padStart(2, "0") + "-" +
-      String(behaviorSince.getDate()).padStart(2, "0") + " 00:00:00";
-    const behaviorRows = await db.prepare(
-      "SELECT event_type, created_at FROM events WHERE child_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT " + MAX_BEHAVIOR_ROWS
-    ).all(childId, behaviorSinceText);
-    const behavior = { events: behaviorRows.length, activeDays: 0, counts: {} };
-    const activeDays = new Set();
-    behaviorRows.forEach(function (row) {
-      const type = row.event_type || "unknown";
-      behavior.counts[type] = (behavior.counts[type] || 0) + 1;
-      activeDays.add(String(row.created_at || "").slice(0, 10));
-    });
-    behavior.activeDays = activeDays.size;
-
-    // 兴趣 → 任务类型
-    const interestMap = {
-      "阅读": "阅读", "绘本": "阅读", "书": "阅读", "故事": "阅读",
-      "运动": "运动健身", "足球": "运动健身", "跳绳": "运动健身", "跑步": "运动健身", "游泳": "运动健身", "篮球": "运动健身", "羽毛球": "运动健身",
-      "画画": "观察探究", "绘画": "观察探究", "手工": "学科应用", "折纸": "学科应用", "艺术": "观察探究",
-      "做饭": "家务实践", "家务": "家务实践", "整理": "家务实践", "烹饪": "家务实践",
-      "朋友": "情绪社交", "社交": "情绪社交", "聊天": "情绪社交",
-      "科学": "观察探究", "实验": "观察探究", "自然": "观察探究", "植物": "观察探究", "动物": "观察探究",
-      "数学": "学科应用", "英语": "学科应用", "语文": "学科应用", "写字": "学科应用",
-      "音乐": "情绪社交", "唱歌": "情绪社交", "乐器": "情绪社交"
-    };
-
-    // 任务模板库
-    const taskTemplates = {
-      "阅读": [
-        { title: "亲子共读：绘本角色扮演", goal: "通过角色扮演深化阅读理解，培养表达能力", steps: "1. 选择一本孩子喜欢的绘本\n2. 分配角色，家长和孩子各演一个\n3. 一起读故事，到对话部分就表演出来\n4. 结束后聊聊最喜欢哪个角色", dialogueTips: "「你觉得这个故事里，如果你是主角会怎么做？」", submitHint: "拍照或录一段表演视频" },
-        { title: "家庭阅读角：共读20分钟", goal: "营造家庭阅读氛围，培养日常阅读习惯", steps: "1. 和孩子一起选一个家里的角落布置阅读角\n2. 各自选一本想读的书\n3. 一起安静阅读20分钟\n4. 分享各自读到的有趣内容", dialogueTips: "「你读到的这段，最让你惊讶的是什么？」", submitHint: "拍一张阅读角照片，写一句感受" }
-      ],
-      "运动健身": [
-        { title: "亲子运动挑战：一起跳绳", goal: "通过运动增进亲子默契，锻炼身体协调性", steps: "1. 准备一根跳绳\n2. 家长先示范，孩子计数\n3. 换孩子跳，家长计数鼓励\n4. 尝试一起跳10个", dialogueTips: "「你觉得一起跳绳和一个人跳有什么不同？」", submitHint: "拍一段跳绳视频或写感受" },
-        { title: "家庭趣味运动会", goal: "在运动中体验合作与竞争的平衡", steps: "1. 设计3个小项目（如夹球跑、投准、接力）\n2. 家长和孩子轮流比赛\n3. 互相计时和加油\n4. 一起复盘哪个最有趣", dialogueTips: "「你觉得赢的感觉和输的感觉有什么不同？」", submitHint: "拍照片或写一段运动感受" }
-      ],
-      "观察探究": [
-        { title: "家庭观察实验：种一颗豆子", goal: "培养观察记录能力与生命责任感", steps: "1. 一起泡豆子\n2. 每天观察并记录变化\n3. 周末一起画出成长图\n4. 讨论植物生长的条件", dialogueTips: "「你觉得它明天会有什么变化？为什么？」", submitHint: "拍照或文字记录观察发现" },
-        { title: "自然探索：小区里的秘密", goal: "培养观察力与科学探究兴趣", steps: "1. 带孩子去小区或附近散步\n2. 寻找3种不同的植物或昆虫\n3. 拍照并讨论它们的特点\n4. 回家一起查资料了解", dialogueTips: "「你觉得这个小虫子为什么生活在这里？」", submitHint: "拍照记录并写一句发现" }
-      ],
-      "情绪社交": [
-        { title: "情绪卡片：画出今天的心情", goal: "帮助孩子认识和表达情绪", steps: "1. 准备纸和彩笔\n2. 各自画出今天的心情\n3. 互相分享画的内容\n4. 讨论为什么会有这种感受", dialogueTips: "「今天最开心的事是什么？最难过的呢？」", submitHint: "拍照心情卡片或写感受" },
-        { title: "角色互换：今天我来当大人", goal: "培养换位思考能力和同理心", steps: "1. 设定一个生活场景（如做决定）\n2. 孩子扮演大人角色\n3. 家长扮演孩子\n4. 结束后讨论感受", dialogueTips: "「当大人的感觉怎么样？和想象中一样吗？」", submitHint: "录一段对话或写感受" }
-      ],
-      "家务实践": [
-        { title: "今天我当家：一起做一顿饭", goal: "培养生活技能和家庭责任感", steps: "1. 一起决定做什么菜\n2. 分工准备食材\n3. 一起完成烹饪\n4. 一起收拾厨房", dialogueTips: "「你觉得做饭最难的是哪一步？」", submitHint: "拍照或写感受" },
-        { title: "整理小能手：给房间大变身", goal: "培养整理收纳习惯和审美", steps: "1. 选一个区域（书桌/衣柜）\n2. 一起分类物品\n3. 决定保留和丢弃\n4. 重新布置", dialogueTips: "「你觉得整理后和整理前有什么不同？」", submitHint: "拍整理前后的对比照" }
-      ],
-      "学科应用": [
-        { title: "生活中的数学：超市小账本", goal: "将数学知识应用到真实生活场景", steps: "1. 去超市前一起列购物清单\n2. 给孩子一个预算\n3. 孩子负责计算价格\n4. 结账时核对", dialogueTips: "「你觉得为什么同样的东西不同牌子价格不同？」", submitHint: "拍购物小票或写计算过程" },
-        { title: "创意写作：给物品写自传", goal: "培养观察力、想象力和写作能力", steps: "1. 选一件家里的物品\n2. 以物品的视角写一段自传\n3. 家长也写一篇\n4. 互相朗读", dialogueTips: "「如果你是这件物品，你最想说什么？」", submitHint: "写一段文字或拍照" }
-      ],
-      "习惯养成": [
-        { title: "21天习惯养成打卡", goal: "通过持续打卡培养好习惯", steps: "1. 和孩子一起选一个想养成的小习惯\n2. 制作打卡表格\n3. 每天完成后打卡\n4. 周末一起回顾", dialogueTips: "「坚持了这几天，你感觉自己有什么变化？」", submitHint: "拍打卡表或写感受" },
-        { title: "早睡早起挑战周", goal: "培养健康作息习惯", steps: "1. 和孩子约定每天睡觉和起床时间\n2. 制作作息表\n3. 每天记录是否达标\n4. 周末统计达成率", dialogueTips: "「你觉得早睡后第二天感觉怎么样？」", submitHint: "拍作息表或写感受" }
-      ]
-    };
-
-    const interests = (student.interests || "").split(",").filter(Boolean).map(s => s.trim());
-    const suggestedTypes = [];
-    const usedTypes = new Set();
-
-    // 基于兴趣匹配
-    interests.forEach(function (interest) {
-      Object.keys(interestMap).forEach(function (key) {
-        if (interest.includes(key) || key.includes(interest)) {
-          var type = interestMap[key];
-          if (!usedTypes.has(type)) { suggestedTypes.push(type); usedTypes.add(type); }
-        }
-      });
-    });
-    // 补充未做过的类型
-    var allTypes = ["阅读", "运动健身", "观察探究", "情绪社交", "家务实践", "学科应用", "习惯养成"];
-    allTypes.forEach(function (type) {
-      if (!usedTypes.has(type) && !completedTypes.includes(type)) {
-        suggestedTypes.push(type); usedTypes.add(type);
-      }
-    });
-    // 至少保留一个模板类型；第二张卡由 AI 单独生成。
-    allTypes.forEach(function (type) {
-      if (suggestedTypes.length < 1 && !usedTypes.has(type)) {
-        suggestedTypes.push(type); usedTypes.add(type);
-      }
-    });
-
-    // 陪伴人 & 时长调整
-    var isGrandparent = student.caregiver && ["奶奶", "爷爷", "外婆", "外公", "祖辈"].some(function (g) {
-      return student.caregiver.includes(g);
-    });
-    var baseDuration = studentSuggestionDuration(answers, student);
-
-    var suggestions = suggestedTypes.slice(0, 1).map(function (type) {
-      var templates = taskTemplates[type] || taskTemplates["阅读"];
-      var tpl = templates[0];
-      var reasons = [];
-      var matchedInterests = interests.filter(function (i) {
-        return Object.keys(interestMap).some(function (key) {
-          return (i.includes(key) || key.includes(i)) && interestMap[key] === type;
-        });
-      });
-      if (matchedInterests.length > 0) reasons.push("基于孩子对「" + matchedInterests.join("、") + "」的兴趣");
-      if (student.caregiver) {
-        if (isGrandparent) reasons.push("考虑到祖辈带养，选用步骤简单、材料易得的方案");
-        else reasons.push("配合「" + student.caregiver + "」的陪伴方式");
-      }
-      if (timeAvailable) reasons.push("适配家庭可用时间（" + timeAvailable + "）");
-      if (taskPreference) reasons.push("尊重家长期望的亲子任务特征（" + taskPreference + "）");
-      if (completedTypes.includes(type)) reasons.push("孩子已参与过此类任务，建议尝试进阶版本");
-      else reasons.push("丰富孩子尚未体验的任务类型");
-
-      return {
-        title: tpl.title, type: type,
-        duration: isGrandparent ? Math.min(baseDuration, 15) : baseDuration,
-        goal: tpl.goal, steps: tpl.steps, dialogueTips: tpl.dialogueTips,
-        submitHint: tpl.submitHint, rationale: reasons.join("；"),
-        source: "template", aiGenerated: false, aiStatus: "规则模板"
-      };
-    });
-
-    const templateSuggestion = suggestions[0] || null;
-    const aiFallback = studentSuggestionFallback(student, answers, history, behavior);
-    const aiSuggestion = await generateStudentAiSuggestion(student, answers, history, behavior, aiFallback);
-    suggestions = templateSuggestion ? [templateSuggestion, aiSuggestion] : [aiSuggestion];
-
-    return sendJson(res, 200, {
-      student: {
-        id: student.id, name: student.name, grade: student.grade,
-        gender: student.gender, age: student.age, caregiver: student.caregiver,
-        interests: student.interests, familyNote: student.family_note || "",
-        timeAvailable: timeAvailable,
-        taskPreference: taskPreference
-      },
-      suggestions: suggestions,
-      aiMeta: { generated: !!aiSuggestion.aiGenerated, status: aiSuggestion.aiStatus },
-      history: { totalCompleted: totalCompleted, completedTypes: completedTypes }
-    });
+    const payload = await buildStudentSuggestions(user, childId, "");
+    if (payload.error) return sendJson(res, payload.status, { message: payload.error });
+    return sendJson(res, 200, payload);
   }
+
+  /* ---- 个性化任务建议重新生成：教师先口述学生情况，再由 AI 整理并重出任务 ---- */
+  if (req.method === "POST" && pathname === "/api/teacher/student-suggestions/regenerate") {
+    const body = await readBody(req);
+    const childId = body.childId ? Number(body.childId) : null;
+    if (!childId) return sendJson(res, 400, { message: "缺少 childId" });
+    const note = String(body.note || "").trim().slice(0, 800);
+    if (!note) return sendJson(res, 400, { message: "请先描述学生情况" });
+    const payload = await buildStudentSuggestions(user, childId, note);
+    if (payload.error) return sendJson(res, payload.status, { message: payload.error });
+    payload.teacherNote = note;
+    return sendJson(res, 200, payload);
+  }
+
 
   if (req.method === "POST" && pathname === "/api/teacher/tasks") {
     const body = await readBody(req);

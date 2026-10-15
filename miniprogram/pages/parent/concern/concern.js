@@ -3,27 +3,18 @@ var request = require("../../../utils/api.js");
 var api = request.api;
 var util = require("../../../utils/util.js");
 
-var CATEGORIES = ["情绪社交", "学习习惯", "阅读表达", "家务实践", "运动健身", "同伴交往", "其他"];
-var DURATIONS = [10, 20, 30, 45, 60];
-
 Page({
   data: {
     childId: null,
-    tab: "list", // list | create
+    tab: "create", // list | create
     loading: true,
     items: [],
 
     // 表单
-    categories: CATEGORIES,
-    durations: DURATIONS,
-    category: "",
     observedBehavior: "",
     context: "",
     frequency: "",
-    impact: "",
     parentExpectation: "",
-    familyConstraints: "",
-    duration: 20,
     submitting: false
   },
 
@@ -69,6 +60,7 @@ Page({
             statusText: meta.text,
             statusColor: meta.color,
             statusBg: meta.bg,
+            taskTitle: r.task_title || "",
             teacherComment: r.teacher_comment || "",
             timeText: util.fromNow(r.created_at)
           };
@@ -83,12 +75,6 @@ Page({
   },
 
   /* ---- 表单 ---- */
-  pickCategory: function (e) {
-    this.setData({ category: e.currentTarget.dataset.value });
-  },
-  pickDuration: function (e) {
-    this.setData({ duration: Number(e.currentTarget.dataset.value) });
-  },
   onInput: function (e) {
     var key = e.currentTarget.dataset.key;
     var patch = {};
@@ -115,28 +101,20 @@ Page({
     api
       .createParentTaskRequest({
         childId: d.childId,
-        category: d.category,
         observedBehavior: behavior,
         context: d.context,
         frequency: d.frequency,
-        impact: d.impact,
-        parentExpectation: d.parentExpectation,
-        familyConstraints: d.familyConstraints,
-        duration: d.duration
+        parentExpectation: d.parentExpectation
       })
       .then(function (res) {
         self.setData({ submitting: false });
         wx.showToast({ title: (res && res.message) || "已提交给老师", icon: "success", duration: 2000 });
         // 清空表单并回到列表
         self.setData({
-          category: "",
           observedBehavior: "",
           context: "",
           frequency: "",
-          impact: "",
           parentExpectation: "",
-          familyConstraints: "",
-          duration: 20,
           tab: "list"
         });
         self.loadList();

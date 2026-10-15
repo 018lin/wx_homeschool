@@ -19,6 +19,8 @@ Page({
     steps: "",
     duration: 20,
     difficulty: "普通",
+    type: "",
+    hasDraft: false, // 本次审核表单是否由 AI 任务草案预填
     difficulties: DIFFICULTIES,
     submitting: false
   },
@@ -46,6 +48,7 @@ Page({
       .then(function (res) {
         var list = (res && res.requests) || [];        var all = list.map(function (r) {
           var meta = util.requestStatusMeta(r.status);
+          var aiPlan = util.formatAiPlan(r.ai_plan);
           return {
             id: r.id,
             title: r.title || "成长关注",
@@ -68,7 +71,9 @@ Page({
             statusBg: meta.bg,
             teacherComment: r.teacher_comment || "",
             taskTitle: r.task_title || "",
-            aiPlan: r.ai_plan || "",
+            aiPlan: aiPlan && (aiPlan.title || (aiPlan.sections && aiPlan.sections.length)) ? aiPlan : null,
+            aiPlanText: aiPlan && aiPlan.text ? aiPlan.text : "",
+            hasDraft: !!(aiPlan && aiPlan.draft),
             timeText: util.fromNow(r.created_at)
           };
         });
@@ -101,14 +106,19 @@ Page({
   openReview: function (e) {
     var id = e.currentTarget.dataset.id;
     var item = this.data.all.filter(function (i) { return i.id === id; })[0];
+    // 关键边界：正式任务必须以「AI 任务草案」为基底预填，绝不直接使用家长原话。
+    // 若 AI 草案缺失，只给出通用占位，由教师自行设计任务内容。
+    var draft = (item && item.aiPlan && item.aiPlan.draft) || null;
     this.setData({
       reviewId: id,
       comment: "",
-      title: item ? item.title : "",
-      goal: item ? item.expectation : "",
-      steps: item ? item.behavior : "",
-      duration: item ? item.duration : 20,
-      difficulty: "普通"
+      title: draft ? draft.title : "",
+      goal: draft ? draft.goal : "",
+      steps: draft ? draft.steps : "",
+      duration: draft && draft.duration ? draft.duration : 20,
+      difficulty: draft && draft.difficulty ? draft.difficulty : "普通",
+      type: draft && draft.type ? draft.type : "习惯养成",
+      hasDraft: !!draft
     });
   },
 
@@ -149,12 +159,14 @@ Page({
       payload.steps = this.data.steps;
       payload.duration = Number(this.data.duration) || 20;
       payload.difficulty = this.data.difficulty;
-      payload.type = "家务实践";
+      payload.type = this.data.type || "习惯养成";
     }
 
     wx.showModal({
-      title: decision === "approved" ? "同意实施" : "暂不采纳",
-      content: decision === "approved" ? "将为该学生创建一条个性化任务并通知家长" : "家长将收到你的回复",
+      title: decision === "approved" ? "确认实施并推送" : "暂不采纳",
+      content: decision === "approved"
+        ? "将按上方内容生成定制任务，并推送到家长端与学生端"
+        : "家长将收到你的回复",
       success: function (r) {
         if (!r.confirm) return;
         self.setData({ submitting: true });

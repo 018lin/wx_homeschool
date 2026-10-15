@@ -1,8 +1,5 @@
-<view class="page page-with-nav">
-  <view class="cl-head">
-    <view class="cl-head__title">班级管理</view>
-    <view class="cl-head__sub">创建班级并绑定教师、学生与家长</view>
-  </view>
+<app-header title="班级管理" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
 
   <button class="btn btn-primary btn-block mb-24" bindtap="openCreate" wx:if="{{!mode}}">+ 创建班级</button>
 

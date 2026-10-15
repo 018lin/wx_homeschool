@@ -1,4 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "作业批阅",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
 }

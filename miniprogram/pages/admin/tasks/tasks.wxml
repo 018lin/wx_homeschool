@@ -1,60 +1,114 @@
-<view class="page page-with-nav">
-  <view class="segment">
-    <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">全部 {{filterCounts.all}}</view>
-    <view class="segment__item {{filter === 'incomplete' ? 'active' : ''}}" data-filter="incomplete" bindtap="switchFilter">仍有未完成 {{filterCounts.incomplete}}</view>
-    <view class="segment__item {{filter === 'completed' ? 'active' : ''}}" data-filter="completed" bindtap="switchFilter">全部完成 {{filterCounts.completed}}</view>
-  </view>
+<view class="tk-page">
+  <!-- 沉浸式弧形浅蓝头图：全局 app-header 组件 -->
+  <app-header title="任务看板" sub="{{heroSub}}" mode="home" variant="hero" />
 
-  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
-  <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
-
-  <view class="card" wx:if="{{!loading && !error && !tasks.length}}">
-    <view class="empty">
-      <view class="empty__icon">📋</view>
-      <view class="empty__text">当前筛选下没有任务</view>
+  <view class="page page--hero tk-body">
+    <!-- 一级切换：任务 / 时间线 —— 白底圆角胶囊悬浮 -->
+    <view class="tk-mode">
+      <view class="tk-mode__item tk-mode__item--active">
+        <view class="tk-mode__icon tk-mode__icon--list"></view>
+        <text>任务</text>
+      </view>
+      <view class="tk-mode__item" bindtap="goTimeline" hover-class="tk-mode__item--hover">
+        <view class="tk-mode__icon tk-mode__icon--time"></view>
+        <text>时间线</text>
+      </view>
     </view>
-  </view>
 
-  <view class="card" wx:for="{{tasks}}" wx:key="id">
-    <view class="between mb-12" data-id="{{item.id}}" bindtap="toggle">
-      <view class="flex-1">
-        <view class="title">{{item.title}}</view>
-        <view class="text-sm text-muted mt-8">
-          {{item.scope}} · {{item.studentName}} · {{item.publisherName}}
+    <!-- 二级筛选：三个独立轻量胶囊 + 颜色语义指示器 -->
+    <view class="tk-filters">
+      <view
+        class="tk-pill {{filter === 'all' ? 'tk-pill--active' : ''}}"
+        data-filter="all"
+        bindtap="switchFilter"
+        hover-class="tk-pill--hover"
+      >全部 {{filterCounts.all}}</view>
+      <view
+        class="tk-pill {{filter === 'incomplete' ? 'tk-pill--active' : ''}}"
+        data-filter="incomplete"
+        bindtap="switchFilter"
+        hover-class="tk-pill--hover"
+      >
+        <view class="tk-pill__dot tk-pill__dot--orange" wx:if="{{filter !== 'incomplete'}}"></view>
+        待完成 {{filterCounts.incomplete}}
+      </view>
+      <view
+        class="tk-pill {{filter === 'completed' ? 'tk-pill--active' : ''}} {{filterCounts.completed === 0 ? 'tk-pill--dim' : ''}}"
+        data-filter="completed"
+        bindtap="switchFilter"
+        hover-class="tk-pill--hover"
+      >
+        <view class="tk-pill__dot tk-pill__dot--green" wx:if="{{filter !== 'completed' && filterCounts.completed > 0}}"></view>
+        已完成 {{filterCounts.completed}}
+      </view>
+    </view>
+
+    <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+    <view class="tk-error" wx:if="{{!loading && error}}">
+      <view class="tk-error__text">{{error}}</view>
+      <button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <view class="tk-empty" wx:if="{{!loading && !error && !tasks.length}}">
+      <view class="tk-empty__icon">📋</view>
+      <view class="tk-empty__text">当前筛选下没有任务</view>
+    </view>
+
+    <!-- 任务卡片：左侧语义色条 + 高密度布局 -->
+    <view
+      class="tk-card"
+      wx:for="{{tasks}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="goDetail"
+      hover-class="tk-card--hover"
+    >
+      <view class="tk-card__stripe tk-card__stripe--{{item.typeKey}}"></view>
+      <view class="tk-card__body">
+        <!-- 第一行：任务名 + 右上角微型环形进度 -->
+        <view class="tk-card__head">
+          <view class="tk-card__title">{{item.title}}</view>
+          <view class="tk-donut {{item.completionRate > 0 ? 'tk-donut--active' : ''}}">
+            <view class="tk-donut__fg" style="background: conic-gradient({{item.completionRate > 0 ? '#0066dc' : '#ffffff'}} 0deg, {{item.completionRate > 0 ? '#0066dc' : '#ffffff'}} {{item.donutDeg}}deg, #eef2f7 {{item.donutDeg}}deg, #eef2f7 360deg)"></view>
+            <view class="tk-donut__inner">{{item.completedCount}}/{{item.targetCount}}</view>
+          </view>
         </view>
-        <view class="mt-12">
-          <text class="tag" wx:if="{{item.type}}">{{item.type}}</text>
-          <text class="tag" wx:if="{{item.duration}}">{{item.duration}} 分钟</text>
-          <text class="tag" wx:if="{{item.weekStart}}">{{item.weekStart}} 起</text>
+
+        <!-- 第二行：归属信息 —— 紫色微标签 + 浅灰文字 -->
+        <view class="tk-card__meta" wx:if="{{item.scope || item.studentName || item.publisherName}}">
+          <text class="tk-card__scope" wx:if="{{item.scope}}">{{item.scope}}</text>
+          <text class="tk-card__meta-text" wx:if="{{item.studentName}}">学生：{{item.studentName}}</text>
+          <text class="tk-card__meta-text" wx:if="{{item.publisherName}}">负责：{{item.publisherName}}</text>
         </view>
-      </view>
-      <view class="at-rate">
-        <view class="at-rate__value">{{item.completionRate}}%</view>
-        <view class="at-rate__sub">{{item.completedCount}}/{{item.targetCount}}</view>
-      </view>
-    </view>
 
-    <view class="at-progress">
-      <view class="at-progress__fill" style="width:{{item.completionRate}}%"></view>
-    </view>
-
-    <view class="at-detail" wx:if="{{expanded === item.id}}">
-      <view class="section-title">完成情况</view>
-      <view class="list-item" wx:for="{{item.details}}" wx:for-item="d" wx:key="studentId">
-        <view class="list-item__main">
-          <view class="list-item__title">{{d.studentName}} <text class="text-sm text-muted">{{d.grade}}</text></view>
-          <view class="list-item__desc clamp-1" wx:if="{{d.content}}">{{d.content}}</view>
-          <view class="list-item__desc" wx:if="{{d.submittedAt}}">{{d.submittedAt}} · {{d.subType}}</view>
+        <!-- 第三行：多维属性 —— 语义化分类标签 + 纯文字时间/日期 -->
+        <view class="tk-card__attrs">
+          <text class="tk-card__cat tk-card__cat--{{item.typeKey}}" wx:if="{{item.type}}">
+            <text class="tk-card__cat-glyph">{{item.typeKey === 'emotion' ? '♥' : (item.typeKey === 'observation' ? '◎' : (item.typeKey === 'sport' ? '✦' : '•'))}}</text>
+            {{item.type}}
+          </text>
+          <text class="tk-card__attr" wx:if="{{item.duration}}">
+            <text class="tk-card__attr-glyph">⏱</text> {{item.duration}} 分钟
+          </text>
+          <text class="tk-card__attr" wx:if="{{item.weekStartShort}}">
+            <text class="tk-card__attr-glyph">📅</text> {{item.weekStartShort}} 起
+          </text>
         </view>
-        <text class="badge {{d.statusCls}}">{{d.statusText}}</text>
-      </view>
-      <view class="empty" wx:if="{{!item.details.length}}">
-        <view class="empty__text">暂无学生明细</view>
-      </view>
-    </view>
 
-    <view class="at-toggle" data-id="{{item.id}}" bindtap="toggle">
-      {{expanded === item.id ? '收起明细' : '查看明细'}}
+        <!-- 第四行：进度条 + 查看详情 同行合并 -->
+        <view class="tk-card__foot">
+          <view class="tk-progress">
+            <view class="tk-progress__fill {{item.completionRate > 0 ? 'tk-progress__fill--active' : ''}}" style="width:{{item.completionRate}}%"></view>
+          </view>
+          <view class="tk-card__more">
+            <text>查看详情</text>
+            <text class="tk-card__arrow">›</text>
+          </view>
+        </view>
+
+        <!-- 展开明细已迁移到任务详情页，卡片整块点击进入 -->
+      </view>
     </view>
   </view>
 </view>

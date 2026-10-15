@@ -1,44 +1,44 @@
 .ts-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .ts-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .ts-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.85;
   margin-top: 6rpx;
 }
 
 .search-box {
-  background: #fff;
-  border-radius: 16rpx;
+  background: var(--white);
+  border-radius: var(--radius-md);
   padding: 12rpx 24rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 2rpx 12rpx rgba(15, 40, 80, 0.05);
+  box-shadow: var(--shadow-xs);
 }
 
 .search-box__input {
-  font-size: 28rpx;
+  font-size: var(--fs-lg);
   height: 64rpx;
-  color: #1f2937;
+  color: var(--text);
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
 .ts-name {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .ml {
@@ -47,27 +47,27 @@
 
 .ts-row {
   display: flex;
-  font-size: 25rpx;
+  font-size: var(--fs-md);
   margin-top: 8rpx;
 }
 
 .ts-row__label {
-  color: #8795a7;
+  color: var(--text-muted);
   width: 120rpx;
   flex-shrink: 0;
 }
 
 .ts-row__value {
-  color: #536174;
+  color: var(--text-sub);
   flex: 1;
 }
 
 .ts-note {
   margin-top: 16rpx;
-  background: #f8fbff;
-  border-radius: 10rpx;
+  background: var(--fill);
+  border-radius: var(--radius-sm);
   padding: 16rpx;
-  font-size: 25rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.7;
 }

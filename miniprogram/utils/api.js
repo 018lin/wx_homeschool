@@ -487,6 +487,14 @@ var api = {
   getStudentSuggestions: function (childId) {
     return request("/api/teacher/student-suggestions", { method: "GET", query: { childId: childId }, loading: "生成建议" });
   },
+  regenerateStudentSuggestions: function (childId, note) {
+    return request("/api/teacher/student-suggestions/regenerate", {
+      method: "POST",
+      data: { childId: childId, note: note },
+      loading: "AI 正在整理并生成",
+      timeout: 60000
+    });
+  },
   generatePersonalTask: function (childId) {
     return request("/api/teacher/student-suggestions", {
       method: "GET",
@@ -646,6 +654,10 @@ var api = {
   },
   getAdminTasks: function (limit) {
     return request("/api/admin/tasks", { method: "GET", query: { limit: limit || 100 } });
+  },
+  /** 单个任务详情：完整任务内容 + 完成度 + 逐人完成明细 */
+  getAdminTaskDetail: function (id) {
+    return request("/api/admin/tasks/" + id, { method: "GET" });
   },
   getAdminTimeline: function (childId, limit) {
     return request("/api/admin/growth-timeline", {

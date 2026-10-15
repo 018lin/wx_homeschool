@@ -4,7 +4,6 @@ var TABS = {
     { key: "home", label: "首页", url: "/pages/parent/home/home" },
     { key: "feedback", label: "教师反馈", url: "/pages/parent/feedback/feedback" },
     { key: "timeline", label: "成长档案", url: "/pages/parent/timeline/timeline" },
-    { key: "concern", label: "成长关注", url: "/pages/parent/concern/concern" },
     { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],
@@ -21,14 +20,13 @@ var TABS = {
     { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],
+  /* 管理员端：入口从 7 项收敛为 5 项，图标 + 文案，AI 洞察居中微凸起 */
   admin: [
-    { key: "overview", label: "概览", url: "/pages/admin/overview/overview" },
-    { key: "tasks", label: "任务", url: "/pages/admin/tasks/tasks" },
-    { key: "timeline", label: "时间线", url: "/pages/admin/timeline/timeline" },
-    { key: "ai", label: "AI 洞察", url: "/pages/teacher/ai/ai" },
-    { key: "students", label: "学生档案", url: "/pages/teacher/students/students" },
-    { key: "messages", label: "交流", url: "/pages/messages/messages" },
-    { key: "mine", label: "我的", url: "/pages/mine/mine" }
+    { key: "overview", label: "概览", icon: "grid", url: "/pages/admin/overview/overview" },
+    { key: "tasks", label: "任务", icon: "list", url: "/pages/admin/tasks/tasks" },
+    { key: "ai", label: "AI 洞察", icon: "ai", url: "/pages/teacher/ai/ai", center: true },
+    { key: "contact", label: "家校交流", icon: "talk", url: "/pages/messages/messages" },
+    { key: "mine", label: "我的", icon: "user", url: "/pages/mine/mine" }
   ]
 };
 
@@ -39,12 +37,19 @@ Component({
   },
 
   data: {
-    tabs: []
+    tabs: [],
+    iconMode: false
   },
 
   observers: {
     role: function (role) {
-      this.setData({ tabs: TABS[role] || [] });
+      var tabs = TABS[role] || [];
+      this.setData({
+        tabs: tabs,
+        iconMode: tabs.some(function (item) {
+          return !!item.icon;
+        })
+      });
     }
   },
 
@@ -52,6 +57,7 @@ Component({
     onTap: function (e) {
       var item = e.currentTarget.dataset.item;
       if (!item || item.key === this.data.active) return;
+      if (!item.url) return;
       wx.redirectTo({
         url: item.url,
         fail: function () {

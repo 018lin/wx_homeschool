@@ -1,7 +1,8 @@
-<view class="page page-with-nav">
+<app-header title="家长成长关注" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="segment">
     <view class="segment__item {{filter === 'pending' ? 'active' : ''}}" data-filter="pending" bindtap="switchFilter">待处理</view>
-    <view class="segment__item {{filter === 'approved' ? 'active' : ''}}" data-filter="approved" bindtap="switchFilter">已采纳</view>
+    <view class="segment__item {{filter === 'approved' ? 'active' : ''}}" data-filter="approved" bindtap="switchFilter">已处理</view>
     <view class="segment__item {{filter === 'rejected' ? 'active' : ''}}" data-filter="rejected" bindtap="switchFilter">未采纳</view>
     <view class="segment__item {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="switchFilter">全部</view>
   </view>
@@ -52,8 +53,34 @@
       <view class="rq-block__label">家庭限制</view>
       <view class="rq-block__body">{{item.constraints}}</view>
     </view>
-    <view class="quote quote-teal" wx:if="{{item.aiPlan}}">
-      <text class="bold">AI 建议方案：</text>{{item.aiPlan}}
+    <view class="plan" wx:if="{{item.aiPlan}}">
+      <view class="plan__head">
+        <text class="plan__head-title">AI 总结（仅教师可见）</text>
+        <text class="badge badge-danger ml" wx:if="{{item.aiPlan.needReview}}">需专业支持</text>
+      </view>
+
+      <view class="plan__warn" wx:if="{{item.aiPlan.needReview}}">
+        描述中出现了需要优先由班主任或学校专业人员进一步了解的信号，不建议仅依靠家庭任务处理。
+      </view>
+
+      <view class="plan__section" wx:for="{{item.aiPlan.summarySections}}" wx:for-item="sec" wx:key="label">
+        <view class="plan__label">{{sec.label}}</view>
+        <view class="plan__body">{{sec.body}}</view>
+      </view>
+
+      <view class="plan__task" wx:if="{{item.aiPlan.title}}">
+        <text class="plan__task-title">AI 任务草案 · {{item.aiPlan.title}}</text>
+        <text class="plan__task-meta" wx:if="{{item.aiPlan.meta}}">{{item.aiPlan.meta}}</text>
+      </view>
+
+      <view class="plan__section" wx:for="{{item.aiPlan.taskSections}}" wx:for-item="sec" wx:key="label">
+        <view class="plan__label">{{sec.label}}</view>
+        <view class="plan__body">{{sec.body}}</view>
+      </view>
+    </view>
+
+    <view class="quote" wx:elif="{{item.aiPlanText}}">
+      <text class="bold">AI 建议方案：</text>{{item.aiPlanText}}
     </view>
     <view class="quote" wx:if="{{item.teacherComment}}">
       <text class="bold">我的回复：</text>{{item.teacherComment}}
@@ -63,11 +90,12 @@
     <!-- 审核区 -->
     <block wx:if="{{item.status === 'pending'}}">
       <button class="btn btn-outline btn-block mt-24" wx:if="{{reviewId !== item.id}}" data-id="{{item.id}}" bindtap="openReview">
-        处理这条关注
+        查看反馈并处理
       </button>
 
       <block wx:else>
-        <view class="section-title">同意后将创建个性化任务</view>
+        <view class="section-title">确认实施后将生成定制任务并推送给家长与学生</view>
+        <view class="field__hint mb-16">{{hasDraft ? '已按 AI 任务草案预填，你可直接修改后再确认' : '该反馈暂无 AI 草案，请自行设计任务内容'}}</view>
 
         <view class="field">
           <view class="field__label">任务标题</view>
@@ -108,7 +136,7 @@
         <view class="rq-actions">
           <button class="btn btn-gray" bindtap="closeReview">取消</button>
           <button class="btn btn-outline" data-decision="rejected" bindtap="onReview" disabled="{{submitting}}">暂不采纳</button>
-          <button class="btn btn-primary" data-decision="approved" bindtap="onReview" disabled="{{submitting}}">同意实施</button>
+          <button class="btn btn-primary" data-decision="approved" bindtap="onReview" disabled="{{submitting}}">确认并推送</button>
         </view>
       </block>
     </block>

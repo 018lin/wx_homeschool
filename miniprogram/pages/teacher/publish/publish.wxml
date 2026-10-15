@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="发布任务" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="card">
     <view class="field">
       <view class="field__label">发布对象</view>

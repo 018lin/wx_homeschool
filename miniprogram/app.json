@@ -32,6 +32,7 @@
     "pages/admin/accounts/accounts",
     "pages/admin/classes/classes",
     "pages/admin/tasks/tasks",
+    "pages/admin/task-detail/task-detail",
     "pages/admin/timeline/timeline",
     "pages/admin/worries/worries",
     "pages/admin/concerns/concerns"
@@ -52,7 +53,9 @@
   },
   "style": "v2",
   "usingComponents": {
-    "nav-bar": "/components/nav-bar/index"
+    "nav-bar": "/components/nav-bar/index",
+    "app-header": "/components/app-header/index",
+    "agreement-modal": "/components/agreement-modal/index"
   },
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"

@@ -1,9 +1,5 @@
-<view class="page">
-  <view class="q-head">
-    <view class="q-head__title">先认识一下你的孩子</view>
-    <view class="q-head__sub">只需 1 分钟，帮助老师为你推荐更合适的亲子任务</view>
-  </view>
-
+<app-header title="孩子档案问卷" sub="" mode="back" variant="hero" />
+<view class="page page--hero">
   <view class="card">
     <view class="field">
       <view class="field__label">孩子的昵称 <text class="text-danger">*</text></view>
@@ -124,5 +120,6 @@
     <button class="btn btn-primary btn-block" bindtap="onSubmit" disabled="{{submitting}}">
       {{submitting ? '提交中…' : '创建档案'}}
     </button>
+    <button class="btn btn-outline btn-block mt-12" bindtap="goBack">稍后再说</button>
   </view>
 </view>

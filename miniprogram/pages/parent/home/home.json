@@ -1,5 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "凌田家校",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "backgroundColorTop": "#6FB8EE"
 }

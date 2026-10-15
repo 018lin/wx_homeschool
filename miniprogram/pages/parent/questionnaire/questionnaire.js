@@ -117,11 +117,24 @@ Page({
         // 清掉旧选中孩子，让首页重新拉取
         app.setChildId(null);
         setTimeout(function () {
-          wx.redirectTo({ url: "/pages/parent/home/home" });
+          wx.navigateBack({
+            fail: function () {
+              wx.redirectTo({ url: "/pages/parent/home/home" });
+            }
+          });
         }, 800);
       })
       .catch(function () {
         self.setData({ submitting: false });
       });
+  },
+
+  // 跳过（档案为选填，不填也可正常使用系统）
+  goBack: function () {
+    wx.navigateBack({
+      fail: function () {
+        wx.redirectTo({ url: "/pages/parent/home/home" });
+      }
+    });
   }
 });

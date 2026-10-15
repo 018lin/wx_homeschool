@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="教师反馈" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="card filter-card" wx:if="{{children.length}}">
     <view class="filter-row">
       <view class="filter-item">

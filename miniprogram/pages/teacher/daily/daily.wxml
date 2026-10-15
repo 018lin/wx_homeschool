@@ -1,27 +1,47 @@
-<view class="daily-page page-with-nav">
+<app-header title="今日校园观察" sub="" mode="back" variant="hero" />
+<view class="daily-page page-with-nav page--hero">
   <view class="daily-panel">
     <view class="daily-eyebrow"><text class="daily-eyebrow__spark">✦</text> 今日校园观察</view>
     <view class="daily-title">记录今天，孩子在学校发生的事</view>
-    <view class="daily-subtitle">说出学生姓名和事情，AI 会整理成记录并放入待校对清单；确认无误后才会通知对应家长。</view>
+    <view class="daily-subtitle">说出学生姓名和事情，AI 会整理成记录并通知对应家长。</view>
 
     <view class="voice-panel">
-      <button
-        class="voice-button"
-        wx:if="{{!recording}}"
-        bindtap="startRecording"
-        disabled="{{transcribing || creating}}"
-      >
-        <view class="mic-shape" aria-hidden="true">
-          <view class="mic-shape__head"></view>
-          <view class="mic-shape__stem"></view>
-          <view class="mic-shape__base"></view>
-        </view>
-        <text>{{transcribing ? '正在转写' : '点击开始说'}}</text>
-      </button>
-      <button class="voice-button voice-button--recording" wx:else bindtap="stopRecording">
-        <view class="record-wave"><text></text><text></text><text></text><text></text></view>
-        <text>停止录音 · {{recordSeconds}} 秒</text>
-      </button>
+      <!-- 录音台：外层只负责定位与呼吸光环，正圆由 .voice-button 自身锁定 -->
+      <view class="voice-stage">
+        <view class="voice-halo" wx:if="{{recording}}"></view>
+
+        <button
+          class="voice-button"
+          wx:if="{{!recording}}"
+          bindtap="startRecording"
+          disabled="{{transcribing || creating}}"
+          hover-class="voice-button--pressed"
+          hover-stay-time="70"
+        >
+          <view class="voice-button__inner">
+            <view class="mic-shape" aria-hidden="true">
+              <view class="mic-shape__head"></view>
+              <view class="mic-shape__stem"></view>
+              <view class="mic-shape__base"></view>
+            </view>
+            <text class="voice-button__label">{{transcribing ? '正在转写' : '点击开始说'}}</text>
+          </view>
+        </button>
+
+        <button
+          class="voice-button voice-button--recording"
+          wx:else
+          bindtap="stopRecording"
+          hover-class="voice-button--pressed"
+          hover-stay-time="70"
+        >
+          <view class="voice-button__inner">
+            <view class="record-wave"><text></text><text></text><text></text><text></text></view>
+            <text class="voice-button__label">停止录音 {{recordSeconds}} 秒</text>
+          </view>
+        </button>
+      </view>
+
       <view class="voice-hint">普通话语音，也可直接输入文字</view>
     </view>
 
@@ -50,12 +70,12 @@
         class="publish-button"
         bindtap="onCreate"
         disabled="{{recording || transcribing || creating || !transcript}}"
-      ><text class="publish-button__spark">✦</text> {{creating ? '整理中…' : '加入待校对清单'}}</button>
+      ><text class="publish-button__spark">✦</text> {{creating ? '整理中…' : '录入'}}</button>
     </view>
   </view>
 
-  <!-- 待校对清单 -->
-  <view class="draft-section">
+  <!-- 待校对清单：没有待校对记录时整块隐藏 -->
+  <view class="draft-section" wx:if="{{loading || error || draftCount > 0}}">
     <view class="draft-heading">
       <view class="draft-heading__main">
         <text class="draft-heading__title">待校对清单</text>
@@ -77,10 +97,6 @@
     <view class="state-card" wx:if="{{!loading && error}}">
       <view>{{error}}</view>
       <button class="retry-button" bindtap="onRetry">重新加载</button>
-    </view>
-
-    <view class="draft-empty" wx:if="{{!loading && !error && !draftCount}}">
-      还没有待校对的记录。上面的录音或文字整理后，会出现在这里等待您确认。
     </view>
 
     <view class="draft-card" wx:for="{{drafts}}" wx:key="id">
@@ -113,16 +129,85 @@
     </view>
   </view>
 
-  <!-- 已发送 -->
+  <!-- 已发送：点击卡片展开通知详情，快速核对通知范围与结果 -->
   <view class="recent-section" wx:if="{{!loading && !error && sentList.length}}">
-    <view class="recent-heading"><text>已发送</text><text>{{sentList.length}} 条</text></view>
-    <view class="recent-card" wx:for="{{sentList}}" wx:key="id">
+    <view class="recent-heading">
+      <view class="recent-heading__main">
+        <text>已发送</text>
+        <text class="recent-heading__count">{{sentList.length}} 条</text>
+      </view>
+      <text class="recent-heading__tip">点击记录可查看通知到哪些家长</text>
+    </view>
+
+    <view
+      class="recent-card recent-card--tappable {{item.expanded ? 'is-expanded' : ''}}"
+      wx:for="{{sentList}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onToggleSentDetail"
+      hover-class="recent-card--pressed"
+      hover-stay-time="90"
+      hover-start-time="40"
+    >
       <view class="recent-card__top">
         <text class="recent-card__student">{{item.studentName}}</text>
-        <text class="recent-card__time">{{item.timeText}}</text>
+        <view class="recent-card__time-wrap">
+          <text class="recent-card__time">{{item.timeText}}</text>
+          <view class="sent-arrow"></view>
+        </view>
       </view>
       <view class="recent-card__summary">{{item.summary}}</view>
-      <view class="recent-card__meta">{{item.statusText}} · {{item.recipientCount ? '已通知 ' + item.recipientCount + ' 位家长' : '未匹配家长'}}</view>
+      <view class="recent-card__meta">
+        <text>{{item.statusText}} · {{item.recipientCount ? '已通知 ' + item.recipientCount + ' 位家长' : '未匹配家长'}}</text>
+        <text class="recent-card__toggle">{{item.expanded ? '收起' : '展开详情'}}</text>
+      </view>
+
+      <!-- 高度由 JS 测量后写成像素值，交给 CSS transition 做平滑展开/收起 -->
+      <view class="sent-detail" style="height: {{item.expandHeight}}px;" catchtap="noop">
+        <view class="sent-detail__inner" id="sent-detail-{{item.id}}">
+          <view class="sent-block">
+            <view class="sent-block__label">
+              <text>通知范围</text>
+              <text class="sent-block__count">
+                {{item.recipientCount}} 位家长<text wx:if="{{item.readCount > 0}}" class="sent-block__read"> · {{item.readCount}} 位已读</text>
+              </text>
+            </view>
+            <view wx:if="{{item.recipientDetail.length}}" class="sent-people">
+              <view class="sent-person" wx:for="{{item.recipientDetail}}" wx:for-item="person" wx:key="userId">
+                <view class="sent-person__avatar">{{person.initial}}</view>
+                <view class="sent-person__body">
+                  <view class="sent-person__line">
+                    <text class="sent-person__name">{{person.name}}</text>
+                    <text class="sent-person__relation">{{person.relation}}</text>
+                  </view>
+                  <view class="sent-person__child" wx:if="{{person.childNameText}}">学生 · {{person.childNameText}}</view>
+                </view>
+                <text class="sent-status sent-status--{{person.statusTone}}">{{person.statusText}}</text>
+              </view>
+            </view>
+            <view wx:elif="{{item.recipientDetailMissing}}" class="sent-empty">
+              这条早期记录只保存了通知人数（{{item.recipientCount}} 位），未保存家长明细，无法逐一核对。
+            </view>
+            <view wx:else class="sent-empty sent-empty--warn">
+              这条记录没有匹配到家长，发送时未推送给任何人。
+            </view>
+          </view>
+
+          <view class="sent-block">
+            <view class="sent-block__label"><text>发送给家长的内容</text></view>
+            <view class="sent-message">{{item.parentMessage}}</view>
+          </view>
+
+          <view class="sent-block">
+            <view class="sent-block__label"><text>发送信息</text></view>
+            <view class="sent-meta-row"><text class="sent-meta-key">发送状态</text><text class="sent-meta-value">{{item.statusText}}</text></view>
+            <view class="sent-meta-row"><text class="sent-meta-key">发送时间</text><text class="sent-meta-value">{{item.sentAtText || '—'}}</text></view>
+            <view class="sent-meta-row"><text class="sent-meta-key">记录日期</text><text class="sent-meta-value">{{item.recordDate}}</text></view>
+            <view class="sent-meta-row" wx:if="{{item.tags.length}}"><text class="sent-meta-key">记录标签</text><text class="sent-meta-value">{{item.tagText}}</text></view>
+            <view class="sent-meta-row"><text class="sent-meta-key">整理方式</text><text class="sent-meta-value">{{item.aiStatus}}</text></view>
+          </view>
+        </view>
+      </view>
     </view>
   </view>
 

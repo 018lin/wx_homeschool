@@ -1,4 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "班级概览",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
 }

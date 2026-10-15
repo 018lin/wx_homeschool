@@ -1,26 +1,26 @@
 .pb-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .pb-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .pb-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 6rpx;
 }
 
 .btn-ai-generate {
   margin: -4rpx 0 28rpx;
-  background: #e9f8f0;
-  color: #0f766e;
+  background: var(--teal-light);
+  color: var(--teal);
   border: 2rpx solid #9bd9c2;
 }
 
@@ -28,27 +28,10 @@
   background: #d7f2e5;
 }
 
-.picker-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #f8fbff;
-  border: 2rpx solid #e1e8f0;
-  border-radius: 14rpx;
-  padding: 20rpx 24rpx;
-  font-size: 28rpx;
-  color: #1f2937;
-}
-
-.picker-box__arrow {
-  color: #8795a7;
-  font-size: 24rpx;
-}
-
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
-.field__textarea--sm {
-  min-height: 140rpx;
-}
+/* .field__textarea--sm 统一到 app.wxss（min-height: 140rpx） */
+
+/* .picker-box 统一到 app.wxss 全局定义 */

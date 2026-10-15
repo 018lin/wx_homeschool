@@ -159,3 +159,9 @@ uploads/
 .DS_Store
 .vscode/
 .workbuddy/
+.codebuddy/
+
+# 本地产物：文档生成中间件与一次性脚本
+miniprogram/output/
+miniprogram/tmp-gen-icons.ps1
+*.tmp-gen-icons.ps1

@@ -1,32 +1,23 @@
-<view class="page page-with-nav">
-  <!-- 顶部问候 + 孩子切换 -->
-  <view class="home-head">
-    <view class="home-head__row">
-      <view class="flex-1">
-        <view class="home-head__hello">{{greeting}}，{{userName}}</view>
-        <view class="home-head__sub">{{todayText}}</view>
-      </view>
-      <view class="home-head__bell" bindtap="goNotifications">
-        <text class="home-head__bell-icon">🔔</text>
-        <view class="home-head__dot" wx:if="{{unreadCount > 0}}">{{unreadCount > 99 ? '99+' : unreadCount}}</view>
-      </view>
+<app-header title="凌田家校" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
+  <!-- 非强制引导：无孩子 或 档案未完善 -->
+  <view class="card" wx:if="{{!loading && children.length === 0}}">
+    <view class="empty">
+      <view class="empty__icon">👶</view>
+      <view class="empty__text">还没有添加孩子</view>
+      <view class="empty__hint">添加后即可收到老师的专属任务，现在不填也不影响使用其他功能</view>
     </view>
+    <button class="btn btn-primary btn-block mt-24" bindtap="goChildren">去添加孩子</button>
+    <button class="btn btn-outline btn-block mt-12" bindtap="goQuestionnaire">填写档案并添加（可选）</button>
+  </view>
 
-    <scroll-view scroll-x class="child-bar" wx:if="{{children.length > 1}}">
-      <view
-        class="child-chip {{item.id === currentChildId ? 'active' : ''}}"
-        wx:for="{{children}}"
-        wx:key="id"
-        data-id="{{item.id}}"
-        bindtap="onSwitchChild"
-      >
-        {{item.name}}
-      </view>
-    </scroll-view>
-
-    <view class="child-bar-single" wx:if="{{children.length === 1}}">
-      <text class="badge badge-primary">{{children[0].name}} · {{children[0].grade || '未填年级'}}</text>
+  <view class="card" wx:if="{{!loading && profileIncomplete}}">
+    <view class="empty">
+      <view class="empty__icon">📝</view>
+      <view class="empty__text">孩子档案待完善</view>
+      <view class="empty__hint">补充性别、年龄、陪伴人等信息，AI 任务建议会更贴合孩子（选填）</view>
     </view>
+    <button class="btn btn-outline btn-block mt-24" bindtap="goChildren">去完善</button>
   </view>
 
   <!-- 本周任务 -->
@@ -70,80 +61,30 @@
     </view>
   </view>
 
-  <!-- 成长数据 -->
-  <view class="card">
+  <!-- 成长关注反馈状态 -->
+  <view class="card" wx:if="{{parentTaskRequest}}" bindtap="goConcern">
     <view class="card-title">
-      <text class="card-title__text">成长数据</text>
-    </view>
-    <view class="stat-grid">
-      <view class="stat">
-        <view class="stat__value">{{timeline.taskCount || 0}}</view>
-        <view class="stat__label">完成任务</view>
-      </view>
-      <view class="stat">
-        <view class="stat__value">{{timeline.workCount || 0}}</view>
-        <view class="stat__label">提交作品</view>
-      </view>
-      <view class="stat">
-        <view class="stat__value">{{parentTaskRequest ? 1 : 0}}</view>
-        <view class="stat__label">成长关注</view>
-      </view>
-    </view>
-  </view>
-
-  <!-- 亲子参与 -->
-  <view class="card" wx:if="{{engagement}}">
-    <view class="card-title">
-      <text class="card-title__text">亲子参与</text>
-      <text class="card-title__more" bindtap="goEngagement">详情 ›</text>
-    </view>
-    <view class="engage-row">
-      <view class="engage-score" style="color:{{engagement.color}}">{{engagement.score}}</view>
-      <view class="flex-1">
-        <view class="engage-level" style="color:{{engagement.color}}">{{engagement.level}}</view>
-        <view class="text-sm text-muted mt-8">{{engagement.recommendation}}</view>
-      </view>
-    </view>
-  </view>
-
-  <!-- 成长关注状态 -->
-  <view class="card" wx:if="{{parentTaskRequest}}">
-    <view class="card-title">
-      <text class="card-title__text">我提交的成长关注</text>
+      <text class="card-title__text">我反馈的成长关注</text>
       <text class="badge" style="background:{{parentTaskRequest.statusBg}};color:{{parentTaskRequest.statusColor}}">
         {{parentTaskRequest.statusText}}
       </text>
     </view>
     <view class="task-title">{{parentTaskRequest.title}}</view>
-    <view class="quote quote-teal" wx:if="{{parentTaskRequest.teacher_comment}}">
+    <view class="quote quote-teal" wx:if="{{parentTaskRequest.taskTitle}}">
+      老师生成的定制任务：{{parentTaskRequest.taskTitle}}
+    </view>
+    <view class="quote" wx:if="{{parentTaskRequest.teacher_comment}}">
       老师回复：{{parentTaskRequest.teacher_comment}}
     </view>
-  </view>
-
-  <!-- 快捷入口 -->
-  <view class="section-title">快捷入口</view>
-  <view class="card">
-    <view class="entry-grid">
-      <view class="entry" bindtap="goTimeline">
-        <view class="entry__icon">🌱</view>
-        <view class="entry__label">成长档案</view>
-      </view>
-      <view class="entry" bindtap="goConcern">
-        <view class="entry__icon">💬</view>
-        <view class="entry__label">成长关注</view>
-      </view>
-      <view class="entry" bindtap="goNotifications">
-        <view class="entry__icon">🔔</view>
-        <view class="entry__label">通知</view>
-      </view>
-      <view class="entry" bindtap="goChildren">
-        <view class="entry__icon">👶</view>
-        <view class="entry__label">孩子档案</view>
-      </view>
-    </view>
+    <view class="text-sm text-muted mt-16" wx:if="{{!parentTaskRequest.taskTitle && !parentTaskRequest.teacher_comment}}">点击查看详情或再次反馈</view>
   </view>
 
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <!-- 右下角悬浮按钮：进入「成长关注」（风格与学生端一致） -->
+  <view class="pc-fab" bindtap="goConcern" hover-class="none">
+    <view class="pc-fab__plus">+</view>
+  </view>
 </view>
 
 <nav-bar role="parent" active="home" />

@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="任务建议" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
 
   <block wx:if="{{!loading && student}}">
@@ -44,14 +45,25 @@
       </view>
     </view>
 
-    <view class="section-title">任务建议</view>
+    <view class="section-title">AI 任务建议</view>
 
     <view class="card" wx:for="{{suggestions}}" wx:key="title">
-      <view class="between mb-12">
-        <text class="badge {{item.aiGenerated ? 'badge-teal' : 'badge-primary'}}">
-          {{item.aiGenerated ? 'AI 建议' : '规则推荐'}}
-        </text>
-        <text class="text-sm text-muted">{{item.duration}} 分钟 · {{item.type}}</text>
+      <view class="sg-card-top">
+        <view class="sg-card-top__left">
+          <text class="badge {{item.aiGenerated ? 'badge-teal' : 'badge-gray'}}">
+            {{item.aiGenerated ? 'AI 建议' : 'AI 整理中'}}
+          </text>
+          <text class="text-sm text-muted">{{item.duration}} 分钟 · {{item.type}}</text>
+        </view>
+        <view class="sg-regen" bindtap="openRegenModal">
+          <text class="sg-regen__icon">↻</text>
+          <text class="sg-regen__text">重新生成</text>
+        </view>
+      </view>
+
+      <view class="sg-note" wx:if="{{regenNote}}">
+        <text class="sg-note__label">本次依据</text>
+        <text class="sg-note__text">{{regenNote}}</text>
       </view>
 
       <view class="sg-title">{{item.title}}</view>
@@ -79,6 +91,36 @@
       </button>
     </view>
   </block>
+</view>
+
+<!-- 重新生成：先由教师口述学生情况，再交 AI 整理并重出任务 -->
+<view class="modal-mask" wx:if="{{regenVisible}}" catchtap="closeRegenModal" catchtouchmove="noop">
+  <view class="modal-sheet" catchtap="noop">
+    <view class="modal-head">
+      <text class="modal-head__title">补充学生情况</text>
+      <text class="modal-head__close" bindtap="closeRegenModal">取消</text>
+    </view>
+
+    <view class="modal-body">
+      <view class="rg-tip">用一两句话说清这次要解决的问题，例如近期状态、困难点、能配合的时间和可用材料。AI 会先整理这段描述，再结合档案重新生成任务。</view>
+      <textarea
+        class="field__textarea"
+        value="{{regenDraft}}"
+        bindinput="onRegenInput"
+        placeholder="例如：小宇最近不太愿意主动开口讲学校的事，晚上作业会拖延到十点，只有妈妈能陪，基本没什么教具。"
+        placeholder-class="ph"
+        maxlength="800"
+        cursor-spacing="24"
+      />
+      <view class="rg-count">{{regenDraft.length}} / 800</view>
+    </view>
+
+    <view class="modal-foot">
+      <button class="btn btn-primary btn-block" bindtap="confirmRegen" loading="{{regenerating}}" disabled="{{regenerating || !regenDraft.trim()}}">
+        {{regenerating ? 'AI 整理生成中…' : '确认并重新生成'}}
+      </button>
+    </view>
+  </view>
 </view>
 
 <nav-bar role="teacher" active="students" />

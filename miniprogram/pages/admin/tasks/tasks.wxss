@@ -1,68 +1,408 @@
-.at-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
-  padding: 32rpx 28rpx;
-  color: #fff;
-  margin-bottom: 24rpx;
+/* =====================================================================
+ * 管理员端 · 任务看板（pages/admin/tasks）
+ * 视觉体系与登录页、管理员工作台统一：浅蓝渐变 hero + 毛玻璃首页键 +
+ * 白色悬浮胶囊 + 卡片左侧色条 + 微型环形进度 + 语义化分类标签
+ * ===================================================================== */
+
+page {
+  background: var(--bg);
 }
 
-.at-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+.tk-page {
+  min-height: 100vh;
+  background: var(--bg);
 }
 
-.at-head__sub {
-  font-size: 24rpx;
-  opacity: 0.85;
-  margin-top: 6rpx;
+
+/* 内容区：与头图弧线叠压由全局 .page--hero 负责，此处只保留 nav-bar 安全区 */
+.tk-body {
+  padding: 0 24rpx 260rpx !important;
 }
 
-.title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2937;
-  line-height: 1.5;
+/* ---------- 一级切换：白底圆角胶囊 ---------- */
+.tk-mode {
+  display: flex;
+  background: var(--white);
+  border-radius: var(--radius-pill);
+  padding: 6rpx;
+  margin-bottom: 22rpx;
+  box-shadow: var(--shadow-lg);
 }
 
-.at-rate {
-  text-align: right;
-  margin-left: 20rpx;
+.tk-mode__item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18rpx 0;
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+  border-radius: var(--radius-pill);
+  transition: all 0.15s;
+}
+
+.tk-mode__item--active {
+  background: linear-gradient(135deg, #eaf3ff 0%, #d6e9fb 100%);
+  color: var(--primary);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+.tk-mode__item--hover {
+  background: rgba(234, 243, 255, 0.4);
+}
+
+.tk-mode__icon {
+  width: 32rpx;
+  height: 32rpx;
+  margin-right: 8rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 32rpx 32rpx;
   flex-shrink: 0;
 }
 
-.at-rate__value {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #0057b8;
+/* 清单图标（任务） */
+.tk-mode__icon--list {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0zIDcgMiAyIDQtNCIvPjxwYXRoIGQ9Im0zIDE2IDIgMiA0LTQiLz48cGF0aCBkPSJNMTMuNSA3SDIxIi8+PHBhdGggZD0iTTEzLjUgMTJoNC41Ii8+PHBhdGggZD0iTTEzLjUgMTdIMjEiLz48L3N2Zz4=");
 }
 
-.at-rate__sub {
-  font-size: 20rpx;
-  color: #8795a7;
+.tk-mode__item--active .tk-mode__icon--list {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDY2REMiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0zIDcgMiAyIDQtNCIvPjxwYXRoIGQ9Im0zIDE2IDIgMiA0LTQiLz48cGF0aCBkPSJNMTMuNSA3SDIxIi8+PHBhdGggZD0iTTEzLjUgMTJoNC41Ii8+PHBhdGggZD0iTTEzLjUgMTdIMjEiLz48L3N2Zz4=");
 }
 
-.at-progress {
+/* 时钟图标（时间线） */
+.tk-mode__icon--time {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjkuMyIvPjxwYXRoIGQ9Ik0xMiA3djVsMy41IDIuNSIvPjwvc3ZnPg==");
+}
+
+/* ---------- 二级筛选：轻量胶囊 + 颜色语义 ---------- */
+.tk-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-bottom: 24rpx;
+}
+
+.tk-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 56rpx;
+  padding: 0 22rpx;
+  border-radius: var(--radius-pill);
+  background: var(--white);
+  color: var(--text-sub);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  border: 2rpx solid var(--line-soft);
+  transition: all 0.15s;
+}
+
+.tk-pill--hover {
+  background: var(--bg);
+}
+
+.tk-pill--active {
+  background: var(--grad-primary-deep);
+  color: var(--white);
+  border-color: transparent;
+  box-shadow: var(--shadow-primary-sm);
+}
+
+.tk-pill--dim {
+  opacity: 0.55;
+}
+
+.tk-pill__dot {
+  width: 12rpx;
   height: 12rpx;
-  background: #eef2f7;
-  border-radius: 999rpx;
-  overflow: hidden;
-  margin: 16rpx 0;
+  border-radius: 50%;
+  margin-right: 8rpx;
+  flex-shrink: 0;
 }
 
-.at-progress__fill {
-  height: 100%;
-  background: linear-gradient(90deg, #0057b8, #0f766e);
-  border-radius: 999rpx;
+.tk-pill__dot--orange {
+  background: var(--orange);
+  box-shadow: 0 0 0 4rpx rgba(255, 143, 62, 0.18);
 }
 
-.at-toggle {
+.tk-pill__dot--green {
+  background: var(--success-bright);
+  box-shadow: 0 0 0 4rpx rgba(21, 185, 130, 0.18);
+}
+
+/* ---------- 加载 / 错误 / 空状态 ---------- */
+.tk-error,
+.tk-empty {
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  padding: 56rpx 32rpx;
   text-align: center;
-  font-size: 24rpx;
-  color: #0057b8;
-  padding: 12rpx 0 0;
-  border-top: 2rpx solid #f1f5f9;
+  margin-bottom: 24rpx;
+  box-shadow: var(--shadow-sm);
 }
 
-.at-detail {
-  padding-top: 8rpx;
+.tk-error__text {
+  font-size: var(--fs-lg);
+  color: var(--danger);
+  background: var(--danger-light);
+  border-radius: var(--radius-sm);
+  padding: 16rpx 24rpx;
+  display: inline-block;
 }
+
+.tk-empty__icon {
+  font-size: 80rpx;
+  line-height: 1;
+  margin-bottom: 18rpx;
+  opacity: 0.4;
+}
+
+.tk-empty__text {
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+}
+
+/* ---------- 任务卡片：左侧色条 + 高密度布局 ---------- */
+.tk-card {
+  position: relative;
+  display: flex;
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  margin-bottom: 20rpx;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.tk-card--hover {
+  transform: scale(0.985);
+  transition: transform 0.12s;
+}
+
+.tk-card__stripe {
+  width: 8rpx;
+  flex-shrink: 0;
+}
+
+.tk-card__stripe--emotion {
+  background: linear-gradient(180deg, #ff9aab 0%, #ff6b81 100%);
+}
+
+.tk-card__stripe--observation {
+  background: linear-gradient(180deg, #6fb8ee 0%, #0066dc 100%);
+}
+
+.tk-card__stripe--sport {
+  background: linear-gradient(180deg, #6cdda9 0%, #15b982 100%);
+}
+
+.tk-card__stripe--default {
+  background: linear-gradient(180deg, #b8a3ff 0%, #8a63f2 100%);
+}
+
+.tk-card__body {
+  flex: 1;
+  min-width: 0;
+  padding: 22rpx 24rpx 22rpx 18rpx;
+}
+
+/* 第一行：标题 + 微型环形进度 */
+.tk-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14rpx;
+}
+
+.tk-card__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  line-height: 1.4;
+  margin-right: 16rpx;
+}
+
+/* 环形进度：conic-gradient 圆环 + 内层白底遮罩 + 中心文字 */
+.tk-donut {
+  position: relative;
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: var(--fill-gray);
+  overflow: hidden;
+}
+
+.tk-donut__fg {
+  position: absolute;
+  inset: 0;
+  background: var(--white);
+  border-radius: 50%;
+}
+
+.tk-donut__inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54rpx;
+  height: 54rpx;
+  margin-left: -27rpx;
+  margin-top: -27rpx;
+  border-radius: 50%;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+}
+
+.tk-donut--active .tk-donut__inner {
+  color: var(--primary);
+}
+
+/* 第二行：归属信息 */
+.tk-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-bottom: 14rpx;
+}
+
+.tk-card__scope {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-pill);
+  background: var(--purple-light);
+  color: var(--purple);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.tk-card__meta-text {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* 第三行：多维属性 */
+.tk-card__attrs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx 14rpx;
+  margin-bottom: 18rpx;
+}
+
+.tk-card__cat {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.tk-card__cat--emotion {
+  background: #fff1ed;
+  color: #d4543b;
+}
+
+.tk-card__cat--observation {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.tk-card__cat--sport {
+  background: var(--teal-light);
+  color: var(--success);
+}
+
+.tk-card__cat--default {
+  background: var(--purple-light);
+  color: var(--purple);
+}
+
+.tk-card__cat-glyph {
+  margin-right: 4rpx;
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+
+.tk-card__cat--emotion .tk-card__cat-glyph {
+  color: #ff6b81;
+}
+
+.tk-card__cat--observation .tk-card__cat-glyph {
+  color: var(--primary);
+}
+
+.tk-card__cat--sport .tk-card__cat-glyph {
+  color: var(--success-bright);
+}
+
+.tk-card__cat--default .tk-card__cat-glyph {
+  color: var(--purple-bright);
+}
+
+.tk-card__attr {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.tk-card__attr-glyph {
+  margin-right: 4rpx;
+  font-size: var(--fs-xs);
+}
+
+/* 第四行：进度条 + 查看明细 同行 */
+.tk-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.tk-progress {
+  flex: 1;
+  height: 8rpx;
+  background: var(--fill-gray);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.tk-progress__fill {
+  height: 100%;
+  background: #c7d3e2;
+  border-radius: var(--radius-pill);
+  transition: width 0.25s ease;
+}
+
+.tk-progress__fill--active {
+  background: var(--grad-progress);
+}
+
+.tk-card__more {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-base);
+  color: var(--primary);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+}
+
+.tk-card__arrow {
+  margin-left: 2rpx;
+  font-size: var(--fs-xl);
+  line-height: 1;
+  color: var(--primary);
+}
+
+/* 注：卡片展开明细（tk-card__detail / tk-detail-*）已迁移到任务详情页，
+   整卡点击改为跳转，这里不再保留对应样式。 */

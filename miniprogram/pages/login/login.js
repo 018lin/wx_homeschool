@@ -1,12 +1,18 @@
 var app = getApp();
 var request = require("../../utils/api.js");
 var api = request.api;
+var agreement = require("../../utils/agreement-content.js");
 
 Page({
   data: {
     account: "",
     password: "",
     showPwd: false,
+    agreed: false,
+    agreementVisible: false,
+    agreementDoc: "user-agreement",
+    accountFocus: false,
+    pwdFocus: false,
     loading: false,
     error: ""
   },
@@ -30,6 +36,38 @@ Page({
     this.setData({ showPwd: !this.data.showPwd });
   },
 
+  onToggleAgree: function () {
+    this.setData({ agreed: !this.data.agreed });
+  },
+
+  /** 点击协议名称 → 打开对应弹窗查看全文 */
+  onOpenAgreement: function (e) {
+    var doc = (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.doc) || "user-agreement";
+    this.setData({ agreementDoc: doc, agreementVisible: true, error: "" });
+  },
+
+  /** 弹窗内点「同意并继续」→ 视为已同意并关闭弹窗 */
+  onAgreementConfirm: function () {
+    this.setData({ agreementVisible: false, agreed: true, error: "" });
+  },
+
+  /** 点「关闭」或遮罩 → 只关弹窗，不改同意态 */
+  onCloseAgreement: function () {
+    this.setData({ agreementVisible: false });
+  },
+
+  onFieldFocus: function () {
+    this.setData({ accountFocus: true });
+  },
+
+  onPwdFocus: function () {
+    this.setData({ pwdFocus: true });
+  },
+
+  onFieldBlur: function () {
+    this.setData({ accountFocus: false, pwdFocus: false });
+  },
+
   onSubmit: function () {
     var self = this;
     var account = (this.data.account || "").trim();
@@ -39,6 +77,10 @@ Page({
     if (account.length < 3) return this.setData({ error: "账号至少 3 个字符" });
     if (!password) return this.setData({ error: "请输入密码" });
     if (password.length < 6) return this.setData({ error: "密码至少 6 位" });
+    if (!this.data.agreed) {
+      this.setData({ error: "请先阅读并勾选同意《用户协议》与《隐私政策》" });
+      return;
+    }
 
     this.setData({ loading: true, error: "" });
 
@@ -59,6 +101,14 @@ Page({
           self.setData({ error: "登录成功，但账号角色「" + role + "」没有对应工作台" });
           return;
         }
+
+        // 记录本次同意的协议版本与时间，便于协议升版后区分新旧用户
+        try {
+          wx.setStorageSync("agreementAccepted", {
+            version: agreement.VERSION,
+            at: Date.now()
+          });
+        } catch (e) {}
 
         app.setSession(data.token, data.user);
         wx.showToast({ title: "登录成功", icon: "success" });

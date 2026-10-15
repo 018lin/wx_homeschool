@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="我的" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="mine-head">
     <view class="mine-head__avatar-box">
       <view class="mine-head__avatar-wrap" bindtap="onTapAvatar" hover-class="mine-head__avatar-wrap--hover">
@@ -19,6 +20,20 @@
         <view class="list-item__desc">{{roleLabel}}账号，由学校统一创建</view>
       </view>
     </view>
+    <view class="list-item" bindtap="onOpenAgreement" data-doc="user-agreement" hover-class="list-item--hover">
+      <view class="list-item__main">
+        <view class="list-item__title">用户协议</view>
+        <view class="list-item__desc">服务条款与使用规范</view>
+      </view>
+      <view class="list-item__arrow">›</view>
+    </view>
+    <view class="list-item" bindtap="onOpenAgreement" data-doc="privacy-policy" hover-class="list-item--hover">
+      <view class="list-item__main">
+        <view class="list-item__title">隐私政策</view>
+        <view class="list-item__desc">个人信息收集、使用与您的权利</view>
+      </view>
+      <view class="list-item__arrow">›</view>
+    </view>
   </view>
 
   <button class="btn btn-danger btn-block" bindtap="onLogout">退出登录</button>
@@ -28,5 +43,12 @@
     <view class="mine-foot__sub">小程序版</view>
   </view>
 </view>
+
+<agreement-modal
+  visible="{{agreementVisible}}"
+  doc-type="{{agreementDoc}}"
+  bind:close="onCloseAgreement"
+  bind:confirm="onCloseAgreement"
+/>
 
 <nav-bar role="{{user.role}}" active="mine" />

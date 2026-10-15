@@ -1,40 +1,69 @@
 <view class="login">
+  <!-- 状态栏占位必须放在渐变容器内部：否则占位区会透出 page 的浅色底，
+       在页面顶部形成一条与主题色割裂的浅色色块 -->
+  <app-header title="" sub="" mode="none" variant="ghost" />
+
+  <!-- 背景装饰：飞鸟 / 书本 / 树叶 / 爱心 -->
+  <view class="deco deco-blob deco-blob--green"></view>
+  <view class="deco deco-blob deco-blob--blue"></view>
+  <view class="deco deco-leaf deco-leaf--tl"></view>
+  <view class="deco deco-leaf deco-leaf--r"></view>
+  <view class="deco deco-heart deco-heart--l"></view>
+  <view class="deco deco-heart deco-heart--r"></view>
+  <view class="deco deco-book"></view>
+  <view class="deco deco-bird deco-bird--1"></view>
+  <view class="deco deco-bird deco-bird--2"></view>
+  <view class="deco deco-bird deco-bird--3"></view>
+
+  <!-- 品牌区 -->
   <view class="login__hero">
-    <image class="login__logo" src="/assets/site-logo.png" mode="aspectFit" />
+    <view class="login__logo-box">
+      <image class="login__logo" src="/assets/site-logo.png" mode="aspectFit" />
+    </view>
     <view class="login__brand">凌田家校</view>
     <view class="login__slogan">家校共育 · 让成长被看见</view>
   </view>
 
+  <!-- 登录卡片 -->
   <view class="login__card">
     <view class="login__title">账号登录</view>
+    <view class="login__title-accent"><view class="login__title-accent-dot"></view></view>
 
     <view class="field">
       <view class="field__label">账号</view>
-      <input
-        class="field__input"
-        type="text"
-        placeholder="请输入账号"
-        placeholder-class="login__placeholder"
-        maxlength="30"
-        value="{{account}}"
-        bindinput="onAccountInput"
-      />
+      <view class="input-pill {{accountFocus ? 'input-pill--active' : ''}}">
+        <view class="input-pill__icon input-pill__icon--user"></view>
+        <input
+          class="input-pill__input"
+          type="text"
+          placeholder="请输入账号"
+          placeholder-class="login__placeholder"
+          maxlength="30"
+          value="{{account}}"
+          bindfocus="onFieldFocus"
+          bindblur="onFieldBlur"
+          bindinput="onAccountInput"
+        />
+      </view>
     </view>
 
     <view class="field">
       <view class="field__label">密码</view>
-      <view class="login__pwd">
+      <view class="input-pill {{pwdFocus ? 'input-pill--active' : ''}}">
+        <view class="input-pill__icon input-pill__icon--lock"></view>
         <input
-          class="field__input login__pwd-input"
+          class="input-pill__input"
           password="{{!showPwd}}"
           placeholder="请输入密码"
           placeholder-class="login__placeholder"
           maxlength="64"
           value="{{password}}"
+          bindfocus="onPwdFocus"
+          bindblur="onFieldBlur"
           bindinput="onPasswordInput"
           bindconfirm="onSubmit"
         />
-        <view class="login__toggle" bindtap="onTogglePwd">
+        <view class="login__toggle" bindtap="onTogglePwd" hover-class="login__toggle--hover">
           <image class="login__eye" src="/assets/eye-off.png" mode="aspectFit" wx:if="{{!showPwd}}" />
           <image class="login__eye" src="/assets/eye.png" mode="aspectFit" wx:else />
         </view>
@@ -44,13 +73,33 @@
     <view class="login__error" wx:if="{{error}}">{{error}}</view>
 
     <button
-      class="btn btn-primary btn-block login__submit"
+      class="login__submit"
       loading="{{loading}}"
       disabled="{{loading}}"
       bindtap="onSubmit"
     >{{loading ? '登录中…' : '登 录'}}</button>
 
     <view class="login__note">家长账号由学校管理员统一创建，请联系班主任或学校管理员</view>
-    <view class="login__note login__note--dim">登录即代表同意《用户协议》与《隐私政策》</view>
+
+    <view class="login__agree">
+      <view class="login__checkbox-wrap" bindtap="onToggleAgree">
+        <view class="login__checkbox {{agreed ? 'login__checkbox--on' : ''}}">
+          <view class="login__checkbox-check" wx:if="{{agreed}}"></view>
+        </view>
+      </view>
+      <view class="login__agree-text">
+        <text bindtap="onOpenAgreement" data-doc="user-agreement" class="login__agree-link">《用户协议》</text>
+        <text>与</text>
+        <text bindtap="onOpenAgreement" data-doc="privacy-policy" class="login__agree-link">《隐私政策》</text>
+      </view>
+    </view>
   </view>
+
+  <!-- 协议弹窗：长文滚动，关闭或同意后返回，不设阅读门槛 -->
+  <agreement-modal
+    visible="{{agreementVisible}}"
+    doc-type="{{agreementDoc}}"
+    bind:close="onCloseAgreement"
+    bind:confirm="onAgreementConfirm"
+  />
 </view>

@@ -11,9 +11,15 @@ Page({
     statusText: "",
     statusColor: "",
     statusBg: "",
+    /** 老师依据家长反馈定制的专属任务 */
+    isCustomTask: false,
+    customTaskNotice: "",
     locked: false,
     submission: null,
-    feedback: null
+    feedback: null,
+    /** 老师未读回复数：驱动首页顶部信息提示模块 */
+    newReplyCount: 0,
+    worryNoticeText: "加载中…"
   },
 
   onShow: function () {
@@ -65,6 +71,8 @@ Page({
           statusText: meta.text,
           statusColor: meta.color,
           statusBg: meta.bg,
+          isCustomTask: !!res.isCustomTask,
+          customTaskNotice: res.customTaskNotice || "",
           locked: res.taskStatus === "submitted",
           submission: res.submission || null,
           feedback: res.feedback
@@ -76,11 +84,40 @@ Page({
               }
             : null
         });
-        if (done) done();
       })
       .catch(function () {
         self.setData({ loading: false });
+      })
+      .then(function () {
+        // 首页顶部提示与任务数据一起刷新完毕后再结束下拉刷新
+        return self.loadWorryNotice();
+      })
+      .then(function () {
         if (done) done();
+      });
+  },
+
+  /**
+   * 拉取老师未读回复数，驱动首页顶部信息提示模块。
+   * 这里只取计数、不标记已读：学生进入「我的小心事」真正看到回复后才会标记，
+   * 从而保证提示只在首页顶部出现、且看过之后才消失。
+   */
+  loadWorryNotice: function () {
+    var self = this;
+    this.setData({ worryNoticeText: "加载中…" });
+    return api
+      .getStudentWorries(1)
+      .then(function (res) {
+        var count = Number((res && res.newReplyCount) || 0);
+        self.setData({
+          newReplyCount: count,
+          worryNoticeText: count
+            ? "老师回复了你的 " + count + " 条小心事，点击查看"
+            : "暂无新的回复，有心事可以写给老师"
+        });
+      })
+      .catch(function () {
+        self.setData({ newReplyCount: 0, worryNoticeText: "点这里写下你的小心事" });
       });
   },
 

@@ -4,15 +4,18 @@
   right: 0;
   bottom: 0;
   display: flex;
-  background: #ffffff;
-  border-top: 2rpx solid #e1e8f0;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20rpx);
+  border-top: 2rpx solid rgba(225, 232, 240, 0.9);
   padding-bottom: env(safe-area-inset-bottom);
-  z-index: 200;
-  box-shadow: 0 -2rpx 12rpx rgba(15, 40, 80, 0.05);
+  z-index: var(--z-nav);
+  box-shadow: var(--shadow-up);
 }
 
 .nav-bar__item {
   flex: 1;
+  min-width: 0;
   height: 100rpx;
   display: flex;
   flex-direction: column;
@@ -22,14 +25,15 @@
 }
 
 .nav-bar__label {
-  font-size: 24rpx;
-  color: #8795a7;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .nav-bar__item.active .nav-bar__label {
-  color: #0057b8;
-  font-weight: 600;
+  color: var(--primary);
+  font-weight: var(--fw-semibold);
 }
 
 .nav-bar__item.active::before {
@@ -38,9 +42,101 @@
   top: 0;
   width: 60rpx;
   height: 6rpx;
-  background: #0057b8;
+  background: var(--primary);
   border-radius: 0 0 6rpx 6rpx;
 }
 
-.nav-bar--compact .nav-bar__label { font-size: 17rpx; }
-.nav-bar--compact .nav-bar__item { min-width: 0; }
+/* ---------- 图标式导航（管理员端 5 栏） ---------- */
+.nav-bar__item--icon {
+  height: 116rpx;
+  justify-content: center;
+  padding-top: 6rpx;
+}
+
+.nav-bar__item--icon.active::before {
+  top: auto;
+  bottom: 10rpx;
+  width: 10rpx;
+  height: 10rpx;
+  background: var(--primary);
+  border-radius: 50%;
+}
+
+.nav-bar__item--hover {
+  opacity: 0.7;
+}
+
+.nav-bar__label {
+  margin-top: 6rpx;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+.nav-bar__item--icon.active .nav-bar__label {
+  color: var(--primary);
+  font-weight: var(--fw-semibold);
+}
+
+.nav-bar__icon {
+  flex-shrink: 0;
+  width: 44rpx;
+  height: 44rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 44rpx 44rpx;
+}
+
+/* 概览 */
+.nav-bar__icon--grid {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjEzLjUiIHk9IjMiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjEzLjUiIHk9IjEzLjUiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjMiIHk9IjEzLjUiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjwvc3ZnPg==");
+}
+.nav-bar__item.active .nav-bar__icon--grid {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDY2REMiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjEzLjUiIHk9IjMiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjEzLjUiIHk9IjEzLjUiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjxyZWN0IHg9IjMiIHk9IjEzLjUiIHdpZHRoPSI3LjUiIGhlaWdodD0iNy41IiByeD0iMiIvPjwvc3ZnPg==");
+}
+
+/* 任务 */
+.nav-bar__icon--list {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0zIDcgMiAyIDQtNCIvPjxwYXRoIGQ9Im0zIDE2IDIgMiA0LTQiLz48cGF0aCBkPSJNMTMuNSA3SDIxIi8+PHBhdGggZD0iTTEzLjUgMTJoNC41Ii8+PHBhdGggZD0iTTEzLjUgMTdIMjEiLz48L3N2Zz4=");
+}
+.nav-bar__item.active .nav-bar__icon--list {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDY2REMiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0zIDcgMiAyIDQtNCIvPjxwYXRoIGQ9Im0zIDE2IDIgMiA0LTQiLz48cGF0aCBkPSJNMTMuNSA3SDIxIi8+PHBhdGggZD0iTTEzLjUgMTJoNC41Ii8+PHBhdGggZD0iTTEzLjUgMTdIMjEiLz48L3N2Zz4=");
+}
+
+/* 家校交流 */
+.nav-bar__icon--talk {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMC41IDExLjZjMCAzLjktMy44IDctOC41IDctLjkgMC0xLjgtLjEtMi42LS40bC00LjUgMS43YS41LjUgMCAwIDEtLjctLjZsMS4yLTQuMUE2LjcgNi43IDAgMCAxIDMuNSAxMS42YzAtMy45IDMuOC03IDguNS03czguNSAzLjEgOC41IDdaIi8+PHBhdGggZD0iTTguOCAxMC42aDYuNCIvPjxwYXRoIGQ9Ik04LjggMTMuNmg0Ii8+PC9zdmc+");
+}
+.nav-bar__item.active .nav-bar__icon--talk {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDY2REMiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMC41IDExLjZjMCAzLjktMy44IDctOC41IDctLjkgMC0xLjgtLjEtMi42LS40bC00LjUgMS43YS41LjUgMCAwIDEtLjctLjZsMS4yLTQuMUE2LjcgNi43IDAgMCAxIDMuNSAxMS42YzAtMy45IDMuOC03IDguNS03czguNSAzLjEgOC41IDdaIi8+PHBhdGggZD0iTTguOCAxMC42aDYuNCIvPjxwYXRoIGQ9Ik04LjggMTMuNmg0Ii8+PC9zdmc+");
+}
+
+/* 我的 */
+.nav-bar__icon--user {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5QUE2QjgiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxjaXJjbGUgY3g9IjEyIiBjeT0iOCIgcj0iMy42Ii8+PHBhdGggZD0iTTQuOCAyMC40YTcuMiA3LjIgMCAwIDEgMTQuNCAwIi8+PC9zdmc+");
+}
+.nav-bar__item.active .nav-bar__icon--user {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDY2REMiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxjaXJjbGUgY3g9IjEyIiBjeT0iOCIgcj0iMy42Ii8+PHBhdGggZD0iTTQuOCAyMC40YTcuMiA3LjIgMCAwIDEgMTQuNCAwIi8+PC9zdmc+");
+}
+
+/* AI 洞察：居中微凸起的蓝紫星光图标 */
+.nav-bar__item--center {
+  margin-top: -26rpx;
+}
+
+.nav-bar__icon--ai {
+  width: 84rpx;
+  height: 84rpx;
+  background-size: 40rpx 40rpx, 100% 100%;
+  background-position: center, center;
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMC40IDMuMiAxMiA4LjFsNC45IDEuNkwxMiAxMS4zbC0xLjYgNC45LTEuNi00LjlMNCA5LjdsNC44LTEuNloiLz48cGF0aCBkPSJNMTcuNiAxNC40IDE4LjQgMTYuNmwyLjIuOC0yLjIuOC0uOCAyLjItLjgtMi4yLTIuMi0uOCAyLjItLjhaIi8+PC9zdmc+"),
+    var(--grad-ai);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-ai);
+}
+
+.nav-bar__label--center {
+  margin-top: 4rpx;
+  color: var(--purple) !important;
+  font-weight: var(--fw-semibold);
+}

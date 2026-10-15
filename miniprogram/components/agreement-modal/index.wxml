@@ -1,0 +1,90 @@
+<!-- 协议弹窗：全屏遮罩 + 居中卡片，底部固定操作栏 -->
+<view wx:if="{{visible}}" class="ag" style="padding-top: {{statusBarHeight}}px;">
+  <view class="ag__mask" bindtap="onTapMask"></view>
+
+  <view class="ag__panel" catchtap="onTapBody">
+    <!-- 顶部：文档标题 + 版本/生效日期 -->
+    <view class="ag__head">
+      <view class="ag__title">{{title}}</view>
+      <view class="ag__meta">
+        <text class="ag__meta-item">版本 {{version}}</text>
+        <text class="ag__meta-dot"></text>
+        <text class="ag__meta-item">生效 {{effectiveDate}}</text>
+        <text class="ag__meta-dot"></text>
+        <text class="ag__meta-item">更新 {{updatedDate}}</text>
+      </view>
+    </view>
+
+    <!-- 正文：scroll-view 纵向滚动，长文阅读 -->
+    <scroll-view
+      class="ag__scroll"
+      scroll-y="{{true}}"
+      scroll-top="{{scrollTop}}"
+      enhanced="{{true}}"
+      show-scrollbar="{{false}}"
+      enable-flex="{{true}}"
+    >
+      <view class="ag__content">
+        <view class="ag__sub">{{subtitle}}</view>
+        <view class="ag__intro">{{intro}}</view>
+
+        <view class="ag__section" wx:for="{{sections}}" wx:key="id">
+          <view class="ag__h2">
+            <view class="ag__h2-bar"></view>
+            <text>{{item.title}}</text>
+          </view>
+
+          <block wx:for="{{item.blocks}}" wx:for-item="b">
+            <!-- 普通段落 -->
+            <view wx:if="{{b.type === 'p'}}" class="ag__p">{{b.text}}</view>
+
+            <!-- 三级小标题 -->
+            <view wx:elif="{{b.type === 'h3'}}" class="ag__h3">{{b.text}}</view>
+
+            <!-- 无序列表 -->
+            <view wx:elif="{{b.type === 'li'}}" class="ag__ul">
+              <view class="ag__li" wx:for="{{b.items}}" wx:for-item="t" wx:key="*this">
+                <view class="ag__li-dot"></view>
+                <view class="ag__li-text">{{t}}</view>
+              </view>
+            </view>
+
+            <!-- 提示块 -->
+            <view wx:elif="{{b.type === 'note'}}" class="ag__note ag__note--{{b.tone || 'info'}}">
+              <view class="ag__note-icon">{{b.tone === 'warn' ? '!' : 'i'}}</view>
+              <view class="ag__note-text">{{b.text}}</view>
+            </view>
+
+            <!-- 键值信息表 -->
+            <view wx:elif="{{b.type === 'kv'}}" class="ag__kv">
+              <view class="ag__kv-row" wx:for="{{b.items}}" wx:for-item="row">
+                <view class="ag__kv-k">{{row[0]}}</view>
+                <view class="ag__kv-v">{{row[1]}}</view>
+              </view>
+            </view>
+
+            <!-- 数据表 -->
+            <view wx:elif="{{b.type === 'table'}}" class="ag__table">
+              <view class="ag__tr ag__tr--head">
+                <view class="ag__td" wx:for="{{b.head}}" wx:for-item="h" wx:key="*this">{{h}}</view>
+              </view>
+              <view class="ag__tr" wx:for="{{b.rows}}" wx:for-item="row">
+                <view class="ag__td" wx:for="{{row}}" wx:for-item="c" wx:key="*this">{{c}}</view>
+              </view>
+            </view>
+          </block>
+        </view>
+
+        <view class="ag__footer">{{footer}}</view>
+      </view>
+    </scroll-view>
+
+    <!-- 底部操作栏：随时可点，不设阅读门槛 -->
+    <view class="ag__foot">
+      <view class="ag__foot-actions">
+        <view class="ag__btn ag__btn--ghost" bindtap="onClose" hover-class="ag__btn--hover">关闭</view>
+        <view class="ag__btn ag__btn--primary" bindtap="onConfirm" hover-class="ag__btn--hover">同意并继续</view>
+      </view>
+    </view>
+  </view>
+</view>

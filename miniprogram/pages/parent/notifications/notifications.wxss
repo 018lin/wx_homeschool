@@ -1,8 +1,8 @@
 .noti-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
@@ -13,12 +13,12 @@
 }
 
 .noti-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .noti-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.85;
   margin-top: 6rpx;
 }
@@ -26,8 +26,8 @@
 .noti-head__btn {
   padding: 12rpx 28rpx;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 999rpx;
-  font-size: 24rpx;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-base);
 }
 
 .noti-item {
@@ -35,7 +35,7 @@
 }
 
 .noti-item.unread {
-  border-left: 6rpx solid #0057b8;
+  border-left: 6rpx solid var(--primary);
 }
 
 .noti-item__head {
@@ -45,8 +45,8 @@
 }
 
 .noti-item__time {
-  font-size: 22rpx;
-  color: #8795a7;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
   margin-left: 16rpx;
 }
 
@@ -54,30 +54,30 @@
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
-  background: #b42318;
+  background: var(--danger);
   margin-left: auto;
 }
 
 .noti-item__title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
   line-height: 1.5;
 }
 
 .noti-item__content {
-  font-size: 27rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.7;
   margin-top: 10rpx;
   white-space: pre-wrap;
 }
 
 .noti-item__sender {
-  font-size: 22rpx;
-  color: #8795a7;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
   margin-top: 14rpx;
   text-align: right;
 }
-.noti-item__hide { margin-top: 14rpx; color: #8795a7; font-size: 21rpx; text-align: right; }
-.subscribe-btn { margin: 0 0 0 16rpx; min-width: 120rpx; height: 64rpx; line-height: 64rpx; border: 0; border-radius: 999rpx; color: #fff; background: #0057b8; font-size: 24rpx; }
+.noti-item__hide { margin-top: 14rpx; color: var(--text-muted); font-size: var(--fs-sm); text-align: right; }
+.subscribe-btn { margin: 0 0 0 16rpx; min-width: 120rpx; height: 64rpx; line-height: 64rpx; border: 0; border-radius: var(--radius-pill); color: var(--white); background: var(--primary); font-size: var(--fs-base); }

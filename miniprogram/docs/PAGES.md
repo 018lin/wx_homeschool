@@ -123,7 +123,7 @@
 | 3 | `home.html` | 家长 | 本周任务 + 提交主页面 | `/api/home`、`/api/submissions`、`/api/children`、通知 3 个 | ✅ 核心 |
 | 4 | `timeline.html` | 家长 | 孩子成长时间线 | `/api/timeline`、`/api/home` | ✅ 核心 |
 | 5 | `feedback.html` | 家长 | 教师反馈列表 | `/api/timeline`、`/api/home` | ✅ 核心 |
-| 6 | `parent-concern.html` | 家长 | 提交"成长关注"→ 老师审核生成定制任务 | `/api/parent/task-requests`(GET/POST)、`/api/home` | ✅ 核心 |
+| 6 | `parent-concern.html` | 家长 | 提交"成长关注"反馈（描述孩子不足）→ AI 总结并生成任务草案 → 老师确认后生成定制任务 | `/api/parent/task-requests`(GET/POST)、`/api/home` | ✅ 核心 |
 | 7 | `parent-engagement.html` | 家长 | 家长关注度分析 + 反馈校准 | engagement 3 个 | ⚠️ 孤儿但有真实数据 |
 | 8 | `task-detail.html` | 家长 | 任务详情+提交（与 home 重复） | `/api/home`、`/api/submissions` | ❌ 废弃孤儿 |
 | 9 | `student.html` | 学生 | 学生端任务提交 | `/api/student/home`、`/api/submissions` | ✅ 核心 |
@@ -131,7 +131,7 @@
 | 11 | `teacher.html` | 教师 | 今日校园观察（语音/文字录入 + AI 整理通知家长） | `/api/teacher/daily-updates`(GET/POST) | ✅ 核心 |
 | 12 | `teacher-ai.html` | 教师 | AI 洞察 + AI 助手对话（SSE 流式） | `/api/teacher/global-report?local=1 / ?ai=1`、`/api/teacher/ai-chat?stream=1`、`/api/teacher/notifications` | ✅ 核心 |
 | 13 | `teacher-class-overview.html` | 教师 | 班级概览（指标 + 分布 + 洞察 + 未交名单） | `/api/teacher/ai-overview` | ✅ 核心 |
-| 14 | `teacher-publish.html` | 教师 | 发布任务（模板）+ 审核家长定制任务请求 | `/api/teacher/tasks`、`/api/teacher/parent-task-requests`(+review) | ✅ 核心 |
+| 14 | `teacher-publish.html` | 教师 | 发布任务（模板）+ 处理家长成长关注反馈（AI 草案 → 确认生成定制任务） | `/api/teacher/tasks`、`/api/teacher/parent-task-requests`(+review) | ✅ 核心 |
 | 15 | `teacher-submissions.html` | 教师 | 学生提交批阅（含 AI 生成评价草稿） | `/api/teacher/overview`、`/api/teacher/submissions/{id}`、`ai-feedback`、`/api/teacher/feedback` | ✅ 核心 |
 | 16 | `teacher-students.html` | 教师/管理员 | 学生档案表 + 个性化任务建议 + 定向发布 | `/api/teacher/students`、`global-report?local=1`、`student-suggestions`、`/api/teacher/tasks` | ✅ 核心（共用） |
 | 17 | `admin.html` | 管理员 | 账号管理（增删改查 + 筛选 + 编辑弹窗） | `/api/admin/accounts`(GET/POST/PUT) | ✅ 核心 |
@@ -326,9 +326,9 @@
 
 ---
 
-### 4.6 `parent-concern.html` — 成长关注（家长提交关注 → 老师审核）
+### 4.6 `parent-concern.html` — 成长关注（家长反馈孩子不足 → AI 总结 → 老师确认生成定制任务）
 
-**用途**：家长描述观察到的具体场景，系统生成温和低负担的任务草案，交由教师审核后生成定制任务。这是"家长反向提需求"的链路起点。
+**用途**：家长提交的是**反馈**（描述孩子需要支持的具体表现），不是自定制任务。系统生成 AI 总结 + 温和低负担的任务草案，交由教师确认后才生成正式定制任务，并推送到家长端与学生端。
 **脚本**：`js/api.js` + 内联（约 145 行）。
 
 **UI 区块**
@@ -348,7 +348,7 @@
 | ↳ `#familyConstraints` 家庭情况/执行限制（选填，800） | |
 | ↳ `#duration` 希望任务时长（下拉：10/15(默认)/20/30 分钟） | |
 | ↳ `#submitConcern` 提交给老师 + `#formMsg` | |
-| `.history-panel` 我的提交记录 | `#requestList`；每条 `.request-item`：`concern_category || title`、`created_at`（M月D日）、`observed_behavior`、状态徽章（pending 等待老师审核 / approved 老师已采用并生成任务 / rejected 老师已回复）、`task_title`（定制任务）、`teacher_comment`（老师回复） |
+| `.history-panel` 我的反馈记录 | `#requestList`；每条 `.request-item`：`concern_category || title`、`created_at`（M月D日）、`observed_behavior`、状态徽章（pending 待老师处理 / approved 已生成定制任务 / rejected 老师已回复）、`task_title`（老师生成的定制任务）、`teacher_comment`（老师回复） |
 
 **调用 API**
 - `GET /api/home`（拿 children + 问卷劫持）
@@ -557,9 +557,9 @@
 
 ---
 
-### 4.14 `teacher-publish.html` — 发布任务 + 审核家长定制任务（35KB）
+### 4.14 `teacher-publish.html` — 发布任务 + 处理家长成长关注反馈（35KB）
 
-**用途**：教师端两大功能合页：① 从模板快速发布本周全班任务；② 审核家长在 `parent-concern.html` 提交的"成长关注"请求，同意即生成任务、拒绝需填写原因。
+**用途**：教师端两大功能合页：① 从模板快速发布本周全班任务；② 处理家长在 `parent-concern.html` 提交的"成长关注"反馈（描述孩子不足），查看 AI 总结与 AI 任务草案，确认后即生成定制任务并推送到家长端与学生端，暂不采纳需填写原因。
 **脚本**：`js/api.js` + 内联（约 325 行）。
 
 **UI 区块**

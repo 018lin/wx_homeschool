@@ -1,12 +1,8 @@
-<view class="page page-with-nav">
-  <view class="cn-head">
-    <view class="cn-head__title">成长关注</view>
-    <view class="cn-head__sub">把你观察到的情况告诉老师，一起商量怎么帮孩子</view>
-  </view>
-
+<app-header title="成长关注" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="segment">
-    <view class="segment__item {{tab === 'list' ? 'active' : ''}}" data-tab="list" bindtap="switchTab">我的提交</view>
-    <view class="segment__item {{tab === 'create' ? 'active' : ''}}" data-tab="create" bindtap="switchTab">提交新关注</view>
+    <view class="segment__item {{tab === 'list' ? 'active' : ''}}" data-tab="list" bindtap="switchTab">我的反馈</view>
+    <view class="segment__item {{tab === 'create' ? 'active' : ''}}" data-tab="create" bindtap="switchTab">反馈新情况</view>
   </view>
 
   <!-- 列表 -->
@@ -16,8 +12,8 @@
     <view class="card" wx:if="{{!loading && !items.length}}">
       <view class="empty">
         <view class="empty__icon">💬</view>
-        <view class="empty__text">还没有提交过成长关注</view>
-        <view class="empty__hint">切换到「提交新关注」，把你的观察告诉老师</view>
+        <view class="empty__text">还没有反馈过孩子的情况</view>
+        <view class="empty__hint">切换到「反馈新情况」，把你观察到的困扰告诉老师</view>
       </view>
     </view>
 
@@ -31,30 +27,24 @@
         <text class="tag">{{item.category}}</text>
       </view>
       <view class="quote">{{item.behavior}}</view>
-      <view class="quote quote-teal" wx:if="{{item.teacherComment}}">
+      <view class="quote quote-teal" wx:if="{{item.taskTitle}}">
+        <text class="bold">老师生成的定制任务：</text>{{item.taskTitle}}
+      </view>
+      <view class="quote" wx:if="{{item.teacherComment}}">
         <text class="bold">老师回复：</text>{{item.teacherComment}}
       </view>
     </view>
   </block>
 
   <!-- 提交表单 -->
-  <block wx:else>
+  <block wx:if="{{tab === 'create'}}">
     <view class="card">
-      <view class="field">
-        <view class="field__label">关注方向（选填）</view>
-        <view class="wrap">
-          <view
-            class="option {{category === item ? 'active' : ''}}"
-            wx:for="{{categories}}"
-            wx:key="*this"
-            data-value="{{item}}"
-            bindtap="pickCategory"
-          >{{item}}</view>
-        </view>
+      <view class="field__hint mb-16">
+        这里用于把你观察到的孩子不足之处反馈给老师。提交后，AI 会先整理并起草一份任务草案，再由老师确认是否生成定制任务并推送到孩子的任务列表。
       </view>
 
       <view class="field">
-        <view class="field__label">你观察到的具体情况 <text class="text-danger">*</text></view>
+        <view class="field__label">孩子需要支持的具体表现 <text class="text-danger">*</text></view>
         <textarea
           class="field__textarea"
           placeholder="比如：最近写作业时容易急躁，遇到不会的题目会直接放弃，需要提醒三四次才愿意再试一次…"
@@ -92,23 +82,10 @@
       </view>
 
       <view class="field">
-        <view class="field__label">对孩子的影响（选填）</view>
+        <view class="field__label">希望老师给予什么支持（选填）</view>
         <textarea
           class="field__textarea field__textarea--sm"
-          placeholder="这件事对你或孩子造成了什么困扰？"
-          placeholder-class="ph"
-          maxlength="800"
-          value="{{impact}}"
-          data-key="impact"
-          bindinput="onInput"
-        />
-      </view>
-
-      <view class="field">
-        <view class="field__label">你希望达成什么（选填）</view>
-        <textarea
-          class="field__textarea field__textarea--sm"
-          placeholder="希望孩子能…"
+          placeholder="如：希望孩子遇到困难时愿意说出来，我们也想学着少一些催促…"
           placeholder-class="ph"
           maxlength="800"
           value="{{parentExpectation}}"
@@ -117,36 +94,10 @@
         />
       </view>
 
-      <view class="field">
-        <view class="field__label">家里的实际限制（选填）</view>
-        <textarea
-          class="field__textarea field__textarea--sm"
-          placeholder="如：晚上只有 20 分钟能陪伴，老人主要照顾起居"
-          placeholder-class="ph"
-          maxlength="800"
-          value="{{familyConstraints}}"
-          data-key="familyConstraints"
-          bindinput="onInput"
-        />
-      </view>
-
-      <view class="field">
-        <view class="field__label">希望每次投入的时间</view>
-        <view class="wrap">
-          <view
-            class="option {{duration === item ? 'active' : ''}}"
-            wx:for="{{durations}}"
-            wx:key="*this"
-            data-value="{{item}}"
-            bindtap="pickDuration"
-          >{{item}} 分钟</view>
-        </view>
-      </view>
-
       <button class="btn btn-primary btn-block" bindtap="onSubmit" disabled="{{submitting}}">
         {{submitting ? '提交中…' : '提交给老师'}}
       </button>
-      <view class="field__hint text-center mt-16">提交后老师会收到并回复，你可以在「我的提交」里查看</view>
+      <view class="field__hint text-center mt-16">提交后老师会结合 AI 整理结果处理，你可以在「我的反馈」里查看进度</view>
     </view>
   </block>
 </view>

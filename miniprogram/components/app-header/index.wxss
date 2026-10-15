@@ -1,0 +1,130 @@
+/* =====================================================================
+ * 全局沉浸式页头（app-header）
+ * 视觉基线来自管理员工作台 pages/admin/overview 的弧形渐变头图，
+ * 全站 35 个页面统一复用本组件，替代各页重复书写的 hero 结构。
+ * ===================================================================== */
+
+/* ghost：透明占位，只撑出状态栏高度，让页面自身背景顶到屏幕最上方 */
+.ah-ghost {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+/* ---------- 头部容器 ---------- */
+.ah {
+  position: relative;
+  flex-shrink: 0;
+  padding-bottom: 56rpx;
+  background: var(--grad-hero);
+  overflow: hidden;
+}
+
+/* 弧形裁切：底部微弧，形成「头图压内容」的层次 */
+.ah--hero {
+  border-bottom-left-radius: 50% 36rpx;
+  border-bottom-right-radius: 50% 36rpx;
+}
+
+/* flat：全屏对话页用，保留渐变但不裁弧，避免与滚动区割裂 */
+.ah--flat {
+  padding-bottom: 20rpx;
+}
+
+/* ---------- 背景光晕 ---------- */
+.ah__glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(50rpx);
+  pointer-events: none;
+}
+
+.ah__glow--l {
+  width: 320rpx;
+  height: 320rpx;
+  left: -140rpx;
+  top: -80rpx;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.ah__glow--r {
+  width: 280rpx;
+  height: 280rpx;
+  right: -120rpx;
+  bottom: -60rpx;
+  background: rgba(21, 185, 130, 0.16);
+}
+
+/* ---------- 导航条：高度与右侧内边距由 JS 按胶囊位置动态注入 ---------- */
+.ah__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+}
+
+/* ---------- 毛玻璃圆形键：首页 / 返回 ---------- */
+.ah__nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.2);
+  border: 2rpx solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(20rpx);
+  box-shadow: var(--shadow-glass);
+}
+
+/* mode=none 时保留与标题的间距，但不响应点击 */
+.ah__nav--placeholder {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.ah__nav--hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.ah__nav-icon {
+  width: 36rpx;
+  height: 36rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 36rpx 36rpx;
+}
+
+/* 首页键图标（房子） */
+.ah__nav--home .ah__nav-icon {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0zLjQgMTAuNyAxMiAzLjVsOC42IDcuMiIvPjxwYXRoIGQ9Ik01LjYgOS40VjE5YTEuNiAxLjYgMCAwIDAgMS42IDEuNmg5LjZBMS42IDEuNiAwIDAgMCAxOC40IDE5VjkuNCIvPjxwYXRoIGQ9Ik05LjggMjAuNnYtNC40YTIuMiAyLjIgMCAwIDEgNC40IDB2NC40Ii8+PC9zdmc+");
+}
+
+/* 返回键图标（向左箭头） */
+.ah__nav--back .ah__nav-icon {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMS45IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xOSAxMkg1Ii8+PHBhdGggZD0iTTEyIDE5bC03LTcgNy03Ii8+PC9zdmc+");
+}
+
+/* ---------- 标题 ---------- */
+.ah__meta {
+  flex: 1;
+  min-width: 0;
+  padding-left: 20rpx;
+}
+
+.ah__title {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
+  color: var(--white);
+  letter-spacing: 1rpx;
+  text-shadow: 0 4rpx 16rpx rgba(30, 100, 160, 0.18);
+}
+
+.ah__sub {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.86);
+  margin-top: 4rpx;
+}

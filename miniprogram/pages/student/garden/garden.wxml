@@ -1,9 +1,5 @@
-<view class="page page-with-nav">
-  <view class="st-head">
-    <view class="st-head__hello">学习园地</view>
-    <view class="st-head__sub">分享学习成果的小天地</view>
-  </view>
-
+<app-header title="学习园地" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <!-- 内容预留区：后续在此渲染作品、点赞与互评 -->
   <view class="card">
     <view class="gd-intro">

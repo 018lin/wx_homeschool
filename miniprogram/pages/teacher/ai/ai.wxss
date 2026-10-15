@@ -24,7 +24,7 @@ page {
 .chat-topbar__hint {
   flex: 1;
   min-width: 0;
-  font-size: 22rpx;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-muted);
 }
@@ -37,11 +37,11 @@ page {
 
 .chat-topbar__btn {
   padding: 8rpx 20rpx;
-  border-radius: 999rpx;
-  background: #fff;
-  border: 2rpx solid #e5e9f0;
+  border-radius: var(--radius-pill);
+  background: var(--white);
+  border: 2rpx solid var(--line);
   color: var(--text-sub);
-  font-size: 23rpx;
+  font-size: var(--fs-sm);
   line-height: 1.5;
 }
 
@@ -85,10 +85,10 @@ page {
   width: 112rpx;
   height: 112rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  color: #fff;
-  font-size: 34rpx;
-  font-weight: 700;
+  background: var(--grad-primary);
+  color: var(--white);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,14 +98,14 @@ page {
 .chat-hero__title {
   margin-top: 36rpx;
   font-size: 46rpx;
-  font-weight: 600;
-  color: #111827;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
   letter-spacing: 1rpx;
 }
 
 .chat-hero__sub {
   margin-top: 18rpx;
-  font-size: 25rpx;
+  font-size: var(--fs-md);
   line-height: 1.7;
   color: var(--text-muted);
 }
@@ -120,12 +120,12 @@ page {
 
 .chat-suggest {
   padding: 24rpx 28rpx;
-  border-radius: 20rpx;
-  background: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--white);
   border: 2rpx solid #e8ecf2;
-  font-size: 27rpx;
+  font-size: var(--fs-md);
   line-height: 1.55;
-  color: #374151;
+  color: var(--text-body);
   text-align: left;
 }
 
@@ -152,10 +152,10 @@ page {
   margin-top: 4rpx;
   border-radius: 50%;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  color: #fff;
-  font-size: 22rpx;
-  font-weight: 600;
+  background: var(--grad-primary);
+  color: var(--white);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -174,10 +174,10 @@ page {
 
 .msg__bubble {
   padding: 22rpx 26rpx;
-  border-radius: 24rpx;
-  background: #fff;
-  color: #1f2937;
-  font-size: 29rpx;
+  border-radius: var(--radius-xl);
+  background: var(--white);
+  color: var(--text);
+  font-size: var(--fs-lg);
   line-height: 1.75;
   word-break: break-word;
   box-shadow: 0 2rpx 10rpx rgba(15, 40, 80, 0.05);
@@ -189,7 +189,7 @@ page {
 
 .msg.user .msg__bubble {
   background: var(--primary);
-  color: #fff;
+  color: var(--white);
   border-top-right-radius: 8rpx;
   box-shadow: 0 6rpx 18rpx rgba(0, 87, 184, 0.18);
 }
@@ -211,7 +211,7 @@ page {
   width: 12rpx;
   height: 12rpx;
   border-radius: 50%;
-  background: #b6c0cd;
+  background: var(--text-placeholder);
   animation: aiDot 1.2s infinite ease-in-out;
 }
 
@@ -231,7 +231,7 @@ page {
 }
 
 .msg__link {
-  font-size: 21rpx;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -242,7 +242,7 @@ page {
 .msg__meta {
   margin-top: 10rpx;
   padding: 0 10rpx;
-  font-size: 21rpx;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -250,7 +250,7 @@ page {
 .msg__error {
   margin-top: 10rpx;
   padding: 0 10rpx;
-  font-size: 21rpx;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   color: var(--danger);
 }
@@ -269,9 +269,9 @@ page {
   align-items: flex-end;
   gap: 16rpx;
   padding: 12rpx 12rpx 12rpx 16rpx;
-  border-radius: 32rpx;
-  background: #fff;
-  border: 2rpx solid #e5e9f0;
+  border-radius: var(--radius-2xl);
+  background: var(--white);
+  border: 2rpx solid var(--line);
   box-shadow: 0 8rpx 26rpx rgba(15, 40, 80, 0.06);
 }
 
@@ -281,7 +281,7 @@ page {
   min-height: 56rpx;
   max-height: 220rpx;
   padding: 12rpx 0;
-  font-size: 29rpx;
+  font-size: var(--fs-lg);
   line-height: 1.6;
   color: var(--text);
 }
@@ -297,7 +297,7 @@ page {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef2f7;
+  background: var(--fill-gray);
   transition: background .18s ease, transform .18s ease;
 }
 
@@ -325,8 +325,8 @@ page {
   left: 8rpx;
   width: 18rpx;
   height: 28rpx;
-  border: 3rpx solid #5b6b80;
-  border-radius: 12rpx;
+  border: 3rpx solid var(--text-sub);
+  border-radius: var(--radius-sm);
   box-sizing: border-box;
 }
 
@@ -336,7 +336,7 @@ page {
   top: 12rpx;
   width: 28rpx;
   height: 24rpx;
-  border: 3rpx solid #5b6b80;
+  border: 3rpx solid var(--text-sub);
   border-top: 0;
   border-radius: 0 0 16rpx 16rpx;
   box-sizing: border-box;
@@ -348,7 +348,7 @@ page {
   bottom: 0;
   width: 3rpx;
   height: 10rpx;
-  background: #5b6b80;
+  background: var(--text-sub);
 }
 
 .composer__mic-base::after {
@@ -359,17 +359,17 @@ page {
   width: 22rpx;
   height: 3rpx;
   border-radius: 2rpx;
-  background: #5b6b80;
+  background: var(--text-sub);
 }
 
 .composer__mic.active .composer__mic-head,
 .composer__mic.active .composer__mic-stem {
-  border-color: #fff;
+  border-color: var(--white);
 }
 
 .composer__mic.active .composer__mic-base,
 .composer__mic.active .composer__mic-base::after {
-  background: #fff;
+  background: var(--white);
 }
 
 /* 录音中的呼吸光圈 */
@@ -392,7 +392,7 @@ page {
   justify-content: center;
   gap: 14rpx;
   margin-top: 14rpx;
-  font-size: 22rpx;
+  font-size: var(--fs-sm);
   color: var(--primary);
 }
 
@@ -413,18 +413,18 @@ page {
   justify-content: center;
   gap: 12rpx;
   margin-top: 14rpx;
-  font-size: 21rpx;
+  font-size: var(--fs-sm);
   color: var(--danger);
 }
 
 .voice-error__retry {
   padding: 2rpx 14rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   border: 2rpx solid currentColor;
 }
 
 .composer__ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
 .composer__send {
@@ -437,9 +437,9 @@ page {
   align-items: center;
   justify-content: center;
   background: #d5dce5;
-  color: #fff;
-  font-size: 34rpx;
-  font-weight: 600;
+  color: var(--white);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
 }
 
 .composer__send.ready {
@@ -453,6 +453,6 @@ page {
 .composer__tip {
   margin-top: 14rpx;
   text-align: center;
-  font-size: 20rpx;
+  font-size: var(--fs-xs);
   color: #a8b3c1;
 }

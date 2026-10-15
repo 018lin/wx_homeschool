@@ -1,5 +1,11 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "登录",
-  "navigationBarBackgroundColor": "#0057b8",
-  "usingComponents": {}
+  "backgroundColor": "#7cc3ee",
+  "backgroundColorTop": "#7cc3ee",
+  "backgroundColorBottom": "#f6f3da",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "agreement-modal": "/components/agreement-modal/index"
+  }
 }

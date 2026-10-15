@@ -4,20 +4,20 @@
 }
 
 .cl-head__title {
-  font-size: 40rpx;
-  font-weight: 700;
+  font-size: var(--fs-4xl);
+  font-weight: var(--fw-bold);
   color: var(--text);
 }
 
 .cl-head__sub {
-  font-size: 26rpx;
+  font-size: var(--fs-md);
   color: var(--text-muted);
   margin-top: 8rpx;
 }
 
 .cl-name {
-  font-size: 32rpx;
-  font-weight: 600;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
   color: var(--text);
 }
 
@@ -30,10 +30,10 @@
 }
 
 .cl-card__edit {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--primary);
   background: var(--primary-light);
-  border-radius: 8rpx;
+  border-radius: var(--radius-xs);
   padding: 8rpx 20rpx;
 }
 
@@ -52,10 +52,10 @@
   display: inline-flex;
   align-items: center;
   padding: 6rpx 10rpx 6rpx 16rpx;
-  border-radius: 8rpx;
-  background: #f8fbff;
+  border-radius: var(--radius-xs);
+  background: var(--fill);
   border: 2rpx solid var(--line);
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--text-sub);
 }
 
@@ -63,23 +63,23 @@
   background: var(--primary-light);
   border-color: var(--primary);
   color: var(--primary);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .member-tag__badge {
   margin-left: 8rpx;
-  font-size: 20rpx;
+  font-size: var(--fs-xs);
   background: var(--primary);
-  color: #fff;
-  border-radius: 6rpx;
+  color: var(--white);
+  border-radius: var(--radius-xs);
   padding: 2rpx 10rpx;
 }
 
 .member-tag__del {
   margin-left: 8rpx;
   padding: 0 6rpx;
-  font-size: 28rpx;
-  font-weight: 700;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
   color: var(--danger);
   line-height: 1;
 }
@@ -121,7 +121,7 @@
 .cd-row__label {
   width: 100rpx;
   flex-shrink: 0;
-  font-size: 26rpx;
+  font-size: var(--fs-md);
   color: var(--text-muted);
 }
 
@@ -136,10 +136,10 @@
 }
 
 .option__sub {
-  font-size: 22rpx;
+  font-size: var(--fs-sm);
   opacity: 0.7;
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }

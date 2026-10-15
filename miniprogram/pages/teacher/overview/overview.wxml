@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="班级概览" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
   <view class="card" wx:if="{{!loading && error}}"><view class="empty"><view class="empty__text">{{error}}</view><button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button></view></view>
 
@@ -17,18 +18,8 @@
           <view class="stat__value">{{stats.completionRate || 0}}%</view>
           <view class="stat__label">完成率</view>
         </view>
-        <view class="stat">
-          <view class="stat__value">{{stats.feedbackRate || 0}}%</view>
-          <view class="stat__label">点评率</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value" style="color:#b42318">{{stats.pendingFeedback || 0}}</view>
-          <view class="stat__label">待点评</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value">{{stats.personalTaskCount || 0}}</view>
-          <view class="stat__label">个性化任务</view>
-        </view>
+       
+      
       </view>
     </view>
 
@@ -41,10 +32,7 @@
       </view>
     </view>
 
-    <view class="card" wx:if="{{insights.length}}">
-      <view class="card-title"><text class="card-title__text">数据洞察</text></view>
-      <view class="ov-insight" wx:for="{{insights}}" wx:key="*this">· {{item}}</view>
-    </view>
+   
 
     <view class="card" wx:if="{{personalTasks.length}}">
       <view class="card-title">
@@ -97,27 +85,7 @@
       </view>
     </view>
 
-    <view class="card" wx:if="{{engagementSummary}}">
-      <view class="card-title"><text class="card-title__text">家长关注分布</text></view>
-      <view class="stat-grid">
-        <view class="stat">
-          <view class="stat__value" style="color:#157a45">{{engagementSummary.high || 0}}</view>
-          <view class="stat__label">较高</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value" style="color:#0f766e">{{engagementSummary.medium || 0}}</view>
-          <view class="stat__label">中等</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value" style="color:#8a4b10">{{engagementSummary.low || 0}}</view>
-          <view class="stat__label">偏低</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value" style="color:#8795a7">{{engagementSummary.insufficient || 0}}</view>
-          <view class="stat__label">证据不足</view>
-        </view>
-      </view>
-    </view>
+
 
     <view class="card" wx:if="{{engagementRows.length}}">
       <view class="card-title"><text class="card-title__text">家长关注明细</text></view>

@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="成长档案" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
 
   <view class="card" wx:if="{{!loading && error}}">

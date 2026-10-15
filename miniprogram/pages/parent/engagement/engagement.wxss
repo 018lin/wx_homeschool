@@ -1,18 +1,18 @@
 .eg-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .eg-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .eg-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 6rpx;
 }
@@ -25,26 +25,26 @@
 
 .eg-score {
   font-size: 72rpx;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   line-height: 1;
   min-width: 140rpx;
   text-align: center;
 }
 
 .eg-level {
-  font-size: 30rpx;
-  font-weight: 600;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
 }
 
 .eg-evidence {
-  font-size: 26rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.8;
 }
 
 .eg-list-item {
-  font-size: 26rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.9;
   padding: 6rpx 0;
 }

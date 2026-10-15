@@ -1,26 +1,26 @@
 .st-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 36rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .st-head__hello {
-  font-size: 38rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .st-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 6rpx;
 }
 
 .task-title {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #1f2937;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--text);
   line-height: 1.5;
 }
 
@@ -33,28 +33,28 @@
 }
 
 .task-block__label {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: #0057b8;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--primary);
   margin-bottom: 10rpx;
 }
 
 .task-block__body {
-  font-size: 28rpx;
-  color: #374151;
+  font-size: var(--fs-lg);
+  color: var(--text-body);
   line-height: 1.75;
   white-space: pre-wrap;
-  background: #f8fbff;
-  border-radius: 12rpx;
+  background: var(--fill);
+  border-radius: var(--radius-sm);
   padding: 20rpx;
 }
 
 .feedback-comment {
-  font-size: 28rpx;
-  color: #1f2937;
+  font-size: var(--fs-lg);
+  color: var(--text);
   line-height: 1.7;
-  background: #e9f8f0;
-  border-radius: 12rpx;
+  background: var(--teal-light);
+  border-radius: var(--radius-sm);
   padding: 20rpx;
   white-space: pre-wrap;
 }
@@ -62,10 +62,10 @@
 .st-locked {
   margin-top: 24rpx;
   text-align: center;
-  font-size: 26rpx;
-  color: #157a45;
-  background: #e9f8f0;
-  border-radius: 12rpx;
+  font-size: var(--fs-md);
+  color: var(--success);
+  background: var(--teal-light);
+  border-radius: var(--radius-sm);
   padding: 20rpx;
 }
 
@@ -76,15 +76,15 @@
 }
 
 .gd-entry__title {
-  font-size: 32rpx;
-  font-weight: 600;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
   color: var(--text);
 }
 
 .gd-entry__arrow {
   flex-shrink: 0;
   margin-left: 16rpx;
-  font-size: 36rpx;
+  font-size: var(--fs-3xl);
   color: var(--text-muted);
 }
 
@@ -97,7 +97,7 @@
   width: 112rpx;
   height: 112rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
+  background: var(--grad-primary);
   box-shadow: 0 8rpx 24rpx rgba(0, 87, 184, .32);
   display: flex;
   align-items: center;
@@ -113,7 +113,7 @@
 .st-fab__plus {
   font-size: 60rpx;
   line-height: 1;
-  color: #fff;
+  color: var(--white);
   font-weight: 300;
   margin-top: -6rpx;
 }

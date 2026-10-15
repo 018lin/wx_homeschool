@@ -7,8 +7,7 @@ Page({
     loading: true,
     all: [],
     items: [],
-    keyword: "",
-    isAdmin: false
+    keyword: ""
   },
 
   onShow: function () {
@@ -16,7 +15,6 @@ Page({
       wx.redirectTo({ url: "/pages/login/login" });
       return;
     }
-    this.setData({ isAdmin: app.globalData.role === "admin" });
     this.loadData();
   },
 
@@ -70,10 +68,6 @@ Page({
   },
 
   goSuggestion: function (e) {
-    if (this.data.isAdmin) {
-      wx.showToast({ title: "管理员当前为只读查看", icon: "none" });
-      return;
-    }
     wx.navigateTo({ url: "/pages/teacher/suggestion/suggestion?childId=" + e.currentTarget.dataset.id });
   }
 });

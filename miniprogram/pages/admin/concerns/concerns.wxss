@@ -8,21 +8,21 @@
 }
 
 .cc-item__who {
-  font-size: 30rpx;
-  font-weight: 600;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
   color: var(--text);
 }
 
 .cc-item__grade {
-  font-weight: 400;
-  font-size: 26rpx;
+  font-weight: var(--fw-normal);
+  font-size: var(--fs-md);
   color: var(--text-muted);
 }
 
 .cc-item__title {
   margin-top: 10rpx;
-  font-size: 28rpx;
-  font-weight: 600;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
   color: var(--primary);
 }
 
@@ -43,18 +43,18 @@
 
 .cc-item__label {
   margin-top: 18rpx;
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .cc-item__body {
   margin-top: 8rpx;
-  font-size: 28rpx;
-  color: #374151;
+  font-size: var(--fs-lg);
+  color: var(--text-body);
   line-height: 1.7;
-  background: #f8fbff;
-  border-radius: 12rpx;
+  background: var(--fill);
+  border-radius: var(--radius-sm);
   padding: 18rpx 20rpx;
   white-space: pre-wrap;
   word-break: break-all;
@@ -62,7 +62,7 @@
 
 .cc-item__extra {
   margin-top: 10rpx;
-  font-size: 25rpx;
+  font-size: var(--fs-md);
   color: var(--text-sub);
   line-height: 1.6;
 }
@@ -81,14 +81,14 @@
 }
 
 .cc-item__reply-head {
-  font-size: 24rpx;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
   color: var(--teal);
 }
 
 .cc-item__reply-text {
   margin-top: 8rpx;
-  font-size: 27rpx;
+  font-size: var(--fs-md);
   color: var(--text);
   line-height: 1.7;
   white-space: pre-wrap;
@@ -97,7 +97,7 @@
 
 .cc-item__foot {
   margin-top: 16rpx;
-  font-size: 23rpx;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   text-align: right;
 }

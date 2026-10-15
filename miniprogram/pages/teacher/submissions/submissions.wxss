@@ -1,26 +1,26 @@
 .sm-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .sm-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .sm-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.85;
   margin-top: 6rpx;
 }
 
 .sm-item__name {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .ml {
@@ -28,14 +28,14 @@
 }
 
 .sm-item__title {
-  font-size: 27rpx;
-  color: #0057b8;
+  font-size: var(--fs-md);
+  color: var(--primary);
   margin-top: 8rpx;
 }
 
 .sm-item__content {
-  font-size: 26rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.7;
   margin-top: 10rpx;
   white-space: pre-wrap;
@@ -44,7 +44,7 @@
 .sm-item__foot {
   display: flex;
   justify-content: space-between;
-  font-size: 22rpx;
-  color: #8795a7;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
   margin-top: 16rpx;
 }

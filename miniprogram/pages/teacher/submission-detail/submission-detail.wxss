@@ -1,7 +1,7 @@
 .sd-name {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .ml {
@@ -9,9 +9,9 @@
 }
 
 .sd-task-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #0057b8;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--primary);
   line-height: 1.5;
 }
 
@@ -20,11 +20,11 @@
 }
 
 .sd-content {
-  font-size: 28rpx;
-  color: #374151;
+  font-size: var(--fs-lg);
+  color: var(--text-body);
   line-height: 1.8;
-  background: #f8fbff;
-  border-radius: 12rpx;
+  background: var(--fill);
+  border-radius: var(--radius-sm);
   padding: 24rpx;
   white-space: pre-wrap;
 }
@@ -38,13 +38,13 @@
 .sd-imgs__pic {
   width: 200rpx;
   height: 200rpx;
-  border-radius: 12rpx;
+  border-radius: var(--radius-sm);
   margin: 0 16rpx 16rpx 0;
 }
 
 .sd-fb {
-  background: #e9f8f0;
-  border-radius: 12rpx;
+  background: var(--teal-light);
+  border-radius: var(--radius-sm);
   padding: 20rpx;
   margin-bottom: 16rpx;
 }
@@ -54,21 +54,21 @@
 }
 
 .sd-fb__teacher {
-  font-size: 24rpx;
-  color: #0f766e;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  color: var(--teal);
+  font-weight: var(--fw-semibold);
 }
 
 .sd-fb__text {
-  font-size: 27rpx;
-  color: #1f2937;
+  font-size: var(--fs-md);
+  color: var(--text);
   line-height: 1.7;
   white-space: pre-wrap;
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 .sd-media { margin-top: 16rpx; }
-.sd-audio { margin-bottom: 12rpx; padding: 18rpx; border-radius: 12rpx; color: #0057b8; background: #edf5ff; font-size: 24rpx; }
-.sd-video { width: 100%; height: 340rpx; margin-bottom: 12rpx; border-radius: 12rpx; background: #111827; }
+.sd-audio { margin-bottom: 12rpx; padding: 18rpx; border-radius: var(--radius-sm); color: var(--primary); background: var(--primary-lighter); font-size: var(--fs-base); }
+.sd-video { width: 100%; height: 340rpx; margin-bottom: 12rpx; border-radius: var(--radius-sm); background: var(--text); }

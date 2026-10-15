@@ -1,23 +1,23 @@
 .q-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 36rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .q-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .q-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 8rpx;
   line-height: 1.6;
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }

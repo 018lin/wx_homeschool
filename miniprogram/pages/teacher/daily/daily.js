@@ -4,10 +4,27 @@ var api = request.api;
 var util = require("../../../utils/util.js");
 var voiceInput = require("../../../utils/voice-input.js");
 
+/* 已发送详情里的单个家长通知状态。
+ * 后端当前只回传「这条记录通知了谁」，没有回执字段；
+ * 这里做向前兼容：一旦家长端产生了已读回执（read_at），详情里直接显示已读时间，
+ * 没有回执时统一按「已通知」呈现，避免教师误以为漏发。 */
+function mapRecipientStatus(person) {
+  var readAt = person.read_at || person.readAt || "";
+  if (readAt) {
+    return { statusText: "已读 · " + (util.fromNow(readAt) || "已读"), statusTone: "read" };
+  }
+  if (person.delivered === false || person.delivered === 0) {
+    return { statusText: "未送达", statusTone: "warn" };
+  }
+  return { statusText: "已通知", statusTone: "sent" };
+}
+
 /* 把接口返回的草稿/已发送记录映射成清单项 */
 function mapUpdate(item) {
   var status = item.status === "draft" ? "draft" : "sent";
+  var readCount = 0;
   var recipients = (item.recipients || []).map(function (person) {
+    if (person.read_at || person.readAt) readCount += 1;
     return {
       userId: Number(person.userId),
       name: person.name || "家长",
@@ -16,12 +33,29 @@ function mapUpdate(item) {
       childNameText: person.childNameText || ""
     };
   });
+  /* 已发送详情的家长清单：姓名 + 关系 + 孩子 + 通知状态，方便教师一眼核对通知范围与结果 */
+  var recipientDetail = recipients.map(function (person) {
+    var state = mapRecipientStatus(person);
+    return {
+      userId: person.userId,
+      name: person.name,
+      relation: person.relation,
+      childNameText: person.childNameText,
+      initial: String(person.name || "家").slice(0, 1),
+      statusText: state.statusText,
+      statusTone: state.statusTone
+    };
+  });
+  var sentAt = item.sent_at || item.confirmed_at || "";
+  var tagList = (item.tags || "").split(",").filter(Boolean);
   return {
     id: Number(item.id),
     studentName: item.student_name || "全班",
     summary: item.summary || "",
     parentMessage: item.parent_message || item.summary || "",
-    tags: (item.tags || "").split(",").filter(Boolean),
+    tags: tagList,
+    /* WXML 里不能调数组方法，标签先拼好再展示 */
+    tagText: tagList.join("、"),
     recordDate: item.record_date || util.dateKey(new Date()),
     isDraft: status === "draft",
     isAutoSent: item.status === "auto_sent",
@@ -29,14 +63,21 @@ function mapUpdate(item) {
       ? "待校对"
       : (item.status === "auto_sent" ? "已自动发送 " + (item.sent_at || "").slice(11, 16) : "已确认发送 " + (item.sent_at || "").slice(11, 16)),
     timeText: util.fromNow(item.created_at),
+    /* 详情里的完整发送时间（列表头部只展示 HH:mm，核对时要看日期） */
+    sentAtText: sentAt ? String(sentAt).replace("T", " ").slice(0, 16) : "",
     recipients: recipients,
+    recipientDetail: recipientDetail,
+    readCount: readCount,
     recipientCount: recipients.length || Number(item.recipient_count || 0),
     recipientText: recipients.length
       ? recipients.map(function (person) { return person.name + (person.childNameText ? "（" + person.childNameText + "）" : ""); }).join("、")
       : "未设置推送对象",
     /* 早期记录只存了推送人数、没存推送对象明细，这里标记出来，避免出现「8 位家长」却没有名字的错位 */
     recipientDetailMissing: !recipients.length && !(item.recipient_ids || []).length && Number(item.recipient_count || 0) > 0,
-    aiStatus: item.ai_status === "ai" ? "AI 已整理" : "本地已整理"
+    aiStatus: item.ai_status === "ai" ? "AI 已整理" : "本地已整理",
+    /* 已发送卡片展开状态：height 用像素值锁死，配合 CSS transition 做平滑展开/收起 */
+    expanded: false,
+    expandHeight: 0
   };
 }
 
@@ -119,16 +160,114 @@ Page({
     this.loadList();
   },
 
+  /* ---------- 已发送详情：展开 / 收起 ---------- */
+
+  /* 找到某条已发送记录当前的下标。异步回调里必须重新按 id 定位，
+   * 因为 setData 是异步的，期间列表可能已经刷新过。 */
+  sentIndexById: function (id) {
+    var list = this.data.sentList || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) return i;
+    }
+    return -1;
+  },
+
+  /* 量出详情区真实高度（外层被 height:0 + overflow:hidden 压住，内层仍按正常流布局） */
+  measureSentDetail: function (id, callback) {
+    wx.createSelectorQuery().in(this).select("#sent-detail-" + id).boundingClientRect(function (rect) {
+      callback(rect && rect.height ? Math.ceil(rect.height) : 0);
+    }).exec();
+  },
+
+  onToggleSentDetail: function (e) {
+    var id = Number(e.currentTarget.dataset.id);
+    var index = this.sentIndexById(id);
+    if (index < 0) return;
+    if (this.data.sentList[index].expanded) {
+      this.collapseSentDetail(id);
+      return;
+    }
+    /* 手风琴：先收起其它记录。一次只展开一条，展开/收起时页面总高度变化可控，不会连带把整屏内容顶走 */
+    var openedIds = [];
+    for (var i = 0; i < this.data.sentList.length; i++) {
+      if (i !== index && this.data.sentList[i].expanded) openedIds.push(this.data.sentList[i].id);
+    }
+    for (var j = 0; j < openedIds.length; j++) this.collapseSentDetail(openedIds[j]);
+    this.expandSentDetail(id);
+  },
+
+  expandSentDetail: function (id) {
+    var self = this;
+    var index = this.sentIndexById(id);
+    if (index < 0) return;
+    var patch = {};
+    patch["sentList[" + index + "].expanded"] = true;
+    patch["sentList[" + index + "].expandHeight"] = 0;
+    /* 等这一帧渲染完再量高度，避免量到展开前的高度导致过渡失效 */
+    this.setData(patch, function () {
+      self.measureSentDetail(id, function (height) {
+        var target = self.sentIndexById(id);
+        if (target < 0) return;
+        var next = {};
+        next["sentList[" + target + "].expandHeight"] = height;
+        self.setData(next);
+      });
+    });
+  },
+
+  /* 收起：先把这帧高度固定成像素值，再下一帧置 0。
+   * auto → 0 无法触发 CSS transition，固定一次高度才会平滑收拢。 */
+  collapseSentDetail: function (id) {
+    var self = this;
+    var index = this.sentIndexById(id);
+    if (index < 0) return;
+    this.measureSentDetail(id, function (measured) {
+      var target = self.sentIndexById(id);
+      if (target < 0) return;
+      var item = self.data.sentList[target];
+      var height = measured || Number(item.expandHeight) || 0;
+      var patch = {};
+      patch["sentList[" + target + "].expandHeight"] = height;
+      self.setData(patch);
+      if (!height) {
+        var flag = {};
+        flag["sentList[" + target + "].expanded"] = false;
+        self.setData(flag);
+        return;
+      }
+      wx.nextTick(function () {
+        var last = self.sentIndexById(id);
+        if (last < 0) return;
+        var done = {};
+        done["sentList[" + last + "].expandHeight"] = 0;
+        done["sentList[" + last + "].expanded"] = false;
+        self.setData(done);
+      });
+    });
+  },
+
   /* ---------- 列表 ---------- */
   loadList: function (done) {
     var self = this;
     this.setData({ loading: true, error: "" });
     api.getDailyUpdates(30).then(function (res) {
       var items = ((res && res.updates) || []).map(mapUpdate);
+      /* 刷新前先记住哪条是展开的：列表重绘后直接按原高度还原，
+       * 否则每次 onShow / 下拉刷新都会把展开的详情收起，页面高度突变、滚动位置跳走 */
+      var opened = {};
+      (self.data.sentList || []).forEach(function (item) {
+        if (item.expanded) opened[item.id] = item.expandHeight || 0;
+      });
       self.setData({
         loading: false,
         drafts: items.filter(function (item) { return item.isDraft; }),
-        sentList: items.filter(function (item) { return !item.isDraft; }).slice(0, 10),
+        sentList: items.filter(function (item) { return !item.isDraft; }).slice(0, 10).map(function (item) {
+          if (Object.prototype.hasOwnProperty.call(opened, item.id)) {
+            item.expanded = true;
+            item.expandHeight = opened[item.id];
+          }
+          return item;
+        }),
         autoSendTime: (res && res.autoSendTime) || "18:00",
         draftCount: Number((res && res.draftCount) || 0)
       });

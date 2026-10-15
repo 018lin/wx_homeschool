@@ -1,13 +1,13 @@
 .ai-text {
-  font-size: 27rpx;
-  color: #374151;
+  font-size: var(--fs-md);
+  color: var(--text-body);
   line-height: 1.8;
   white-space: pre-wrap;
 }
 
 .ov-insight {
-  font-size: 26rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.9;
 }
 
@@ -18,18 +18,17 @@
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
-.field__textarea--sm {
-  min-height: 140rpx;
-}
 
-.ai-state { margin-bottom: 20rpx; padding: 18rpx 22rpx; border-radius: 14rpx; background: #edf5ff; color: #0057b8; }
-.ai-state.done { background: #e9f8f0; color: #157a45; }
-.ai-state.failed { background: #fff1f0; color: #b42318; }
-.ai-state.unconfigured { background: #f1f5f9; color: #536174; }
-.ai-state__title { font-size: 25rpx; font-weight: 650; }
-.ai-state__error, .ai-state__stale { margin-top: 8rpx; font-size: 22rpx; line-height: 1.55; }
+.ai-state { margin-bottom: 20rpx; padding: 18rpx 22rpx; border-radius: var(--radius-md); background: var(--primary-lighter); color: var(--primary); }
+.ai-state.done { background: var(--teal-light); color: var(--success); }
+.ai-state.failed { background: var(--danger-light); color: var(--danger); }
+.ai-state.unconfigured { background: var(--fill-dark); color: var(--text-sub); }
+.ai-state__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.ai-state__error, .ai-state__stale { margin-top: 8rpx; font-size: var(--fs-sm); line-height: 1.55; }
 .notice-actions { display: flex; gap: 14rpx; margin-top: 14rpx; }
 .notice-actions .btn { flex: 1; }
+
+/* .field__textarea--sm 统一到 app.wxss（min-height: 140rpx） */

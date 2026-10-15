@@ -1,0 +1,378 @@
+/* =====================================================================
+ * 协议弹窗（agreement-modal）
+ * 全部样式走 app.wxss 的设计令牌，不硬编码色值/字号/圆角。
+ * 组件负责「长文可读性」：行高、字距、层级对比度都比普通页面更宽松。
+ * ===================================================================== */
+
+.ag {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 32rpx;
+}
+
+/* 遮罩：比 sheet-mask 更深一点，突出「必须读完才能继续」的强约束感 */
+.ag__mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.ag__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720rpx;
+  /* 高度按视口自适应：矮屏不溢出，高屏不至于拉得太长 */
+  height: 84vh;
+  max-height: 1080rpx;
+  background: var(--card);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* ---------- 顶部标题区 ---------- */
+.ag__head {
+  flex-shrink: 0;
+  padding: 30rpx 32rpx 22rpx;
+  background: var(--grad-primary-deep);
+}
+
+.ag__title {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--white);
+  letter-spacing: 1rpx;
+}
+
+.ag__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10rpx;
+}
+
+.ag__meta-item {
+  font-size: var(--fs-xs);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ag__meta-dot {
+  width: 6rpx;
+  height: 6rpx;
+  margin: 0 12rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- 正文滚动区 ---------- */
+.ag__scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--card);
+}
+
+.ag__content {
+  padding: 30rpx 32rpx 40rpx;
+  box-sizing: border-box;
+}
+
+.ag__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-placeholder);
+  letter-spacing: 1rpx;
+}
+
+/* 前言 */
+.ag__intro {
+  margin-top: 16rpx;
+  font-size: var(--fs-base);
+  line-height: 1.85;
+  color: var(--text-sub);
+  padding: 20rpx 22rpx;
+  background: var(--fill);
+  border-radius: var(--radius-md);
+  border-left: 6rpx solid var(--primary-light);
+}
+
+/* ---------- 章节标题（h2） ---------- */
+.ag__h2 {
+  display: flex;
+  align-items: center;
+  margin: 44rpx 0 20rpx;
+}
+
+.ag__h2:first-child {
+  margin-top: 32rpx;
+}
+
+.ag__h2-bar {
+  width: 8rpx;
+  height: 30rpx;
+  margin-right: 14rpx;
+  border-radius: var(--radius-xs);
+  background: var(--grad-brand);
+}
+
+.ag__h2 text {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* ---------- 小节标题（h3） ---------- */
+.ag__h3 {
+  margin: 30rpx 0 12rpx;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--primary-deep);
+  line-height: 1.5;
+}
+
+/* ---------- 正文段落 ---------- */
+.ag__p {
+  margin-top: 14rpx;
+  font-size: var(--fs-md);
+  line-height: 1.9;
+  color: var(--text-body);
+  text-align: justify;
+}
+
+/* ---------- 无序列表 ---------- */
+.ag__ul {
+  margin-top: 14rpx;
+}
+
+.ag__li {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 12rpx;
+}
+
+.ag__li-dot {
+  flex-shrink: 0;
+  width: 10rpx;
+  height: 10rpx;
+  margin: 18rpx 16rpx 0 4rpx;
+  border-radius: 50%;
+  background: var(--primary-bright);
+}
+
+.ag__li-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-md);
+  line-height: 1.9;
+  color: var(--text-body);
+}
+
+/* ---------- 提示块 ---------- */
+.ag__note {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 22rpx;
+  padding: 22rpx 24rpx;
+  border-radius: var(--radius-md);
+}
+
+.ag__note--warn {
+  background: var(--warning-light);
+  border-left: 6rpx solid var(--warning);
+}
+
+.ag__note--info {
+  background: var(--primary-lighter);
+  border-left: 6rpx solid var(--primary-bright);
+}
+
+.ag__note-icon {
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 14rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--white);
+}
+
+.ag__note--warn .ag__note-icon {
+  background: var(--warning);
+}
+
+.ag__note--info .ag__note-icon {
+  background: var(--primary-bright);
+}
+
+.ag__note-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  color: var(--text-body);
+}
+
+/* ---------- 键值信息表 ---------- */
+.ag__kv {
+  margin-top: 20rpx;
+  padding: 6rpx 24rpx;
+  background: var(--fill);
+  border-radius: var(--radius-md);
+}
+
+.ag__kv-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid var(--line-soft);
+}
+
+.ag__kv-row:last-child {
+  border-bottom: none;
+}
+
+.ag__kv-k {
+  flex-shrink: 0;
+  width: 180rpx;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.ag__kv-v {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--text-body);
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+/* ---------- 数据表（收集清单 / 第三方 / 存储期限） ---------- */
+/* 小程序没有真 table 布局，用 flex 行模拟；窄屏自动降级为纵向卡片 */
+.ag__table {
+  margin-top: 20rpx;
+  border: 2rpx solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ag__tr {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.ag__tr:last-child {
+  border-bottom: none;
+}
+
+.ag__tr--head {
+  background: var(--fill-gray);
+}
+
+.ag__td {
+  box-sizing: border-box;
+  padding: 18rpx 16rpx;
+  width: 25%;
+  font-size: var(--fs-sm);
+  line-height: 1.65;
+  color: var(--text-body);
+  border-right: 2rpx solid var(--line-soft);
+  word-break: break-word;
+}
+
+.ag__tr--head .ag__td {
+  font-weight: var(--fw-semibold);
+  color: var(--text-sub);
+}
+
+.ag__td:last-child {
+  border-right: none;
+}
+
+/* 窄屏（如 iPhone SE / 老安卓）：表格转卡片，避免文字被挤成一列 */
+@media (max-width: 350px) {
+  .ag__td {
+    width: 50%;
+  }
+}
+
+@media (max-width: 300px) {
+  .ag__td {
+    width: 100%;
+  }
+}
+
+/* ---------- 文档尾注 ---------- */
+.ag__footer {
+  margin-top: 44rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--text-placeholder);
+  line-height: 1.8;
+  text-align: center;
+}
+
+/* ---------- 底部操作栏 ---------- */
+.ag__foot {
+  flex-shrink: 0;
+  padding: 20rpx 28rpx calc(22rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--line);
+  background: var(--card);
+}
+
+.ag__foot-actions {
+  display: flex;
+}
+
+.ag__btn {
+  flex: 1;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  transition: opacity var(--ease);
+}
+
+.ag__btn--hover {
+  opacity: 0.82;
+}
+
+.ag__btn--ghost {
+  flex: 0 0 200rpx;
+  margin-right: 20rpx;
+  color: var(--text-sub);
+  background: var(--fill-gray);
+}
+
+.ag__btn--primary {
+  background: var(--grad-brand);
+  color: var(--white);
+  box-shadow: var(--shadow-primary-sm);
+}

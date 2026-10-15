@@ -12,6 +12,8 @@ Page({
     loading: true,
     stats: null,
     generatedAt: "",
+    // 页头由全局 app-header 组件渲染，状态栏安全距离由组件内部计算
+    heroSub: "家校共育 · 让成长被看见",
     // 学生「我的小心事」未读条数，用于首页顶部板块
     worriesNewCount: 0,
     // 家长「成长关注」未读条数，用于首页顶部板块
@@ -57,11 +59,16 @@ Page({
       .then(function (res) {
         if (!res) return;
         // 只保留概览统计所需字段，减少 setData 数据量
-        self.setData({
-          loading: false,
-          generatedAt: util.formatDateTime(res.generatedAt),
-          stats: res.stats || null
-        });
+        self.setData(
+          {
+            loading: false,
+            generatedAt: util.formatDateTime(res.generatedAt),
+            stats: res.stats || null
+          },
+          function () {
+            self.syncHeroSub();
+          }
+        );
         if (done) done();
       })
       .catch(function () {
@@ -121,13 +128,28 @@ Page({
           })[0];
           if (latest) patch.activeClass = latest;
         }
-        self.setData(patch);
+        self.setData(patch, function () {
+          self.syncHeroSub();
+        });
       })
       .catch(function () {
         self.setData({ classesLoading: false });
       });
   },
 
+  /** 头图副标题：概括全校规模，无数据时回落到品牌标语 */
+  syncHeroSub: function () {
+    var stats = this.data.stats;
+    var classes = this.data.classes || [];
+    var parts = [];
+    if (classes.length) parts.push(classes.length + " 个班级");
+    if (stats && stats.studentCount) parts.push(stats.studentCount + " 名学生");
+    this.setData({
+      heroSub: parts.length ? parts.join(" · ") : "家校共育 · 让成长被看见"
+    });
+  },
+
+  /** 毛玻璃首页键：回到当前角色的工作台首页（已在首页则回到顶部） */
   goAccounts: function () {
     wx.navigateTo({ url: "/pages/admin/accounts/accounts" });
   },

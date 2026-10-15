@@ -1,7 +1,8 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "今日校园观察",
-  "navigationBarBackgroundColor": "#1d2127",
-  "navigationBarTextStyle": "white",
   "backgroundColor": "#f3f5f8",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
 }

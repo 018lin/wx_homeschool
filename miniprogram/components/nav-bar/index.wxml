@@ -1,11 +1,13 @@
-<view class="nav-bar {{role === 'admin' ? 'nav-bar--compact' : ''}}" wx:if="{{tabs.length}}">
+<view class="nav-bar {{iconMode ? 'nav-bar--icons' : ''}}" wx:if="{{tabs.length}}">
   <view
-    class="nav-bar__item {{item.key === active ? 'active' : ''}}"
+    class="nav-bar__item {{iconMode ? 'nav-bar__item--icon' : ''}} {{item.center ? 'nav-bar__item--center' : ''}} {{item.key === active ? 'active' : ''}}"
     wx:for="{{tabs}}"
     wx:key="key"
     data-item="{{item}}"
     bindtap="onTap"
+    hover-class="nav-bar__item--hover"
   >
-    <view class="nav-bar__label">{{item.label}}</view>
+    <view class="nav-bar__icon nav-bar__icon--{{item.icon}}" wx:if="{{item.icon}}"></view>
+    <view class="nav-bar__label {{item.center ? 'nav-bar__label--center' : ''}}">{{item.label}}</view>
   </view>
 </view>

@@ -1,6 +1,6 @@
-<view class="page page-with-nav">
+<app-header title="亲子参与" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="eg-head">
-    <view class="eg-head__title">亲子参与</view>
     <view class="eg-head__sub">{{child ? child.name : ''}} · 近 {{engagement.windowDays || 30}} 天的陪伴轨迹</view>
   </view>
 

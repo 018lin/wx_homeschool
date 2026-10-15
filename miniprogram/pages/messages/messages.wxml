@@ -1,4 +1,5 @@
-<view class="page page-with-nav message-page">
+<app-header title="信息交流" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav message-page page--hero">
   <view class="msg-search">
     <view class="msg-search__box">
       <input class="msg-search__input" placeholder="搜索姓名或账号" placeholder-class="ph" value="{{keyword}}" bindinput="onSearch" confirm-type="search" />
@@ -26,4 +27,4 @@
     <view class="msg-loading" wx:if="{{loading}}">加载中…</view>
   </view>
 </view>
-<nav-bar role="{{role}}" active="messages" />
+<nav-bar role="{{role}}" active="{{role === 'admin' ? 'contact' : 'messages'}}" />

@@ -327,21 +327,22 @@
  }
 
  function defaultTaskFromRequest(req) {
- var plan = parseAiPlan(req);
- var aiTask = plan.task || {};
- return {
-  title: aiTask.title || req.title || "家长自主定制任务",
-  type: aiTask.type || "家务实践",
-  duration: Number(aiTask.duration) || Number(req.duration) || 20,
-  difficulty: aiTask.difficulty || "普通",
-  materials: aiTask.materials || "按家庭实际准备",
-  goal: aiTask.goal || req.goal || "结合家庭意愿开展一次亲子活动",
-  steps: aiTask.steps || req.description || "",
-  tips: aiTask.dialogueTips || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？",
-  submit: aiTask.submitHint || "可提交照片、文字记录或一段亲子对话",
-  fallback: aiTask.fallbackPlan || "时间有限时可缩短步骤，只保留一次共同完成和一次交流",
-  plan: plan
-  };
+   var plan = parseAiPlan(req);
+   var aiTask = plan.task || {};
+   /* 家长提交的是反馈：任务内容一律以 AI 任务草案为基底，不回落家长原话 */
+   return {
+   title: aiTask.title || "老师为你定制的成长任务",
+   type: aiTask.type || "习惯养成",
+   duration: Number(aiTask.duration) || 20,
+   difficulty: aiTask.difficulty || "普通",
+   materials: aiTask.materials || "按家庭实际准备",
+   goal: aiTask.goal || "围绕家长反馈的具体情境，帮助孩子完成一次可观察的练习",
+   steps: aiTask.steps || "",
+   tips: aiTask.dialogueTips || "和孩子聊聊：这件事最有意思、最困难的地方分别是什么？",
+   submit: aiTask.submitHint || "可提交照片、文字记录或一段亲子对话",
+   fallback: aiTask.fallbackPlan || "时间有限时可缩短步骤，只保留一次共同完成和一次交流",
+   plan: plan
+   };
  }
 
  var parentRequests = [];
@@ -413,7 +414,7 @@
  var pending = requests.filter(function (r) { return r.status === "pending"; }).length;
  count.textContent = requests.length ? (requests.length + " 项" + (pending ? " · " + pending + " 待处理" : " · 已处理")) : "";
  if (!requests.length) {
- list.innerHTML = '<p class="empty-text">暂无家长自主定制任务提议</p>';
+ list.innerHTML = '<p class="empty-text">暂无家长成长关注反馈</p>';
  return;
  }
  list.innerHTML = requests.map(renderRequestThumb).join("");

@@ -10,21 +10,21 @@
 .wr-item--active {
   padding: 24rpx 20rpx;
   margin: 0 -20rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-md);
   border-bottom: none;
-  background: #f8fbff;
+  background: var(--fill);
   box-shadow: inset 0 0 0 2rpx var(--primary-light);
 }
 
 .wr-item__name {
-  font-size: 30rpx;
-  font-weight: 600;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
   color: var(--text);
 }
 
 .wr-item__grade {
-  font-weight: 400;
-  font-size: 26rpx;
+  font-weight: var(--fw-normal);
+  font-size: var(--fs-md);
   color: var(--text-muted);
 }
 
@@ -33,8 +33,8 @@
 }
 
 .wr-item__content {
-  font-size: 28rpx;
-  color: #374151;
+  font-size: var(--fs-lg);
+  color: var(--text-body);
   line-height: 1.7;
   margin-top: 12rpx;
   white-space: pre-wrap;
@@ -54,19 +54,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--teal);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .wr-item__reply-time {
-  font-size: 22rpx;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
-  font-weight: 400;
+  font-weight: var(--fw-normal);
 }
 
 .wr-item__reply-text {
-  font-size: 27rpx;
+  font-size: var(--fs-md);
   color: var(--text);
   line-height: 1.7;
   margin-top: 10rpx;
@@ -75,7 +75,7 @@
 }
 
 .wr-item__reply-tip {
-  font-size: 22rpx;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   margin-top: 10rpx;
 }
@@ -89,17 +89,17 @@
 }
 
 .wr-item__hint {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--text-muted);
 }
 
 .wr-item__act {
   padding: 10rpx 28rpx;
-  border-radius: 999rpx;
+  border-radius: var(--radius-pill);
   background: var(--primary-light);
   color: var(--primary);
-  font-size: 24rpx;
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
 }
 
 .wr-item__act:active {
@@ -115,24 +115,24 @@
   width: 100%;
   min-height: 160rpx;
   box-sizing: border-box;
-  background: #fff;
+  background: var(--white);
   border: 2rpx solid var(--line);
-  border-radius: 14rpx;
+  border-radius: var(--radius-md);
   padding: 20rpx;
-  font-size: 28rpx;
+  font-size: var(--fs-lg);
   line-height: 1.7;
   color: var(--text);
 }
 
 .wr-counter {
   text-align: right;
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   color: var(--text-muted);
   margin-top: 8rpx;
 }
 
 .wr-counter--full {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .wr-form__actions {
@@ -147,5 +147,5 @@
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }

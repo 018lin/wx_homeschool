@@ -1,4 +1,7 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "成长关注",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "backgroundColorTop": "#6FB8EE",
+  "backgroundTextStyle": "dark"
 }

@@ -69,6 +69,10 @@ Page({
     }, 500);
   },
 
+  goQuestionnaire: function () {
+    wx.navigateTo({ url: "/pages/parent/questionnaire/questionnaire" });
+  },
+
   toggleAdd: function () {
     this.setData({ showAdd: !this.data.showAdd });
   },

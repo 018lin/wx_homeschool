@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="AI 数据看板" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
   <view class="card" wx:if="{{!loading && error}}">
     <view class="empty">

@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="教师工作台" sub="家校共育 · 让成长被看见" mode="home" variant="hero" />
+<view class="page page-with-nav page--hero">
   <!-- 家长「成长关注」新提交提示：置顶展示，加载期间也保留位置 -->
   <view class="card wo-entry {{concernsNewCount ? 'wo-entry--active' : ''}}" bindtap="goConcerns">
     <view class="wo-entry__main">
@@ -53,7 +54,7 @@
 
     <view class="card" wx:else>
       <view class="empty">
-        <view class="empty__icon">📝</view>
+        
         <view class="empty__text">本周还没有发布班级任务</view>
         <view class="empty__hint">点击「发布任务」创建本周共育任务</view>
       </view>

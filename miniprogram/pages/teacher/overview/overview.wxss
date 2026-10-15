@@ -1,32 +1,32 @@
 .ov-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .ov-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .ov-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.85;
   margin-top: 6rpx;
 }
 
 .sg-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
   line-height: 1.5;
 }
 
 .ov-insight {
-  font-size: 26rpx;
-  color: #536174;
+  font-size: var(--fs-md);
+  color: var(--text-sub);
   line-height: 1.9;
 }
 
@@ -44,39 +44,40 @@
 
 .ov-bar__label {
   width: 140rpx;
-  font-size: 24rpx;
-  color: #536174;
+  font-size: var(--fs-base);
+  color: var(--text-sub);
   flex-shrink: 0;
 }
 
 .ov-bar__track {
   flex: 1;
   height: 20rpx;
-  background: #eef2f7;
-  border-radius: 999rpx;
+  background: var(--fill-gray);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
 .ov-bar__fill {
   height: 100%;
-  background: linear-gradient(90deg, #0057b8, #0f766e);
-  border-radius: 999rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-pill);
 }
 
 .ov-bar__count {
   width: 60rpx;
   text-align: right;
-  font-size: 24rpx;
-  color: #8795a7;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
 }
 
 .text-right {
   text-align: right;
 }
 
-.reminder-row { display: flex; align-items: center; justify-content: space-between; padding: 18rpx 0; border-bottom: 2rpx solid #f1f5f9; }
-.mini-action { margin: 0; min-width: 150rpx; height: 64rpx; line-height: 64rpx; border: 2rpx solid #0057b8; border-radius: 999rpx; background: #fff; color: #0057b8; font-size: 23rpx; }
+.reminder-row { display: flex; align-items: center; justify-content: space-between; padding: 18rpx 0; border-bottom: 2rpx solid var(--fill-dark); }
+.mini-action { margin: 0; min-width: 150rpx; height: 64rpx; line-height: 64rpx; border: 2rpx solid var(--primary); border-radius: var(--radius-pill); background: var(--white); color: var(--primary); font-size: var(--fs-sm); }
 .reminder-editor { margin-top: 20rpx; }
-.field__textarea--sm { min-height: 160rpx; }
 .reminder-actions { display: flex; gap: 14rpx; margin-top: 14rpx; }
 .reminder-actions .btn { flex: 1; }
+
+/* .field__textarea--sm 统一到 app.wxss（min-height: 140rpx，原为 160rpx） */

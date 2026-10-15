@@ -1,8 +1,8 @@
-<view class="page page-with-nav">
+<app-header title="通知中心" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="noti-head">
     <view class="noti-head__row">
       <view>
-        <view class="noti-head__title">通知中心</view>
         <view class="noti-head__sub" wx:if="{{unreadCount > 0}}">有 {{unreadCount}} 条未读</view>
         <view class="noti-head__sub" wx:else>全部已读</view>
       </view>

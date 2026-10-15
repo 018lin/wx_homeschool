@@ -18,8 +18,7 @@ Page({
     sentAt: "",
     loadingList: true,
     listError: "",
-    list: [],
-    newReplyCount: 0
+    list: []
   },
 
   onShow: function () {
@@ -51,7 +50,6 @@ Page({
         var newReplyCount = Number(res && res.newReplyCount || 0);
         self.setData({
           loadingList: false,
-          newReplyCount: newReplyCount,
           list: rows.map(function (row) {
             var reply = String(row.reply_content || "");
             return {
@@ -66,7 +64,7 @@ Page({
             };
           })
         });
-        // 本次已看到回复内容，回到该页时不再提示「你有新的回复」
+        // 本页已展示回复内容，回复未读状态在下次进入首页时提示会随之消失
         if (newReplyCount > 0) {
           api.readStudentWorryReplies().catch(function () {});
         }
@@ -76,11 +74,6 @@ Page({
         self.setData({ loadingList: false, listError: "小心事加载失败" });
         if (done) done();
       });
-  },
-
-  /** 点击顶部提示，滚动到下方的心事列表 */
-  onTapReplyNotice: function () {
-    wx.pageScrollTo({ selector: "#worry-list", duration: 300 });
   },
 
   onInput: function (e) {

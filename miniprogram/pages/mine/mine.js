@@ -74,7 +74,9 @@ Page({
     hasCustomAvatar: false,
     uploading: false,
     roleLabel: "",
-    roleColor: "#0057b8"
+    roleColor: "#0057b8",
+    agreementVisible: false,
+    agreementDoc: "user-agreement"
   },
 
   onShow: function () {
@@ -216,6 +218,16 @@ Page({
     });
     api.updateMyAvatar("").catch(function () {});
     wx.showToast({ title: "已恢复默认头像", icon: "success" });
+  },
+
+  /** 查看协议全文：登录后仍可随时查阅，无需重新阅读才能登录 */
+  onOpenAgreement: function (e) {
+    var doc = (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.doc) || "user-agreement";
+    this.setData({ agreementDoc: doc, agreementVisible: true });
+  },
+
+  onCloseAgreement: function () {
+    this.setData({ agreementVisible: false });
   },
 
   onLogout: function () {

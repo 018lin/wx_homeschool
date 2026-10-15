@@ -60,7 +60,7 @@ pages.forEach(function (p) {
   }
 
   // 自定义组件标签
-  var tagRe = /<(nav-bar)\b/g;
+  var tagRe = /<(nav-bar|app-header)\b/g;
   while ((m = tagRe.exec(wxml)) !== null) {
     if (globalComponents.indexOf(m[1]) < 0) {
       problems.push(p + ".wxml 使用了 <" + m[1] + ">，但未在 app.json usingComponents 注册");

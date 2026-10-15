@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="账号管理" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="segment">
     <view class="segment__item {{tab === 'all' ? 'active' : ''}}" data-tab="all" bindtap="switchTab">
       全部 {{teachers.length + students.length + parents.length}}
@@ -213,4 +214,4 @@
   </view>
 </view>
 
-<nav-bar role="admin" active="accounts" />
+<nav-bar role="admin" active="overview" />

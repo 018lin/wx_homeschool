@@ -1,0 +1,25 @@
+<!-- 沉浸式页头：统一接管所有页面的顶部区域 -->
+<!-- ghost：透明占位，仅撑出状态栏高度（登录页等自带满屏背景的页面） -->
+<view wx:if="{{variant === 'ghost'}}" class="ah-ghost" style="height:{{statusBarHeight}}px"></view>
+
+<view wx:else class="ah ah--{{variant}}" style="padding-top:{{statusBarHeight}}px">
+  <view class="ah__glow ah__glow--l"></view>
+  <view class="ah__glow ah__glow--r"></view>
+
+  <view class="ah__bar" style="height:{{barHeight}}px;padding-right:{{capsuleGap}}px">
+    <view
+      wx:if="{{mode !== 'none'}}"
+      class="ah__nav ah__nav--{{mode}}"
+      bindtap="onTapNav"
+      hover-class="ah__nav--hover"
+    >
+      <view class="ah__nav-icon"></view>
+    </view>
+    <view wx:else class="ah__nav ah__nav--placeholder"></view>
+
+    <view class="ah__meta">
+      <view class="ah__title">{{title}}</view>
+      <view class="ah__sub" wx:if="{{sub}}">{{sub}}</view>
+    </view>
+  </view>
+</view>

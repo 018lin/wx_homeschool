@@ -1,0 +1,127 @@
+<view class="td-page">
+  <!-- 沉浸式弧形浅蓝头图：返回键 mode="back"，栈内无上一页时回落到角色工作台 -->
+  <app-header title="任务详情" sub="{{heroSub}}" mode="back" variant="hero" />
+
+  <view class="page page--hero td-body">
+    <view class="loading-wrap" wx:if="{{loading}}">加载任务中…</view>
+
+    <!-- 加载失败 -->
+    <view class="td-error" wx:if="{{!loading && error}}">
+      <view class="td-error__text">{{error}}</view>
+      <button class="btn btn-primary mt-16" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <!-- 兜底：id 非法或任务已删除 -->
+    <view class="td-empty" wx:if="{{!loading && !error && notFound}}">
+      <view class="td-empty__icon">📋</view>
+      <view class="td-empty__text">没有找到该任务</view>
+      <view class="td-empty__hint">任务可能已被删除，或链接中的任务标识无效</view>
+      <button class="btn btn-outline mt-24" bindtap="goTasks">返回任务看板</button>
+    </view>
+
+    <block wx:if="{{!loading && !error && task}}">
+      <!-- ============ 完成度总览 ============ -->
+      <view class="card td-overview">
+        <view class="td-overview__ring {{task.completionRate > 0 ? 'td-overview__ring--active' : ''}}">
+          <view
+            class="td-overview__fg"
+            style="background: conic-gradient({{task.completionRate > 0 ? '#0066dc' : '#ffffff'}} 0deg, {{task.completionRate > 0 ? '#0066dc' : '#ffffff'}} {{task.donutDeg}}deg, #eef2f7 {{task.donutDeg}}deg, #eef2f7 360deg)"
+          ></view>
+          <view class="td-overview__pct">{{task.completionRate}}<text class="td-overview__pct-sign">%</text></view>
+        </view>
+        <view class="td-overview__main">
+          <view class="td-overview__label">完成度</view>
+          <view class="td-overview__count">{{task.completedCount}} / {{task.targetCount}} 人</view>
+          <text class="badge {{statusCls}}">{{statusText}}</text>
+        </view>
+      </view>
+
+      <view class="td-progress">
+        <view class="td-progress__fill {{task.completionRate > 0 ? 'td-progress__fill--active' : ''}}" style="width:{{task.completionRate}}%"></view>
+      </view>
+
+      <view class="stat-grid td-stats">
+        <view class="stat">
+          <view class="stat__value">{{task.completedCount}}</view>
+          <view class="stat__label">已完成</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{task.draftCount}}</view>
+          <view class="stat__label">草稿中</view>
+        </view>
+        <view class="stat">
+          <view class="stat__value">{{task.targetCount - task.completedCount - task.draftCount > 0 ? task.targetCount - task.completedCount - task.draftCount : 0}}</view>
+          <view class="stat__label">未开始</view>
+        </view>
+      </view>
+
+      <!-- ============ 任务基本信息 ============ -->
+      <view class="card">
+        <view class="between td-head">
+          <text class="td-title">{{task.title}}</text>
+          <text class="td-stripe td-stripe--{{task.typeKey}}"></text>
+        </view>
+        <view class="task-meta mt-16">
+          <text class="tag" wx:if="{{task.type}}">{{task.type}}</text>
+          <text class="tag" wx:if="{{task.difficulty}}">{{task.difficulty}}</text>
+          <text class="tag" wx:if="{{task.duration}}">{{task.duration}} 分钟</text>
+          <text class="tag" wx:if="{{task.scope}}">{{task.scope}}</text>
+        </view>
+        <view class="td-meta mt-16">
+          <view class="td-meta__row" wx:if="{{task.weekStart}}">
+            <text class="td-meta__key">开始日期</text>
+            <text class="td-meta__val">{{task.weekStart}}</text>
+          </view>
+          <view class="td-meta__row" wx:if="{{task.studentName}}">
+            <text class="td-meta__key">面向学生</text>
+            <text class="td-meta__val">{{task.studentName}}</text>
+          </view>
+          <view class="td-meta__row" wx:if="{{task.publisherName}}">
+            <text class="td-meta__key">发布教师</text>
+            <text class="td-meta__val">{{task.publisherName}}</text>
+          </view>
+          <view class="td-meta__row" wx:if="{{task.createdAt}}">
+            <text class="td-meta__key">创建时间</text>
+            <text class="td-meta__val">{{task.createdAt}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- ============ 任务详情描述 ============ -->
+      <view class="card">
+        <view class="card-title"><text class="card-title__text">任务详情</text></view>
+        <view class="quote" wx:if="{{task.goal}}"><text class="bold">共育目标：</text>{{task.goal}}</view>
+        <view class="task-block" wx:if="{{task.steps}}"><view class="task-block__label">一起这样做</view><view class="task-block__body">{{task.steps}}</view></view>
+        <view class="task-block" wx:if="{{task.dialogueTips}}"><view class="task-block__label">可以这样说</view><view class="task-block__body quote-teal">{{task.dialogueTips}}</view></view>
+        <view class="task-block" wx:if="{{task.materials}}"><view class="task-block__label">需要准备</view><view class="task-block__body">{{task.materials}}</view></view>
+        <view class="task-block" wx:if="{{task.submitHint}}"><view class="task-block__label">提交什么</view><view class="task-block__body">{{task.submitHint}}</view></view>
+        <view class="task-block" wx:if="{{task.fallbackPlan}}"><view class="task-block__label">如果孩子不配合</view><view class="task-block__body">{{task.fallbackPlan}}</view></view>
+        <view class="td-no-content" wx:if="{{!task.goal && !task.steps && !task.dialogueTips && !task.materials && !task.submitHint && !task.fallbackPlan}}">
+          这条任务暂未填写详细内容
+        </view>
+      </view>
+
+      <!-- ============ 逐人完成情况 ============ -->
+      <view class="card">
+        <view class="card-title">
+          <text class="card-title__text">完成情况</text>
+          <text class="card-title__more">{{task.completedCount}}/{{task.targetCount}}</text>
+        </view>
+        <view class="td-row" wx:for="{{task.details}}" wx:for-item="d" wx:key="studentId">
+          <view class="td-row__main">
+            <view class="td-row__name">{{d.studentName}} <text class="td-row__grade">{{d.grade}}</text></view>
+            <view class="td-row__desc clamp-2" wx:if="{{d.content}}">{{d.content}}</view>
+            <view class="td-row__desc" wx:if="{{d.submittedAt}}">{{d.submittedAt}} · {{d.subType}}</view>
+          </view>
+          <text class="badge {{d.statusCls}}">{{d.statusText}}</text>
+        </view>
+        <view class="td-empty-inline" wx:if="{{!task.details.length}}">暂无学生明细</view>
+      </view>
+
+      <!-- 返回任务看板入口 -->
+      <view class="td-actions">
+        <button class="btn btn-primary btn-block" bindtap="goTasks">返回任务看板</button>
+      </view>
+    </block>
+  </view>
+</view>

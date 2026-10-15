@@ -138,6 +138,11 @@ Page({
     this.setData({ childIndex: index, childId: index ? this.data.children[index - 1].id : null });
     this.applyFilters();
   },
+
+  /** 顶部分段：切换到任务看板 */
+  goTasks: function () {
+    wx.redirectTo({ url: "/pages/admin/tasks/tasks" });
+  },
   onPickRange: function (e) { this.setData({ rangeIndex: Number(e.detail.value) || 0 }); this.applyFilters(); },
   switchKind: function (e) { this.setData({ kind: e.currentTarget.dataset.kind }); this.applyFilters(); },
   onRefresh: function () { this.loadData(); },

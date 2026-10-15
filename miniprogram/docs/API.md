@@ -165,8 +165,8 @@ function mondayOf(d) {
 | `ACCOUNT_EXISTS` | 409 | `/api/admin/accounts` 建号/改号重名 |
 | `PARENT_NOT_FOUND` | 400 | 建/改学生账号时 `parentAccount` 不存在 |
 | `SUBMISSION_EXISTS` | 409 | 重复正式提交同一任务 |
-| `REQUEST_ALREADY_REVIEWED` | 409 | 家长定制任务已被审核过 |
-| `REQUEST_NOT_FOUND` | 404 | 定制任务不存在（事务内） |
+| `REQUEST_ALREADY_REVIEWED` | 409 | 成长关注反馈已被处理过 |
+| `REQUEST_NOT_FOUND` | 404 | 成长关注反馈不存在（事务内） |
 | `INTERNAL_ERROR` / `REQUEST_ERROR` | 500 / 4xx | 兜底 |
 
 ### 0.12 常见状态枚举
@@ -199,7 +199,7 @@ feedback_card_viewed          → 查看反馈卡片
 timeline_viewed               → 回看成长档案
 submission_drafted            → 起草提交
 submission_submitted          → 完成提交
-parent_task_request_submitted → 提交自主定制任务
+parent_task_request_submitted → 提交成长关注反馈
 teacher_contact_started       → 发起沟通
 page_dwell                    → 页面停留
 questionnaire_viewed          → 查看问卷
@@ -342,7 +342,7 @@ engagement_judgment_corrected
 | `feedback` | object \| null | 最新反馈，字段 = feedback 全字段 + `teacher_name` + `task_title` |
 | `unreadCount` | number | `feedback.read_at IS NULL` 的条数 |
 | `timeline` | `{ taskCount, workCount }` | `taskCount`=去重 task 数，`workCount`=提交数（均只统计 `submitted`） |
-| `parentTaskRequest` | object \| null | 最近一条成长关注，**仅**含 `id, title, description, goal, duration, status, teacher_comment, task_id, created_at, reviewed_at` |
+| `parentTaskRequest` | object \| null | 最近一条成长关注反馈，**仅**含 `id, title, description, goal, duration, status, teacher_comment, task_id, created_at, reviewed_at, task_title`（老师确认后生成的定制任务标题，无则 null） |
 | `needQuestionnaire` | boolean | 无孩子且未填问卷时为 `true` → 跳问卷页 |
 | `engagement` | object \| null | `engagementEnabled=false` 时为 `null` |
 | `engagementEnabled` | boolean | 默认 `true` |
@@ -401,9 +401,10 @@ engagement_judgment_corrected
 - 成功 `200`：`{ "requests": [ … ] }`，固定 `LIMIT 20`，`ORDER BY r.id DESC`
 - 元素字段：`id`, `child_id`, `title`, `concern_category`, `observed_behavior`, `status`, `teacher_comment`, `task_id`, `created_at`, `reviewed_at`, `task_title`（LEFT JOIN tasks，无则 null）
 
-### 2.7 `POST /api/parent/task-requests` —— 提交成长关注（家长自主定制任务）
+### 2.7 `POST /api/parent/task-requests` —— 提交成长关注反馈（描述孩子不足，非任务）
 
-- 权限：parent（`403 仅家长账号可提交自主任务`）
+- 权限：parent（`403 仅家长账号可提交成长关注反馈`）
+- 语义边界：家长只负责**描述孩子需要支持的具体表现**；服务端会调用 AI 生成「中性总结 + 任务草案」存入 `ai_plan`，此时**不会创建任何任务**；教师确认后才生成正式定制任务并推送家长端与学生端。
 - 请求体：
 
 | 字段 | 类型 | 必填 | 校验 / 处理 |
@@ -750,35 +751,38 @@ engagement_judgment_corrected
 - 元素字段：`parent_task_requests` **全字段** + `child_name`, `grade`, `caregiver`, `interests`, `parent_name`, `task_title`
 - 排序：`pending` 优先，其次 `approved`，最后其他，同为 `r.id DESC`
 
-### 5.7 `POST /api/teacher/parent-task-requests/review` —— 审核成长关注
+### 5.7 `POST /api/teacher/parent-task-requests/review` —— 确认成长关注反馈并生成定制任务
 
+- 语义边界：家长提交的是**反馈**。`approved` 时正式任务内容**以 `ai_plan.task`（AI 任务草案）为默认基底**，教师可在请求体中逐字段覆盖；任何字段都不会回落到家长原话（`request.description` / `request.title` 不再参与任务生成）。
 - 请求体：
 
 | 字段 | 类型 | 必填 | 校验 |
 |---|---|---|---|
-| `requestId` | number | **是** | 不存在 → `404 家长定制任务不存在` |
+| `requestId` | number | **是** | 不存在 → `404 成长关注反馈不存在` |
 | `status` | string | **是** | 别名 `decision`；必须是 `approved` 或 `rejected`，否则 `400 请选择同意实施或拒绝` |
 | `decision` | string | 否 | `status` 的别名（优先取 `status`） |
 | `teacherComment` | string | 拒绝时**必填** | 别名 `comment`；截 500 字；`rejected && !comment` → `400 拒绝时请填写评价或原因` |
 | `comment` | string | 否 | 别名 |
-| `title` | string | 否 | 批准时新建任务标题，截 80 字，默认 `request.title` |
-| `goal` | string | 否 | 截 180 字 |
-| `steps` | string | 否 | 截 3000 字，默认 `request.description` |
-| `dialogueTips` | string | 否 | 截 200 字 |
-| `submitHint` | string | 否 | 截 200 字 |
-| `duration` | number | 否 | 夹取 5–90，默认 `request.duration`，再默认 20 |
-| `type` | string | 否 | 截 40 字，默认 `"家务实践"`（**不做枚举校验**） |
-| `difficulty` | string | 否 | `简单`/`普通`/`进阶`，其他回落 `普通` |
-| `materials` | string | 否 | 截 160 字，默认 `"按家庭实际准备"` |
-| `fallbackPlan` | string | 否 | 截 240 字 |
+| `title` | string | 否 | 截 80 字，默认取 AI 草案 `task.title`，再回落 `"老师为你定制的成长任务"` |
+| `goal` | string | 否 | 截 180 字，默认取 AI 草案 `task.goal` |
+| `steps` | string | 否 | 截 3000 字，默认取 AI 草案 `task.steps`；`approved` 且最终为空 → `400 该反馈还没有可用的 AI 任务草案，请先完善任务步骤` |
+| `dialogueTips` | string | 否 | 截 200 字，默认取 AI 草案 |
+| `submitHint` | string | 否 | 截 200 字，默认取 AI 草案 |
+| `duration` | number | 否 | 夹取 5–90，默认取 AI 草案 `task.duration`，再默认 20 |
+| `type` | string | 否 | 截 40 字，默认取 AI 草案 `task.type`，再回落 `"习惯养成"` |
+| `difficulty` | string | 否 | `简单`/`普通`/`进阶`，默认取 AI 草案，其他回落 `普通` |
+| `materials` | string | 否 | 截 160 字，默认取 AI 草案，再回落 `"按家庭实际准备"` |
+| `fallbackPlan` | string | 否 | 截 240 字，默认取 AI 草案 |
 
 - 成功 `200`：`{ "ok": true, "taskId": number \| null, "vectorIndexed": boolean }`
-  - `approved` 时用 `mondayOf(now)` 新建一条 **`child_id = request.child_id`** 的个性化任务，`taskId` 为其 id。
+  - `approved` 时用 `mondayOf(now)` 新建一条 **`child_id = request.child_id`** 的定制任务，`taskId` 为其 id。
   - `rejected` 时 `taskId` 为 `null`。
 - 错误：
-  - `409 {"message":"该家长定制任务已经审核过","errorCode":"REQUEST_ALREADY_REVIEWED"}`
-  - `404 {"message":"家长定制任务不存在"}`
-- 副作用：给家长推一条 `type = "parent_task_request"` 通知。
+  - `409 {"message":"该成长关注反馈已经处理过","errorCode":"REQUEST_ALREADY_REVIEWED"}`
+  - `404 {"message":"成长关注反馈不存在"}`
+- 副作用（`approved` 时）：
+  - 家长端：`type = "parent_task_request"` 通知「老师已根据你的反馈生成定制任务」。
+  - 学生端：经 `bindings` 找到孩子的学生账号，推 `type = "student_custom_task"` 通知「老师为你定制了新的成长任务」；同时该定向任务会出现在学生端首页任务卡片（带「老师定制」标识，`/api/student/home` 返回 `isCustomTask` / `customTaskNotice`）。
 
 ### 5.8 `GET /api/teacher/students` —— 学生档案列表
 
@@ -882,17 +886,32 @@ engagement_judgment_corrected
 | `student.familyNote` | string | **驼峰**，来自 `family_note` |
 | `student.timeAvailable` | string | |
 | `student.taskPreference` | string | |
-| `suggestions` | Array(1–2) | 见下 |
-| `aiMeta.generated` | boolean | 第二条建议是否 AI 生成 |
-| `aiMeta.status` | string | `AI 已生成` / `规则模板` 等 |
+| `suggestions` | Array(1) | 当前只返回一条 AI 建议，见下 |
+| `aiMeta.generated` | boolean | 该建议是否由 AI 生成 |
+| `aiMeta.status` | string | `AI 已生成` / `本地规则兜底` |
 | `history.totalCompleted` | number | |
 | `history.completedTypes` | string[] | |
 
-- `suggestions[]` 元素字段（两条结构相同）：
-  `title`, `type`, `duration`, `goal`, `steps`, `dialogueTips`, `submitHint`, `rationale`, `source`（`template`/`ai`）, `aiGenerated`（boolean）, `aiStatus`
-  - 第 1 条恒为规则模板（`source:"template"`, `aiGenerated:false`, `aiStatus:"规则模板"`）
-  - 第 2 条为 AI 建议（`source:"ai"`, `aiGenerated:true`）或 AI 不可用时的本地兜底
+- `suggestions[]` 元素字段：
+  `title`, `type`, `duration`, `goal`, `steps`, `dialogueTips`, `submitHint`, `rationale`, `source`（`ai`）, `aiGenerated`（boolean）, `aiStatus`
+  - `aiGenerated:true` 为 AI 生成；AI key 缺失或调用失败时返回本地兜底（`aiGenerated:false`, `aiStatus:"本地规则兜底"`）
+  - ⚠️ 2026-10-15 起不再返回规则模板建议（`source:"template"`），小程序端「规则推荐」卡片已下线
 - 错误：`404 {"message":"学生不存在"}`（含 demo 过滤，demo 学生查不到）
+
+### 5.11b `POST /api/teacher/student-suggestions/regenerate` —— 教师口述情况后重新生成
+
+教师在建议卡片点「重新生成」，填写学生情况描述，由 AI 先整理这段描述再重出任务。
+
+- 请求体：
+
+| 字段 | 类型 | 必填 | 校验 |
+|---|---|---|---|
+| `childId` | number | **是** | 空 → `400 缺少 childId` |
+| `note` | string | **是** | 去空白后为空 → `400 请先描述学生情况`；服务端截断到 800 字 |
+
+- 成功 `200`：结构与 5.11 完全一致，额外回传 `teacherNote`（原样回显本次描述）
+- 语义：**`note` 优先级高于档案数据**。提示词要求 AI 先把口语描述整理成结构化要点（近期状态／困难点／可用材料／可陪伴时间／注意事项），冲突时以教师描述为准并在 `rationale` 说明采纳了哪一条
+- 权限：沿用 `studentScopeWhere`，非本班学生 → `404`
 
 ### 5.12 `POST /api/teacher/tasks` —— 发布/更新任务
 

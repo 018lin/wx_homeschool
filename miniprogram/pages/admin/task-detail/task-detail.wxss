@@ -1,0 +1,266 @@
+/* =====================================================================
+ * 管理员端 · 任务详情（pages/admin/task-detail）
+ * 与任务看板同源：大号环形进度 + 百分比、语义色条、白色圆角卡片
+ * ===================================================================== */
+
+page {
+  background: var(--bg);
+}
+
+.td-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* 内容区与头图弧线叠压由全局 .page--hero 负责 */
+.td-body {
+  padding-bottom: 60rpx;
+}
+
+/* ---------- 加载 / 错误 / 空态 ---------- */
+.td-error,
+.td-empty {
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  padding: 56rpx 32rpx;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.td-error__text {
+  font-size: var(--fs-lg);
+  color: var(--danger);
+  background: var(--danger-light);
+  border-radius: var(--radius-sm);
+  padding: 16rpx 24rpx;
+  display: inline-block;
+}
+
+.td-empty__icon {
+  font-size: 80rpx;
+  line-height: 1;
+  margin-bottom: 18rpx;
+  opacity: 0.4;
+}
+
+.td-empty__text {
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+}
+
+.td-empty__hint {
+  font-size: var(--fs-sm);
+  color: var(--text-placeholder);
+  margin-top: 10rpx;
+  line-height: 1.6;
+}
+
+/* ---------- 完成度总览：大圆环 + 文案 ---------- */
+.td-overview {
+  display: flex;
+  align-items: center;
+  gap: 32rpx;
+}
+
+.td-overview__ring {
+  position: relative;
+  flex-shrink: 0;
+  width: 168rpx;
+  height: 168rpx;
+  border-radius: 50%;
+  background: var(--fill-gray);
+  overflow: hidden;
+}
+
+.td-overview__fg {
+  position: absolute;
+  inset: 0;
+  background: var(--white);
+  border-radius: 50%;
+}
+
+.td-overview__pct {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--text-muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.td-overview__ring--active .td-overview__pct {
+  color: var(--primary);
+}
+
+.td-overview__pct-sign {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  margin-left: 2rpx;
+}
+
+.td-overview__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.td-overview__label {
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+}
+
+.td-overview__count {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+  margin: 6rpx 0 14rpx;
+}
+
+/* ---------- 完成度进度条 ---------- */
+.td-progress {
+  height: 12rpx;
+  background: var(--fill-gray);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  margin-bottom: 24rpx;
+}
+
+.td-progress__fill {
+  height: 100%;
+  background: #c7d3e2;
+  border-radius: var(--radius-pill);
+  transition: width 0.25s ease;
+}
+
+.td-progress__fill--active {
+  background: var(--grad-progress);
+}
+
+/* ---------- 三宫格统计 ---------- */
+.td-stats {
+  margin-bottom: var(--sp-lg);
+}
+
+/* ---------- 任务标题与语义色条 ---------- */
+.td-head {
+  align-items: flex-start;
+}
+
+.td-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+  line-height: 1.4;
+  margin-right: 16rpx;
+}
+
+.td-stripe {
+  flex-shrink: 0;
+  width: 8rpx;
+  height: 40rpx;
+  border-radius: var(--radius-pill);
+}
+
+.td-stripe--emotion {
+  background: linear-gradient(180deg, #ff9aab 0%, #ff6b81 100%);
+}
+
+.td-stripe--observation {
+  background: linear-gradient(180deg, #6fb8ee 0%, #0066dc 100%);
+}
+
+.td-stripe--sport {
+  background: linear-gradient(180deg, #6cdda9 0%, #15b982 100%);
+}
+
+.td-stripe--default {
+  background: linear-gradient(180deg, #b8a3ff 0%, #8a63f2 100%);
+}
+
+/* ---------- 元信息键值行 ---------- */
+.td-meta__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  border-bottom: 2rpx solid var(--fill-dark);
+}
+
+.td-meta__row:last-child {
+  border-bottom: none;
+}
+
+.td-meta__key {
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.td-meta__val {
+  font-size: var(--fs-base);
+  color: var(--text);
+  text-align: right;
+  margin-left: 24rpx;
+}
+
+/* ---------- 详情无内容兜底 ---------- */
+.td-no-content {
+  font-size: var(--fs-base);
+  color: var(--text-placeholder);
+  text-align: center;
+  padding: 24rpx 0;
+}
+
+/* ---------- 逐人完成情况 ---------- */
+.td-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--fill-dark);
+}
+
+.td-row:last-child {
+  border-bottom: none;
+}
+
+.td-row__main {
+  flex: 1;
+  min-width: 0;
+  margin-right: 16rpx;
+}
+
+.td-row__name {
+  font-size: var(--fs-md);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+.td-row__grade {
+  margin-left: 8rpx;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: var(--fw-normal);
+}
+
+.td-row__desc {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-top: 6rpx;
+  line-height: 1.5;
+}
+
+.td-empty-inline {
+  padding: 24rpx 0 8rpx;
+  text-align: center;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+}
+
+/* ---------- 底部操作 ---------- */
+.td-actions {
+  margin-top: var(--sp-lg);
+}

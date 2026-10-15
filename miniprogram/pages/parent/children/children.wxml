@@ -1,4 +1,5 @@
-<view class="page page-with-nav">
+<app-header title="孩子档案" sub="" mode="back" variant="hero" />
+<view class="page page-with-nav page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
 
   <view class="card" wx:for="{{children}}" wx:key="id" data-id="{{item.id}}" bindtap="onSelect">
@@ -52,7 +53,8 @@
     </button>
   </view>
 
-  <button class="btn btn-outline btn-block" bindtap="toggleAdd" wx:if="{{!showAdd}}">+ 添加孩子</button>
+  <button class="btn btn-outline btn-block" bindtap="toggleAdd" wx:if="{{!showAdd}}">+ 快速添加孩子</button>
+  <button class="btn btn-outline btn-block mt-12" bindtap="goQuestionnaire">+ 填写完整档案添加（可选）</button>
 </view>
 
 <nav-bar role="parent" active="home" />

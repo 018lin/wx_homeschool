@@ -1,34 +1,32 @@
 .cn-head {
-  background: linear-gradient(135deg, #0057b8 0%, #0f766e 100%);
-  border-radius: 20rpx;
+  background: var(--grad-primary);
+  border-radius: var(--radius-lg);
   padding: 32rpx 28rpx;
-  color: #fff;
+  color: var(--white);
   margin-bottom: 24rpx;
 }
 
 .cn-head__title {
-  font-size: 36rpx;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
 }
 
 .cn-head__sub {
-  font-size: 24rpx;
+  font-size: var(--fs-base);
   opacity: 0.9;
   margin-top: 8rpx;
   line-height: 1.6;
 }
 
 .task-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
   line-height: 1.5;
 }
 
 .ph {
-  color: #b6c0cd;
+  color: var(--text-placeholder);
 }
 
-.field__textarea--sm {
-  min-height: 140rpx;
-}
+/* .field__textarea--sm 统一到 app.wxss（min-height: 140rpx） */

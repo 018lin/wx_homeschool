@@ -1,4 +1,5 @@
-<view class="page">
+<app-header title="家长成长关注" sub="" mode="back" variant="hero" />
+<view class="page page--hero">
   <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
 
   <view class="card" wx:if="{{error}}">
@@ -36,7 +37,7 @@
         <view class="cc-item__title">{{item.title}}</view>
         <view class="cc-item__badges">
           <text class="tag" wx:if="{{item.category}}">{{item.category}}</text>
-          <text class="tag">建议 {{item.duration}} 分钟</text>
+          <text class="tag">建议每次约 {{item.duration}} 分钟</text>
           <text class="badge" style="background:{{item.statusBg}};color:{{item.statusColor}}">{{item.statusText}}</text>
         </view>
 
@@ -63,11 +64,11 @@
           <view class="cc-item__reply-text">{{item.teacherComment}}</view>
         </view>
         <view class="cc-item__reply" wx:if="{{item.taskTitle}}">
-          <view class="cc-item__reply-head">已生成定制任务</view>
+          <view class="cc-item__reply-head">老师已确认并生成定制任务</view>
           <view class="cc-item__reply-text">{{item.taskTitle}}</view>
         </view>
 
-        <view class="cc-item__foot">提交人：{{item.parentName}}</view>
+        <view class="cc-item__foot">反馈人：{{item.parentName}}</view>
       </view>
     </view>
 

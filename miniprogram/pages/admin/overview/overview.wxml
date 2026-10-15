@@ -1,86 +1,97 @@
-<view class="page page-with-nav">
-  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+<view class="ad-page">
+  <!-- 沉浸式弧形头图：全局 app-header 组件，与登录页一脉相承的天蓝渐变 -->
+  <app-header title="管理员工作台" sub="{{heroSub}}" mode="home" variant="hero" />
 
-  <!-- 学生「我的小心事」新提交提示：置顶展示，加载期间也保留位置 -->
-  <view class="card wo-entry {{worriesNewCount ? 'wo-entry--active' : ''}}" bindtap="goWorries">
-    <view class="wo-entry__main">
-      <view class="wo-entry__title">学生小心事</view>
-      <view class="wo-entry__text">{{loading ? '加载中…' : (worriesNewCount ? '有' + worriesNewCount + '条新提交' : '暂无新的提交')}}</view>
-    </view>
-    <view class="wo-entry__arrow">›</view>
-  </view>
+  <view class="page page-with-nav page--hero ad-body">
+    <view class="loading-wrap" wx:if="{{loading && !stats}}">加载中…</view>
 
-  <!-- 家长「成长关注」新提交提示：置顶展示，加载期间也保留位置 -->
-  <view class="card wo-entry {{concernsNewCount ? 'wo-entry--active' : ''}}" bindtap="goConcerns">
-    <view class="wo-entry__main">
-      <view class="wo-entry__title">家长成长关注</view>
-      <view class="wo-entry__text">{{loading ? '加载中…' : (concernsNewCount ? '有' + concernsNewCount + '条新提交' : '暂无新的提交')}}</view>
-    </view>
-    <view class="wo-entry__arrow">›</view>
-  </view>
-
-  <block wx:if="{{!loading}}">
-    <view class="card" wx:if="{{stats}}">
-      <view class="stat-grid">
-        <view class="stat">
-          <view class="stat__value">{{stats.teacherCount || 0}}</view>
-          <view class="stat__label">教师</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value">{{stats.studentCount || 0}}</view>
-          <view class="stat__label">学生</view>
-        </view>
-        <view class="stat">
-          <view class="stat__value">{{stats.parentCount || 0}}</view>
-          <view class="stat__label">家长</view>
-        </view>
-      </view>
-      <button class="btn btn-primary btn-block mt-24" bindtap="goAccounts">账号管理</button>
-    </view>
-
-    <view class="card">
-      <view class="card-title">
-        <text class="card-title__text">班级管理</text>
-      </view>
-      <view class="text-sm text-muted">
-        创建班级并绑定教师、学生与家长。教师仅能管理自己所在的班级，学生与家长的提交会归入该班级的负责教师。
-      </view>
-      <button class="btn btn-primary btn-block mt-24" bindtap="goClasses">班级管理</button>
-    </view>
-
-    <!-- 已有班级列表：点击班级查看详情，弹窗内可编辑班级信息 -->
-    <view class="card">
-      <view class="card-title">
-        <text class="card-title__text">已有班级</text>
-        <text class="card-title__more" wx:if="{{classes.length}}">共 {{classes.length}} 个</text>
+    <!-- 家校动态反馈：左右双列磁贴 -->
+    <view class="fb-row">
+      <view class="fb-tile fb-tile--warm {{worriesNewCount ? 'fb-tile--active' : ''}}" bindtap="goWorries" hover-class="fb-tile--hover">
+        <view class="fb-tile__icon fb-tile__icon--worries"></view>
+        <view class="fb-tile__badge" wx:if="{{worriesNewCount}}">{{worriesNewCount > 99 ? '99+' : worriesNewCount}}</view>
+        <view class="fb-tile__title">学生小心事</view>
+        <view class="fb-tile__text">{{loading ? '加载中…' : (worriesNewCount ? '有' + worriesNewCount + '条新提交' : '暂无新的提交')}}</view>
       </view>
 
-      <view class="loading-wrap cl-list__loading" wx:if="{{classesLoading}}">加载中…</view>
+      <view class="fb-tile fb-tile--mint {{concernsNewCount ? 'fb-tile--active' : ''}}" bindtap="goConcerns" hover-class="fb-tile--hover">
+        <view class="fb-tile__icon fb-tile__icon--concerns"></view>
+        <view class="fb-tile__badge" wx:if="{{concernsNewCount}}">{{concernsNewCount > 99 ? '99+' : concernsNewCount}}</view>
+        <view class="fb-tile__title">家长成长关注</view>
+        <view class="fb-tile__text">{{loading ? '加载中…' : (concernsNewCount ? '有' + concernsNewCount + '条新提交' : '暂无新的提交')}}</view>
+      </view>
+    </view>
 
-      <block wx:elif="{{classes.length}}">
-        <view class="cl-item" wx:for="{{classes}}" wx:key="id" data-id="{{item.id}}" bindtap="openClassModal">
-          <view class="flex-1">
-            <view class="cl-item__name">{{item.name}}</view>
-            <view class="text-sm text-muted mt-8">
-              {{item.grade || '未填年级'}} · 负责教师 {{item.headTeacherName || '未指定'}}
-            </view>
-            <view class="cl-counts mt-8">
-              <text class="badge badge-primary">教师 {{item.teacherCount}}</text>
-              <text class="badge badge-teal">学生 {{item.studentCount}}</text>
-              <text class="badge badge-gray">家长 {{item.parentCount}}</text>
-            </view>
+    <block wx:if="{{!loading || stats}}">
+      <!-- 全校账号概览 -->
+      <view class="card" wx:if="{{stats}}">
+        <view class="ad-head-row">
+          <view class="ad-head-row__title">账号概览</view>
+          <view class="pill-btn pill-btn--light" bindtap="goAccounts" hover-class="pill-btn--hover">
+            账号管理<text class="pill-btn__arrow">›</text>
           </view>
-          <view class="cl-item__arrow">›</view>
         </view>
-      </block>
 
-      <view class="empty cl-list__empty" wx:else>
-        <view class="empty__text">还没有班级</view>
-        <view class="empty__hint">点击上方「创建班级」，从已有教师、学生、家长账号中组建班级</view>
+        <view class="stat-grid ad-stats">
+          <view class="stat ad-stat">
+            <view class="ad-stat__wm ad-stat__wm--teacher"></view>
+            <view class="ad-stat__value">{{stats.teacherCount || 0}}</view>
+            <view class="ad-stat__label">教师</view>
+          </view>
+          <view class="stat ad-stat">
+            <view class="ad-stat__wm ad-stat__wm--student"></view>
+            <view class="ad-stat__value">{{stats.studentCount || 0}}</view>
+            <view class="ad-stat__label">学生</view>
+          </view>
+          <view class="stat ad-stat">
+            <view class="ad-stat__wm ad-stat__wm--parent"></view>
+            <view class="ad-stat__value">{{stats.parentCount || 0}}</view>
+            <view class="ad-stat__label">家长</view>
+          </view>
+        </view>
       </view>
-    </view>
 
-  </block>
+      <!-- 班级管理：管理入口与已有列表合二为一 -->
+      <view class="card">
+        <view class="ad-head-row">
+          <view class="ad-head-row__title">
+            班级管理
+            <text class="ad-count-chip" wx:if="{{!classesLoading}}">共 {{classes.length}} 个</text>
+          </view>
+          <view class="pill-btn pill-btn--primary" bindtap="goClasses" hover-class="pill-btn--hover">
+            <text class="pill-btn__plus">+</text>管理/新建班级
+          </view>
+        </view>
+        <view class="ad-hint">绑定师生与家长，提交动态将自动归入对应班级负责教师</view>
+
+        <view class="loading-wrap cl-list__loading" wx:if="{{classesLoading}}">加载中…</view>
+
+        <view class="cl-list" wx:elif="{{classes.length}}">
+          <view class="cl-item" wx:for="{{classes}}" wx:key="id" data-id="{{item.id}}" bindtap="openClassModal">
+            <view class="cl-item__icon"></view>
+            <view class="cl-item__main">
+              <view class="cl-item__line">
+                <view class="cl-item__name">{{item.name}}</view>
+                <text class="cl-item__grade" wx:if="{{item.grade}}">{{item.grade}}</text>
+              </view>
+              <view class="cl-item__meta">负责教师：{{item.headTeacherName || '未指定'}}</view>
+              <view class="cl-counts">
+                <text class="badge badge-primary">教师 {{item.teacherCount}}</text>
+                <text class="badge badge-teal">学生 {{item.studentCount}}</text>
+                <text class="badge badge-orange">家长 {{item.parentCount}}</text>
+              </view>
+            </view>
+            <view class="cl-item__arrow">›</view>
+          </view>
+        </view>
+
+        <view class="empty cl-list__empty" wx:else>
+          <view class="empty__text">还没有班级</view>
+          <view class="empty__hint">点击右上角「管理/新建班级」，从已有账号中组建班级</view>
+        </view>
+      </view>
+    </block>
+  </view>
 </view>
 
 <!-- 班级详情 / 编辑弹窗 -->
@@ -98,7 +109,7 @@
         <view class="cl-modal__counts">
           <text class="badge badge-primary">教师 {{activeClass.teacherCount}}</text>
           <text class="badge badge-teal">学生 {{activeClass.studentCount}}</text>
-          <text class="badge badge-gray">家长 {{activeClass.parentCount}}</text>
+          <text class="badge badge-orange">家长 {{activeClass.parentCount}}</text>
         </view>
 
         <view class="cd-row">
@@ -113,9 +124,11 @@
           <view class="cd-row__label">任课教师</view>
           <view class="cd-row__body">
             <block wx:if="{{activeClass.teachers.length}}">
-              <text class="tag" wx:for="{{activeClass.teachers}}" wx:for-item="t" wx:key="id">
-                {{t.name}}<text wx:if="{{t.id === activeClass.headTeacherId}}"> · 负责</text>
-              </text>
+              <view class="cd-tags">
+                <text class="tag" wx:for="{{activeClass.teachers}}" wx:for-item="t" wx:key="id">
+                  {{t.name}}<text wx:if="{{t.id === activeClass.headTeacherId}}"> · 负责</text>
+                </text>
+              </view>
             </block>
             <text class="text-sm text-muted" wx:else>未绑定教师</text>
           </view>
@@ -124,9 +137,11 @@
           <view class="cd-row__label">学生</view>
           <view class="cd-row__body">
             <block wx:if="{{activeClass.students.length}}">
-              <text class="tag" wx:for="{{activeClass.students}}" wx:for-item="s" wx:key="id">
-                {{s.name}}<text wx:if="{{s.grade}}">（{{s.grade}}）</text>
-              </text>
+              <view class="cd-tags">
+                <text class="tag" wx:for="{{activeClass.students}}" wx:for-item="s" wx:key="id">
+                  {{s.name}}<text wx:if="{{s.grade}}">（{{s.grade}}）</text>
+                </text>
+              </view>
             </block>
             <text class="text-sm text-muted" wx:else>未绑定学生</text>
           </view>
@@ -135,7 +150,9 @@
           <view class="cd-row__label">家长</view>
           <view class="cd-row__body">
             <block wx:if="{{activeClass.parents.length}}">
-              <text class="tag" wx:for="{{activeClass.parents}}" wx:for-item="p" wx:key="id">{{p.name}}</text>
+              <view class="cd-tags">
+                <text class="tag" wx:for="{{activeClass.parents}}" wx:for-item="p" wx:key="id">{{p.name}}</text>
+              </view>
             </block>
             <text class="text-sm text-muted" wx:else>未绑定家长</text>
           </view>
