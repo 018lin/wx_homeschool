@@ -12,6 +12,9 @@ process.env.ZHIPU_API_KEY = "";
 process.env.DEEPSEEK_API_KEY = "";
 process.env.PORT = "0";
 process.env.NODE_ENV = "test";
+// 测试跑在一次性 SQLite 沙箱里，需要演示数据（教师/学生账号与本周任务）。
+// 生产库默认 DEMO_SEED 未开启，服务启动不会自动补任务 —— 见 server.js 的 DEMO_SEED。
+process.env.DEMO_SEED = "1";
 
 const app = require("../server");
 let baseUrl;
@@ -1058,4 +1061,78 @@ test("parent concern submission notifies the class teacher and clears after read
   result = await request("/api/teacher/parent-task-requests?status=pending&limit=1", { token: pushedTeacherToken });
   assert.equal(result.data.newCount, 0);
   assert.ok(result.data.requests.some(function (item) { return Number(item.id) === concernId; }), "已读只影响提示，不隐藏待处理条目");
+});
+
+/* ==================================================================
+ * 回归：缺陷 1 —— AI 生成任务不得产生任何持久化数据
+ *
+ * 背景：教师点「AI 一键生成个性任务」后，结果只应作为草稿回填表单。
+ * 历史上 seed() 会在每次服务启动/跨周时自动补演示任务，且
+ * GET /api/teacher/student-suggestions 也曾被怀疑落库；
+ * 这里对「生成」与「重新生成」两个入口做全表断言，确保零写入。
+ * ================================================================== */
+
+const TRACKED_TABLES = [
+  "tasks", "submissions", "feedback", "notifications",
+  "parent_task_requests", "events", "ai_vector_documents", "children"
+];
+
+async function snapshotTables() {
+  const snap = {};
+  for (const table of TRACKED_TABLES) {
+    const row = await app.db.prepare("SELECT COUNT(*) AS n FROM " + table).get();
+    snap[table] = Number(row.n);
+  }
+  const maxTask = await app.db.prepare("SELECT COALESCE(MAX(id), 0) AS m FROM tasks").get();
+  snap.__maxTaskId = Number(maxTask.m);
+  return snap;
+}
+
+test("AI 一键生成与重新生成均为只读，不写入任何持久化数据", async function () {
+  const login = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "018", password: "018018" }
+  });
+  assert.equal(login.response.status, 200);
+  const genToken = login.data.token;
+
+  const students = await request("/api/teacher/students", { token: genToken });
+  assert.equal(students.response.status, 200);
+  assert.ok(students.data.students.length > 0, "教师应能看到学生");
+  const targetChildId = Number(students.data.students[0].id);
+
+  const before = await snapshotTables();
+
+  // 入口一：一键生成（GET）
+  const generated = await request("/api/teacher/student-suggestions?childId=" + targetChildId, {
+    token: genToken
+  });
+  assert.equal(generated.response.status, 200);
+  assert.ok((generated.data.suggestions || []).length > 0, "应返回生成建议");
+
+  // 入口二：教师口述后重新生成（POST）
+  const regenerated = await request("/api/teacher/student-suggestions/regenerate", {
+    method: "POST",
+    token: genToken,
+    body: { childId: targetChildId, note: "孩子最近注意力不集中，容易走神" }
+  });
+  assert.equal(regenerated.response.status, 200);
+  assert.ok((regenerated.data.suggestions || []).length > 0, "应返回重新生成建议");
+
+  const after = await snapshotTables();
+  TRACKED_TABLES.concat("__maxTaskId").forEach(function (key) {
+    assert.equal(after[key], before[key], "生成动作不应改变 " + key);
+  });
+});
+
+test("生产库默认不播种演示任务（seed 的演示任务插入受 DEMO_SEED 守卫）", async function () {
+  const source = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  // 两处演示任务插入都必须被 DEMO_SEED 守卫
+  const guarded = source.match(/if \(DEMO_SEED && !personalTaskExist\)/g) || [];
+  const guarded2 = source.match(/if \(DEMO_SEED && !studentTask\)/g) || [];
+  assert.equal(guarded.length, 1, "小刚演示任务插入必须受 DEMO_SEED 守卫");
+  assert.equal(guarded2.length, 1, "小测演示任务插入必须受 DEMO_SEED 守卫");
+  // DEMO_SEED 默认为「关」：未设置环境变量时不得视为开启
+  const decl = source.match(/const DEMO_SEED = \[[^\]]*\]\.includes\(\s*String\(process\.env\.DEMO_SEED \|\| ""\)/);
+  assert.ok(decl, "DEMO_SEED 必须以 process.env.DEMO_SEED 为唯一来源，默认空值即关闭");
 });

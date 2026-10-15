@@ -2975,7 +2975,18 @@ async function answerTeacherMetricQuestion(question) {
   };
 }
 
-/* ============ 种子数据（演示用，幂等） ============ */
+/* ============ 种子数据（演示用，幂等） ============
+ *
+ * DEMO_SEED 控制「是否往库里补演示任务」。
+ * 默认 0（不补）：任务只能由教师/管理员在页面上点「确认发布」后经
+ * POST /api/teacher/tasks 写入。早期版本无条件补演示任务，导致每次服务启动
+ * 或跨周一换周时凭空多出任务，管理员端任务列表里出现「没人确认过」的任务。
+ * 需要演示数据时显式设 DEMO_SEED=1（本地 SQLite 演示库即可）。
+ */
+const DEMO_SEED = ["1", "true", "yes", "on"].includes(
+  String(process.env.DEMO_SEED || "").trim().toLowerCase()
+);
+
 async function seed() {
   const hasAdmin = await db.prepare("SELECT id FROM users WHERE account = 'admin'").get();
   if (!hasAdmin) {
@@ -3085,8 +3096,10 @@ async function seed() {
   }
 
   // 给小刚发布一个个性化任务（祖辈带养适配）
+  // 仅演示库需要：生产库（DEMO_SEED=0，默认）绝不自动写任务，
+  // 否则每次启动/换周都会凭空多出任务，管理员端看起来像「未经确认就已发布」。
   var personalTaskExist = await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id = ?").get(thisWeek, extraChildIds["小刚"]);
-  if (!personalTaskExist) {
+  if (DEMO_SEED && !personalTaskExist) {
     await db.prepare(
       "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id) VALUES (?,?,?,?,?,?,?,?,?,?)"
     ).run(
@@ -3119,7 +3132,7 @@ async function seed() {
     .run(studentUser.id, studentChild.id);
   var studentTask = await db.prepare("SELECT id FROM tasks WHERE week_start = ? AND child_id = ? ORDER BY id DESC LIMIT 1")
     .get(thisWeek, studentChild.id);
-  if (!studentTask) {
+  if (DEMO_SEED && !studentTask) {
     await db.prepare(
       "INSERT INTO tasks (title, goal, steps, dialogue_tips, submit_hint, duration, task_type, week_start, published_by, child_id, difficulty, materials, fallback_plan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
     ).run(

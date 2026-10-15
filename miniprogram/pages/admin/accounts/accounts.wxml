@@ -89,9 +89,15 @@
       <view class="empty"><view class="empty__text">暂无家长账号</view></view>
     </view>
   </block>
+</view>
 
-  <!-- 表单弹窗 -->
-  <view class="modal-mask" wx:if="{{mode}}" catchtap="closeForm" catchtouchmove="noop">
+<!-- 表单弹窗
+ * ⚠️ 必须放在 .page.page--hero 容器「外面」：
+ * .page--hero 有 position:relative + z-index:2，会生成堆叠上下文，
+ * 把弹层的 z-index(var(--z-modal)=1000) 限制在该上下文内，
+ * 导致压不过同为根级兄弟的 <nav-bar>(z-index:200)，
+ * 底部固定的导航栏会盖住 .modal-foot 的「保存」按钮 → 按钮点不动。 -->
+<view class="modal-mask" wx:if="{{mode}}" catchtap="closeForm" catchtouchmove="noop">
     <view class="modal-sheet" catchtap="noop">
       <view class="modal-head">
         <text class="modal-head__title">{{mode === 'edit' ? '编辑账号' : '新建账号'}}</text>

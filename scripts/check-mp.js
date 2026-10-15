@@ -102,6 +102,39 @@ pages.forEach(function (p) {
   }
 });
 
+/* ---- 5. 弹层必须放在 .page--hero 容器外 ----
+ * .page--hero 有 position:relative + z-index:2，会生成堆叠上下文；
+ * 弹层写在里面时，它的 z-index(var(--z-modal)=1000) 只在该上下文内生效，
+ * 压不过同为根级兄弟的 <nav-bar>(z-index:var(--z-nav)=200)，
+ * 底部固定导航栏会盖住 .modal-foot 的确认按钮 → 按钮点不动。
+ */
+pages.forEach(function (p) {
+  var wxmlPath = path.join(ROOT, p + ".wxml");
+  if (!fs.existsSync(wxmlPath)) return;
+  var lines = fs.readFileSync(wxmlPath, "utf8").split(/\r?\n/);
+
+  var depth = 0;        // .page 容器内的嵌套深度
+  var inPage = false;
+  lines.forEach(function (raw, i) {
+    var line = raw.replace(/<!--[\s\S]*?-->/g, "");
+    var opens = (line.match(/<view[\s>]/g) || []).length;
+    var closes = (line.match(/<\/view>/g) || []).length;
+    var isPageRoot = /class="[^"]*\bpage\b[^"]*"/.test(line) && !/modal|sheet/.test(line);
+
+    if (!inPage && isPageRoot) { inPage = true; depth = opens - closes; return; }
+    if (inPage) {
+      if (/\bmodal-mask\b|\bsheet-mask\b/.test(line)) {
+        problems.push(
+          p + ".wxml:" + (i + 1) + " 弹层(.modal-mask/.sheet-mask) 写在 .page 容器内，" +
+          "会被 .page--hero 的堆叠上下文困住，底部确认按钮可能被 nav-bar 遮挡；请移到 .page 之外"
+        );
+      }
+      depth += opens - closes;
+      if (depth <= 0) inPage = false;
+    }
+  });
+});
+
 console.log("\n===== 错误 (" + problems.length + ") =====");
 problems.forEach(function (x) { console.log("  ✗ " + x); });
 
