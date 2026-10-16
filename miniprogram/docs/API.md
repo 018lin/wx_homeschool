@@ -1016,11 +1016,18 @@ engagement_judgment_corrected
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `generatedAt` | string | ISO 8601 |
-| `stats.teacherCount` | number | |
-| `stats.studentCount` | number | children 表总数 |
-| `stats.parentCount` | number | |
+| `stats.teacherCount` | number | `users WHERE role='teacher'` 的账号数 |
+| `stats.studentCount` | number | `users WHERE role='student'` 的账号数 |
+| `stats.parentCount` | number | `users WHERE role='parent'` 的账号数 |
+| `stats.profileCount` | number | `children` 表总数（**学生档案数**，≠ `studentCount`） |
 | `teachers` | Array\<`{id, account, display_name, created_at}`\> | `id DESC` |
-| `students` | Array\<`{id, name, grade, created_at, parent_count}`\> | `id DESC`；`parent_count` = bindings 条数（**不区分角色**） |
+| `students` | Array\<`{id, name, grade, created_at, parent_count}`\> | `id DESC`；数据源是 `children` **档案表**，与 `studentCount` 口径不同；`parent_count` = bindings 条数（**不区分角色**） |
+
+> ⚠️ **口径铁律**：`stats` 三张卡片是「**账号概览**」，必须与 6.2 `/api/admin/accounts` 的
+> `teachers.length` / `students.length` / `parents.length` 完全一致，因此三项目标全部统计 `users` 表。
+> 历史上 `studentCount` 曾错误地统计 `children` 表（档案数），而账号管理页统计学生账号数；
+> 家长端 `POST /api/children` 绑定孩子和演示种子数据都只建 `children` 不建 `users`，
+> 于是同一「学生数」在两个页面差出一大截。需要档案数时用 `stats.profileCount`。
 
 ### 6.2 `GET /api/admin/accounts` —— 账号目录
 
@@ -1034,6 +1041,7 @@ engagement_judgment_corrected
 | `students` | Array | `{id, account, display_name, phone, email, created_at, child_id, name, grade, gender, age, caregiver, interests, family_note, parent_count, parent_account, parent_relation}` |
 
 - ⚠️ `students` 是 `users LEFT JOIN children ON c.user_id = u.id`，**`child_id`/`name` 等可能为 null**（学生账号没建档案时）。
+- ⚠️ 本接口的 `students.length` 与 6.1 `stats.studentCount` 是**同一个口径**（学生**账号**数），必须始终相等。
 - `parent_account` / `parent_relation` 取的是 bindings 里 **id 最小** 的那条家长绑定。
 
 ### 6.3 `POST /api/admin/accounts` —— 创建账号

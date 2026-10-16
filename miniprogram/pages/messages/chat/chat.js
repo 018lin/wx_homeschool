@@ -9,7 +9,7 @@ var POLL_INTERVAL = 6000; // 聊天页轮询拉取新消息
 
 Page({
   data: {
-    peerId: 0, peer: {}, peerName: "", peerInitial: "", peerAvatar: "", peerAvatarOk: true,
+    peerId: 0, peer: {}, peerName: "", peerSub: "", peerInitial: "", peerAvatar: "", peerAvatarOk: true,
     myInitial: "我", myAvatar: "", myAvatarOk: true,
     messages: [], draft: "", canSend: false, sending: false,
     scrollIntoView: "", loading: true
@@ -76,7 +76,8 @@ Page({
     if (!silent) this.setData({ loading: true });
     api.getMessages(peerId, 300).then(function (res) {
       var peer = (res && res.peer) || {};
-      var name = peer.display_name || peer.name || "聊天";
+      var name = peer.display_name || peer.name || "对方";
+      var sub = ROLE_LABEL[peer.role] || "";
       var messages = ((res && res.messages) || []).map(function (item) {
         // 对方是接收方 → 发送方是自己
         return Object.assign({}, item, {
@@ -88,6 +89,7 @@ Page({
         loading: false,
         peer: peer,
         peerName: name,
+        peerSub: sub,
         peerInitial: String(name).slice(0, 1),
         peerAvatar: avatar.resolve(peer, false),
         peerAvatarOk: true,

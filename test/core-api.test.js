@@ -1136,3 +1136,159 @@ test("生产库默认不播种演示任务（seed 的演示任务插入受 DEMO_
   const decl = source.match(/const DEMO_SEED = \[[^\]]*\]\.includes\(\s*String\(process\.env\.DEMO_SEED \|\| ""\)/);
   assert.ok(decl, "DEMO_SEED 必须以 process.env.DEMO_SEED 为唯一来源，默认空值即关闭");
 });
+
+/* ==================================================================
+ * 学习园地：学生发布的学习成果是「全校共享」内容，
+ * 所有学生 + 教师 + 管理员都能看到，家长看不到；只有学生能发布。
+ * ================================================================== */
+test("学习园地：学生发布后全校可见，教师/管理员只读，家长不可见", async function () {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/wFvGYghAAAAAElFTkSuQmCC";
+
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "xiaoce", password: "000111" }
+  });
+  assert.equal(result.response.status, 200);
+  const studentToken = result.data.token;
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "018", password: "018018" }
+  });
+  assert.equal(result.response.status, 200);
+  const teacherToken = result.data.token;
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  assert.equal(result.response.status, 200);
+  const adminToken = result.data.token;
+
+  result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "demo", password: "123456" }
+  });
+  assert.equal(result.response.status, 200);
+  const parentToken = result.data.token;
+
+  // 学生发布：文字 + 一张图片
+  result = await request("/api/garden/posts", {
+    method: "POST",
+    token: studentToken,
+    body: {
+      content: "今天学习了望庐山瀑布，我学会背诵它了！",
+      images: [{ name: "照片", type: "image/png", size: 100, url: png }]
+    }
+  });
+  assert.equal(result.response.status, 201);
+  const postId = Number(result.data.post.id);
+  assert.ok(postId > 0);
+  // 昵称取学生档案名，头像走 users.avatar_url（未设置时为空，前端回落角色默认头像）
+  assert.equal(result.data.post.student_name, "小测");
+  assert.equal(result.data.post.images.length, 1);
+
+  // 空内容与非图片附件都会被拒绝
+  result = await request("/api/garden/posts", {
+    method: "POST",
+    token: studentToken,
+    body: { content: "   ", images: [] }
+  });
+  assert.equal(result.response.status, 400);
+
+  result = await request("/api/garden/posts", {
+    method: "POST",
+    token: studentToken,
+    body: { content: "带音频", images: [{ name: "录音", type: "audio/mpeg", size: 10, url: png }] }
+  });
+  assert.equal(result.response.status, 400);
+
+  // 三种角色都能看到同一条动态
+  for (const token of [studentToken, teacherToken, adminToken]) {
+    result = await request("/api/garden/posts?limit=50", { token: token });
+    assert.equal(result.response.status, 200);
+    const row = result.data.posts.find(function (item) { return Number(item.id) === postId; });
+    assert.ok(row, "学生 / 教师 / 管理员都应能看到这条成果");
+    assert.equal(row.content, "今天学习了望庐山瀑布，我学会背诵它了！");
+    assert.ok(Object.prototype.hasOwnProperty.call(row, "avatar_url"));
+    assert.equal(row.images.length, 1);
+  }
+
+  // mine 只对发布者本人为 true，教师/管理员不会看到「删除自己的成果」
+  result = await request("/api/garden/posts?limit=50", { token: studentToken });
+  assert.equal(result.data.posts.find(function (i) { return Number(i.id) === postId; }).mine, true);
+  result = await request("/api/garden/posts?limit=50", { token: teacherToken });
+  assert.equal(result.data.posts.find(function (i) { return Number(i.id) === postId; }).mine, false);
+
+  // 家长不在共享范围内
+  result = await request("/api/garden/posts", { token: parentToken });
+  assert.equal(result.response.status, 403);
+
+  // 只有学生能发布
+  result = await request("/api/garden/posts", {
+    method: "POST",
+    token: teacherToken,
+    body: { content: "老师代发", images: [] }
+  });
+  assert.equal(result.response.status, 403);
+
+  // 删除：教师无权，管理员可删（内容维护）
+  result = await request("/api/garden/posts/" + postId, { method: "DELETE", token: teacherToken });
+  assert.equal(result.response.status, 403);
+
+  result = await request("/api/garden/posts/" + postId, { method: "DELETE", token: adminToken });
+  assert.equal(result.response.status, 200);
+
+  result = await request("/api/garden/posts?limit=50", { token: studentToken });
+  assert.equal(result.data.posts.some(function (i) { return Number(i.id) === postId; }), false);
+
+  result = await request("/api/garden/posts/" + postId, { method: "DELETE", token: adminToken });
+  assert.equal(result.response.status, 404);
+
+  // 未登录不可见
+  result = await request("/api/garden/posts");
+  assert.equal(result.response.status, 401);
+});
+
+test("学习园地：学生只能删除自己发布的成果", async function () {
+  let result = await request("/api/auth/login", {
+    method: "POST",
+    body: { account: "admin", password: "018admin" }
+  });
+  const adminToken = result.data.token;
+  const stamp = Date.now();
+
+  // 建两个学生账号，验证互相不能删除
+  const ownerAccount = "garden_owner_" + stamp;
+  const otherAccount = "garden_other_" + stamp;
+  for (const account of [ownerAccount, otherAccount]) {
+    result = await request("/api/admin/accounts", {
+      method: "POST",
+      token: adminToken,
+      body: { role: "student", account: account, password: "123456", displayName: account, grade: "三年级" }
+    });
+    assert.equal(result.response.status, 201);
+  }
+
+  result = await request("/api/auth/login", { method: "POST", body: { account: ownerAccount, password: "123456" } });
+  const ownerToken = result.data.token;
+  result = await request("/api/auth/login", { method: "POST", body: { account: otherAccount, password: "123456" } });
+  const otherToken = result.data.token;
+
+  result = await request("/api/garden/posts", {
+    method: "POST",
+    token: ownerToken,
+    body: { content: "我的观察记录", images: [] }
+  });
+  assert.equal(result.response.status, 201);
+  const postId = Number(result.data.post.id);
+
+  result = await request("/api/garden/posts/" + postId, { method: "DELETE", token: otherToken });
+  assert.equal(result.response.status, 403);
+
+  result = await request("/api/garden/posts/" + postId, { method: "DELETE", token: ownerToken });
+  assert.equal(result.response.status, 200);
+
+  result = await request("/api/garden/posts?limit=50", { token: ownerToken });
+  assert.equal(result.data.posts.some(function (i) { return Number(i.id) === postId; }), false);
+});

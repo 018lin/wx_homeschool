@@ -1,0 +1,33 @@
+<app-header title="发布成果" sub="学习园地 · 让成长被看见" mode="back" variant="hero" />
+<view class="page page--hero">
+  <view class="card garden-editor">
+    <view class="card-title">
+      <text class="card-title__text">记录学习成果</text>
+      <text class="garden-count">{{images.length}}/{{maxImages}} 张图片</text>
+    </view>
+
+    <textarea
+      class="garden-textarea"
+      placeholder="记录今天学到了什么、有什么新发现……"
+      placeholder-class="ph"
+      maxlength="{{maxContent}}"
+      value="{{content}}"
+      bindinput="onContentInput"
+    />
+
+    <view class="garden-images" wx:if="{{images.length || maxImages}}">
+      <view class="garden-image" wx:for="{{images}}" wx:key="id">
+        <image class="garden-image__preview" src="{{item.url}}" mode="aspectFill" data-url="{{item.url}}" bindtap="previewImage" />
+        <view class="garden-image__remove" data-index="{{index}}" catchtap="removeImage">×</view>
+      </view>
+      <view class="garden-image garden-image--add" wx:if="{{images.length < maxImages}}" bindtap="chooseImages">
+        <view class="garden-image__plus">+</view>
+        <view class="garden-image__label">添加图片</view>
+      </view>
+    </view>
+
+    <view class="garden-upload" wx:if="{{submitting && uploadProgress < 100}}">图片上传中 {{uploadProgress}}%，请稍候…</view>
+    <view class="field__hint">文字和图片至少选择一种，最多 {{maxImages}} 张图片；发布后全校同学和老师都能看到。</view>
+    <button class="btn btn-primary btn-block garden-save" bindtap="submitPost" disabled="{{submitting}}">{{submitting ? '发布中…' : '发布成果'}}</button>
+  </view>
+</view>

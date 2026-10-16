@@ -1,0 +1,59 @@
+<app-header title="学习园地" sub="家校共育 · 让成长被看见" mode="{{isStudent ? 'home' : 'back'}}" variant="hero" />
+<view class="page {{isStudent ? 'page-with-nav' : ''}} page--hero">
+  
+
+  <view class="loading-wrap" wx:if="{{loading}}">加载中…</view>
+
+  <block wx:else>
+    <view class="card gd-post" wx:for="{{posts}}" wx:key="id">
+      <view class="gd-post__head">
+        <image class="gd-post__avatar" src="{{item.avatar}}" mode="aspectFill" />
+        <view class="gd-post__who">
+          <view class="gd-post__name">{{item.name}}</view>
+          <view class="gd-post__grade" wx:if="{{item.grade}}">{{item.grade}}</view>
+        </view>
+        <view class="gd-post__delete" wx:if="{{item.canDelete}}" data-id="{{item.id}}" catchtap="deletePost">删除</view>
+      </view>
+
+      <view class="gd-post__content" wx:if="{{item.content}}">{{item.content}}</view>
+
+      <view class="gd-post__images gd-post__images--{{item.grid}}" wx:if="{{item.images.length}}">
+        <image
+          class="gd-post__image"
+          wx:for="{{item.images}}"
+          wx:for-item="image"
+          wx:key="id"
+          src="{{image.url}}"
+          mode="aspectFill"
+          data-url="{{image.url}}"
+          bindtap="previewImage"
+        />
+      </view>
+
+      <view class="gd-post__foot">{{item.timeText}}</view>
+    </view>
+
+    <view class="card" wx:if="{{error}}">
+      <view class="empty">
+        <view class="empty__icon">✦</view>
+        <view class="empty__text">{{error}}</view>
+        <view class="empty__hint">下拉可重新加载</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{!error && !posts.length}}">
+      <view class="empty">
+        <view class="empty__icon">✦</view>
+        <view class="empty__text">还没有人发布学习成果</view>
+        <view class="empty__hint">{{isStudent ? '点右下角「+」，写下第一条收获吧' : '学生发布后会在这里展示'}}</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 右下角悬浮按钮：仅学生可发布（与首页「我的小心事」按钮一致） -->
+  <view class="st-fab" wx:if="{{isStudent}}" bindtap="goPublish">
+    <view class="st-fab__plus">+</view>
+  </view>
+</view>
+
+<nav-bar wx:if="{{isStudent}}" role="student" active="garden" />

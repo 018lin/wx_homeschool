@@ -468,6 +468,28 @@ var api = {
     return request("/api/student/worries/replies/read", { method: "POST", silent: true });
   },
 
+  /* ---- 学习园地（学生发布，全校学生 / 教师 / 管理员共同可见） ---- */
+  /** 共享动态流：所有登录的学生、教师、管理员看到同一份列表 */
+  getGardenPosts: function (limit) {
+    return request("/api/garden/posts", {
+      method: "GET",
+      query: { limit: limit || 30 },
+      silent: true
+    });
+  },
+  /** 发布一条学习成果：data = { content, images: [{name,type,size,url}] } */
+  createGardenPost: function (data) {
+    return request("/api/garden/posts", {
+      method: "POST",
+      data: data || {},
+      loading: "发布中"
+    });
+  },
+  /** 删除动态：仅发布者本人或管理员 */
+  deleteGardenPost: function (id) {
+    return request("/api/garden/posts/" + id, { method: "DELETE", silent: true });
+  },
+
   /* ---- 提交 / 时间线（家长、学生共用） ---- */
   submitWork: function (data) {
     return request("/api/submissions", { method: "POST", data: data, loading: "提交中" });

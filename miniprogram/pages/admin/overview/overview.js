@@ -164,6 +164,10 @@ Page({
   goConcerns: function () {
     wx.navigateTo({ url: "/pages/admin/concerns/concerns" });
   },
+  /** 学习园地：全校学生发布的学习成果，管理员可浏览并删除不当内容 */
+  goGarden: function () {
+    wx.navigateTo({ url: "/pages/garden/garden" });
+  },
 
   /* ---------- 班级详情弹窗 ---------- */
   openClassModal: function (e) {

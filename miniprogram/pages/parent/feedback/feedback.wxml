@@ -28,7 +28,7 @@
 
   <view class="card" wx:if="{{!loading && !error && !items.length}}">
     <view class="empty">
-      <view class="empty__icon">💬</view>
+      
       <view class="empty__text">当前筛选下暂无教师反馈</view>
       <view class="empty__hint">老师完成点评后会显示在这里</view>
     </view>

@@ -10,8 +10,7 @@ Page({
     currentChildId: null,
     task: null,
     feedback: null,
-    parentTaskRequest: null,
-    profileIncomplete: false
+    parentTaskRequest: null
   },
 
   onShow: function () {
@@ -53,8 +52,6 @@ Page({
         self.setData({
           children: children,
           currentChildId: child.id || null,
-          // 学生档案已改为「可选完善」，此处仅作提示，不再强制跳转
-          profileIncomplete: !!child.id && res.hasProfile === false,
           task: self.buildTask(res.task, res.taskStatus),
           feedback: self.buildFeedback(res.feedback),
           parentTaskRequest: request

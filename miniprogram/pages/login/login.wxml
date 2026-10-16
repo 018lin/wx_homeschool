@@ -79,7 +79,7 @@
       bindtap="onSubmit"
     >{{loading ? '登录中…' : '登 录'}}</button>
 
-    <view class="login__note">家长账号由学校管理员统一创建，请联系班主任或学校管理员</view>
+    <view class="login__note">家长账号由管理员统一创建，请联系班主任或管理员</view>
 
     <view class="login__agree">
       <view class="login__checkbox-wrap" bindtap="onToggleAgree">
@@ -88,6 +88,7 @@
         </view>
       </view>
       <view class="login__agree-text">
+        <text>我已阅读并同意</text>
         <text bindtap="onOpenAgreement" data-doc="user-agreement" class="login__agree-link">《用户协议》</text>
         <text>与</text>
         <text bindtap="onOpenAgreement" data-doc="privacy-policy" class="login__agree-link">《隐私政策》</text>

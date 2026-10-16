@@ -131,7 +131,8 @@ Page({
   },
 
   goGarden: function () {
-    wx.navigateTo({ url: "/pages/student/garden/garden" });
+    // 学习园地是学生 / 教师 / 管理员共享的动态流，入口统一指向 pages/garden
+    wx.redirectTo({ url: "/pages/garden/garden" });
   },
 
   /** 右下角悬浮按钮：写下「我的小心事」 */

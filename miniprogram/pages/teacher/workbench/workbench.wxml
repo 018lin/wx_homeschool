@@ -78,6 +78,15 @@
       </view>
     </view>
 
+    <!-- 学习园地：学生发布的学习成果，全校共享（教师只读浏览） -->
+    <view class="card" bindtap="goGarden">
+      <view class="card-title">
+        <text class="card-title__text">学习园地</text>
+        <text class="card-title__more">查看 ›</text>
+      </view>
+      <view class="text-sm text-muted">查看学生发布的学习成果，了解孩子们的学习收获</view>
+    </view>
+
   </block>
 </view>
 

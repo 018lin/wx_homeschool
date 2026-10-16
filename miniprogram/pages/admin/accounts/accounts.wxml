@@ -218,6 +218,5 @@
       </view>
     </view>
   </view>
-</view>
 
 <nav-bar role="admin" active="overview" />

@@ -8,7 +8,7 @@
 
   <view class="card" wx:if="{{!loading && !error && !items.length}}">
     <view class="empty">
-      <view class="empty__icon">🌱</view>
+      
       <view class="empty__text">还没有成长记录</view>
       <view class="empty__hint">完成第一次亲子任务后，这里会留下痕迹</view>
     </view>

@@ -9,6 +9,8 @@ var TABS = {
   ],
   student: [
     { key: "home", label: "我的任务", url: "/pages/student/home/home" },
+    /* 学习园地是学生 / 教师 / 管理员共享的动态流，页面放在中性目录下由路由守卫放行全角色 */
+    { key: "garden", label: "学习园地", url: "/pages/garden/garden" },
     { key: "messages", label: "交流", url: "/pages/messages/messages" },
     { key: "mine", label: "我的", url: "/pages/mine/mine" }
   ],

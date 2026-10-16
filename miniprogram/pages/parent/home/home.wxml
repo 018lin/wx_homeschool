@@ -3,21 +3,12 @@
   <!-- 非强制引导：无孩子 或 档案未完善 -->
   <view class="card" wx:if="{{!loading && children.length === 0}}">
     <view class="empty">
-      <view class="empty__icon">👶</view>
+     
       <view class="empty__text">还没有添加孩子</view>
       <view class="empty__hint">添加后即可收到老师的专属任务，现在不填也不影响使用其他功能</view>
     </view>
     <button class="btn btn-primary btn-block mt-24" bindtap="goChildren">去添加孩子</button>
     <button class="btn btn-outline btn-block mt-12" bindtap="goQuestionnaire">填写档案并添加（可选）</button>
-  </view>
-
-  <view class="card" wx:if="{{!loading && profileIncomplete}}">
-    <view class="empty">
-      <view class="empty__icon">📝</view>
-      <view class="empty__text">孩子档案待完善</view>
-      <view class="empty__hint">补充性别、年龄、陪伴人等信息，AI 任务建议会更贴合孩子（选填）</view>
-    </view>
-    <button class="btn btn-outline btn-block mt-24" bindtap="goChildren">去完善</button>
   </view>
 
   <!-- 本周任务 -->
@@ -42,7 +33,7 @@
 
   <view class="card" wx:else>
     <view class="empty">
-      <view class="empty__icon">📋</view>
+      
       <view class="empty__text">本周还没有新任务</view>
       <view class="empty__hint">老师发布后会自动出现在这里</view>
     </view>

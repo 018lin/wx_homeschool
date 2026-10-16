@@ -121,6 +121,10 @@
   color: var(--white);
   letter-spacing: 1rpx;
   text-shadow: 0 4rpx 16rpx rgba(30, 100, 160, 0.18);
+  /* 聊天页标题是对方昵称，可能偏长：单行省略，不换行顶乱导航条 */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .ah__sub {

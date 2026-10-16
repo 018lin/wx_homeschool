@@ -105,5 +105,9 @@ Page({
   /** 顶部板块：进入家长成长关注审核 */
   goConcerns: function () {
     wx.navigateTo({ url: "/pages/teacher/requests/requests" });
+  },
+  /** 学习园地：学生发布的共享成果，教师只读浏览 */
+  goGarden: function () {
+    wx.navigateTo({ url: "/pages/garden/garden" });
   }
 });

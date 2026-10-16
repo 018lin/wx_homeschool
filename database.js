@@ -26,10 +26,12 @@ const SERIAL_TABLES = new Set([
   "classes",
   "class_members",
   // 学生「我的小心事」：Postgres 下需要 RETURNING id 才能拿到自增 id
-  "student_worries"
+  "student_worries",
+  // 学习园地共享动态：Postgres 下需要 RETURNING id 才能拿到自增 id
+  "student_garden_posts"
 ]);
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 function replaceQuestionMarks(sql) {
   let index = 0;
@@ -286,7 +288,12 @@ function postgresSchema() {
     "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP",
     "ALTER TABLE student_worries ADD COLUMN IF NOT EXISTS reply_read_at TIMESTAMP",
     "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)",
-    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)",
+    // 学习园地：学生发布的共享成果（头像+昵称+文案+九宫格图片），
+    // 面向全校学生与教师/管理员展示，属于「公开内容」，不做班级隔离
+    "CREATE TABLE IF NOT EXISTS student_garden_posts (id BIGSERIAL PRIMARY KEY, student_user_id BIGINT NOT NULL, child_id BIGINT, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', images TEXT NOT NULL DEFAULT '[]', created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))",
+    "ALTER TABLE student_garden_posts ADD COLUMN IF NOT EXISTS images TEXT NOT NULL DEFAULT '[]'",
+    "CREATE INDEX IF NOT EXISTS idx_student_garden_posts_student ON student_garden_posts(student_user_id, id)"
   ].join(";\n") + ";";
 }
 
@@ -329,7 +336,11 @@ function sqliteSchema() {
     // reply_content/replied_at 为管理员回复，reply_read_at 为空即学生还没看过这条回复
     "CREATE TABLE IF NOT EXISTS student_worries (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, read_at TEXT, reply_content TEXT NOT NULL DEFAULT '', reply_by INTEGER, reply_by_name TEXT NOT NULL DEFAULT '', replied_at TEXT, reply_read_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
     "CREATE INDEX IF NOT EXISTS idx_student_worries_read ON student_worries(read_at, id)",
-    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
+    "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)",
+    // 学习园地：学生发布的共享成果（头像+昵称+文案+九宫格图片），
+    // 面向全校学生与教师/管理员展示，属于「公开内容」，不做班级隔离
+    "CREATE TABLE IF NOT EXISTS student_garden_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', images TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+    "CREATE INDEX IF NOT EXISTS idx_student_garden_posts_student ON student_garden_posts(student_user_id, id)"
   ].join(";\n") + ";";
 }
 
@@ -459,6 +470,16 @@ const MIGRATIONS = [
       "CREATE INDEX IF NOT EXISTS idx_student_worries_student ON student_worries(student_user_id, id)"
     ],
     allowAlreadyApplied: true
+  },
+  {
+    /* 学习园地共享动态：学生发布的成果对所有学生/教师/管理员可见，
+     * images 存 JSON 数组字符串（[{name,type,size,url}]，与任务附件同结构） */
+    version: 12,
+    statements: [
+      "CREATE TABLE IF NOT EXISTS student_garden_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, student_user_id INTEGER NOT NULL, child_id INTEGER, student_name TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', images TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))",
+      "CREATE INDEX IF NOT EXISTS idx_student_garden_posts_student ON student_garden_posts(student_user_id, id)"
+    ],
+    allowAlreadyApplied: true
   }
 ];
 
@@ -474,7 +495,7 @@ async function applyMigrations(database) {
       // 跳过仅适用于 SQLite 的迁移语句。
       // 注意：Postgres 一条语句报错后整个事务即进入 aborted 状态，后续语句全部被忽略，
       // 因此凡是在 postgresSchema() 里已用 IF NOT EXISTS 声明过的列，其迁移都必须整段跳过。
-      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9, 10, 11].includes(migration.version)
+      const statements = database.isPostgres && [1, 3, 4, 6, 7, 9, 10, 11, 12].includes(migration.version)
         ? []
         : migration.statements;
       for (const statement of statements) {

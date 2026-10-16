@@ -3170,6 +3170,46 @@ async function seed() {
 }
 const databaseReady = initializeDatabase(db).then(seed);
 
+/* ---- 学习园地：图片与文字的入库校验 ---- */
+const GARDEN_MAX_IMAGES = 9;
+const GARDEN_MAX_CONTENT = 1000;
+
+/**
+ * 规范化学习园地图片列表。结构与任务附件一致：{name,type,size,url}，
+ * url 为 /api/uploads 返回的 data URL 或外链地址。最多 9 张，只收图片。
+ */
+function normalizeGardenImages(value) {
+  if (!Array.isArray(value)) return [];
+  if (value.length > GARDEN_MAX_IMAGES) {
+    throw new Error("最多只能上传 " + GARDEN_MAX_IMAGES + " 张图片");
+  }
+  return value.map(function (item) {
+    const image = item && typeof item === "object" ? item : {};
+    const type = String(image.type || "").trim().toLowerCase();
+    const url = String(image.url || "");
+    if (!url) return null;
+    if (!type.startsWith("image/")) throw new Error("学习园地只支持上传图片");
+    if (!/^data:|^https?:\/\//i.test(url)) throw new Error("图片地址格式不正确");
+    if (url.length > MAX_ATTACHMENT_URL_LENGTH) throw new Error("图片地址过长");
+    return {
+      name: String(image.name || "学习图片").slice(0, 80),
+      type: type.slice(0, 80),
+      size: Number(image.size) || 0,
+      url: url
+    };
+  }).filter(Boolean);
+}
+
+/** 反序列化 images 列（TEXT 存 JSON 数组，损坏时退化为空数组，不影响其他动态展示） */
+function parseGardenImages(value) {
+  try {
+    const parsed = JSON.parse(String(value == null ? "[]" : value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
 /* ============ API 路由 ============ */
 async function handleApi(req, res, pathname, query) {
   /* ---- 注册 ---- */
@@ -4328,6 +4368,109 @@ async function handleApi(req, res, pathname, query) {
       "WHERE student_user_id = ? AND replied_at IS NOT NULL AND reply_read_at IS NULL"
     ).run(user.id);
     return sendJson(res, 200, { ok: true });
+  }
+
+  /* ---- 学习园地：学生发布成果（文字 + 最多 9 张图片） ---- */
+  if (req.method === "POST" && pathname === "/api/garden/posts") {
+    if (user.role !== "student") return sendJson(res, 403, { message: "仅学生账号可发布学习成果" });
+    const body = await readBody(req);
+    const content = String(body.content || "").trim();
+    if (content.length > GARDEN_MAX_CONTENT) {
+      return sendJson(res, 400, { message: "文字不能超过 " + GARDEN_MAX_CONTENT + " 个字" });
+    }
+    let images;
+    try {
+      images = normalizeGardenImages(body.images);
+    } catch (error) {
+      return sendJson(res, 400, { message: error.message, errorCode: "INVALID_ATTACHMENT" });
+    }
+    if (!content && !images.length) return sendJson(res, 400, { message: "请写点文字或添加图片" });
+    const child = await db.prepare(
+      "SELECT c.id, c.name, c.grade FROM children c JOIN bindings b ON b.child_id = c.id " +
+      "WHERE b.user_id = ? ORDER BY b.id LIMIT 1"
+    ).get(user.id);
+    const studentName = (child && child.name) || user.display_name || "同学";
+    const created = await db.prepare(
+      "INSERT INTO student_garden_posts (student_user_id, child_id, student_name, grade, content, images) " +
+      "VALUES (?,?,?,?,?,?)"
+    ).run(user.id, child ? child.id : null, studentName, (child && child.grade) || "", content, JSON.stringify(images));
+    await logEvent(user, "student_garden_posted", child ? child.id : null, null, {
+      source: "student_garden",
+      imageCount: images.length,
+      contentLength: content.length
+    });
+    return sendJson(res, 201, {
+      ok: true,
+      post: {
+        id: Number(created.lastInsertRowid),
+        student_user_id: Number(user.id),
+        student_name: studentName,
+        grade: (child && child.grade) || "",
+        avatar_url: user.avatar_url || "",
+        content: content,
+        images: images,
+        created_at: new Date().toISOString(),
+        mine: true
+      }
+    });
+  }
+
+  /* ---- 学习园地：全校共享动态流（学生 / 教师 / 管理员均可浏览） ---- */
+  if (req.method === "GET" && pathname === "/api/garden/posts") {
+    if (user.role !== "student" && user.role !== "teacher" && user.role !== "admin") {
+      return sendJson(res, 403, { message: "暂无权限浏览学习园地" });
+    }
+    const limitRaw = Number(query.get("limit"));
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 30;
+    // 头像与昵称实时取 users 表，学生换头像后历史动态同步更新
+    const rows = await db.prepare(
+      "SELECT p.id, p.student_user_id, p.student_name, p.grade, p.content, p.images, p.created_at, " +
+      "u.display_name, u.avatar_url " +
+      "FROM student_garden_posts p LEFT JOIN users u ON u.id = p.student_user_id " +
+      "ORDER BY p.id DESC LIMIT ?"
+    ).all(limit);
+    const total = await db.prepare("SELECT COUNT(*) AS n FROM student_garden_posts").get();
+    return sendJson(res, 200, {
+      generatedAt: new Date().toISOString(),
+      total: Number(total && total.n || 0),
+      posts: rows.map(function (row) {
+        return {
+          id: Number(row.id),
+          student_user_id: row.student_user_id == null ? null : Number(row.student_user_id),
+          student_name: row.student_name || row.display_name || "同学",
+          grade: row.grade || "",
+          avatar_url: row.avatar_url || "",
+          content: row.content || "",
+          images: parseGardenImages(row.images),
+          created_at: row.created_at,
+          // 本人可删除自己的动态；管理员可删除任意动态
+          mine: Number(row.student_user_id) === Number(user.id)
+        };
+      })
+    });
+  }
+
+  /* ---- 学习园地：删除动态（发布者本人或管理员） ---- */
+  const gardenPostMatch = pathname.match(/^\/api\/garden\/posts\/(\d+)$/);
+  if (req.method === "DELETE" && gardenPostMatch) {
+    if (user.role !== "student" && user.role !== "admin") {
+      return sendJson(res, 403, { message: "仅发布者本人或管理员可删除该成果" });
+    }
+    const postId = Number(gardenPostMatch[1]);
+    const target = await db.prepare(
+      "SELECT id, student_user_id, child_id, student_name FROM student_garden_posts WHERE id = ?"
+    ).get(postId);
+    if (!target) return sendJson(res, 404, { message: "该成果不存在或已被删除" });
+    if (user.role === "student" && Number(target.student_user_id) !== Number(user.id)) {
+      return sendJson(res, 403, { message: "只能删除自己发布的成果" });
+    }
+    await db.prepare("DELETE FROM student_garden_posts WHERE id = ?").run(postId);
+    await logEvent(user, "student_garden_post_deleted", target.child_id || null, null, {
+      source: "garden_delete",
+      postId: postId,
+      operatorRole: user.role
+    });
+    return sendJson(res, 200, { ok: true, id: postId });
   }
 
   /* ---- 首页聚合数据 ---- */
